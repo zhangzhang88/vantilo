@@ -12,7 +12,7 @@
 - The local project listing showed this directory; recursive listing returned only `Vantilo/`, and the top-level file listing reported `(empty directory)`.
 - Git status reported that `Vantilo` is not yet a Git repository.
 - GitHub repository: [zhangzhang88/vantilo](https://github.com/zhangzhang88/vantilo).
-- GitHub metadata confirms it is **private**, uses `main` as the default branch, and has repository size `0`. A tree request returned GitHub API 409, `Git Repository is empty`.
+- GitHub metadata confirms it is **private** and uses `main` as the default branch. **At the initial pre-setup check**, repository size was `0` and a tree request returned GitHub API 409 (`Git Repository is empty`), confirming that the remote was empty before the starter documents were published.
 
 The initial files were created without overwriting existing Vantilo files. They were then published to the private GitHub repository through the GitHub Contents API. The local and remote copies of `README.md`, `AGENTS.md`, `.gitignore`, `docs/architecture-audit.md`, and `docs/implementation-roadmap.md` were compared and match exactly. The remote files now exist on `main`. However, the local directory is still not a Git repository, so its `origin` remote and local commit history have not yet been initialized or reconciled. Do not describe local Git synchronization as complete.
 
