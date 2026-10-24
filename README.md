@@ -25,8 +25,9 @@ Vantilo is a new, independent Mac application project. Its core is a BaoCut/Code
 - [x] Product name selected: Vantilo
 - [x] Private GitHub repository created
 - [x] Local project directory confirmed empty before initialization
-- [x] Read-only remote/local architecture pre-audit completed
-- [ ] Git initialized and connected to the private remote
+- [x] Read-only remote/local architecture audit completed
+- [x] Initial project documents published to the private GitHub repository; local and remote file contents verified identical
+- [ ] Local Git initialized and connected to the private remote
 - [ ] Codex CLI installation/login status verified on this Mac
 - [ ] Agent workspace MVP implemented
 
