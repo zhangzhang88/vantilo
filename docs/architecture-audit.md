@@ -1,7 +1,7 @@
 # Vantilo Architecture Audit
 
 **Audit date:** 2026-10-24  
-**Status:** Read-only source audit completed; local Codex probe and legal review remain open.  
+**Status:** Read-only source audit completed; local Git initialized and `origin` configured; remote history fetch, interactive Mac Codex probe, and legal review remain open.  
 **Scope:** Vantilo's empty local directory and empty private remote, the local Magazine Reader source, the public BaoCut source, and the upstream source location documented for the typing-game migration.
 
 ## 1. Verified project state
@@ -9,12 +9,12 @@
 ### Vantilo
 
 - Local directory: `/Users/world/Downloads/code/Vantilo`.
-- The local project listing showed this directory; recursive listing returned only `Vantilo/`, and the top-level file listing reported `(empty directory)`.
-- Git status reported that `Vantilo` is not yet a Git repository.
+- The initial project listing showed this directory was empty before setup.
+- At the initial audit, Git status reported that `Vantilo` was not yet a Git repository.
 - GitHub repository: [zhangzhang88/vantilo](https://github.com/zhangzhang88/vantilo).
 - GitHub metadata confirms it is **private** and uses `main` as the default branch. **At the initial pre-setup check**, repository size was `0` and a tree request returned GitHub API 409 (`Git Repository is empty`), confirming that the remote was empty before the starter documents were published.
 
-The initial files were created without overwriting existing Vantilo files. They were then published to the private GitHub repository through the GitHub Contents API. The local and remote copies of `README.md`, `AGENTS.md`, `.gitignore`, `docs/architecture-audit.md`, and `docs/implementation-roadmap.md` were compared and match exactly. The remote files now exist on `main`. However, the local directory is still not a Git repository, so its `origin` remote and local commit history have not yet been initialized or reconciled. Do not describe local Git synchronization as complete.
+The initial files were created without overwriting existing Vantilo files and published to the private GitHub repository through the GitHub Contents API. The local and remote copies of `README.md`, `AGENTS.md`, `.gitignore`, `docs/architecture-audit.md`, and `docs/implementation-roadmap.md` were compared and matched exactly before the latest status update. The local directory has since been initialized as a Git repository on branch `main`, and `origin` is configured as `https://github.com/zhangzhang88/vantilo.git`. No local commit has been created; the five project files remain untracked. A read-only `git ls-remote` probe and a bounded HTTPS probe both timed out connecting to `github.com:443` from the WebCodex Runner. Therefore the local repository has not fetched or reconciled the remote commit history. Do not create an unrelated root commit; first restore GitHub HTTPS access, fetch `origin/main`, and reconcile the existing files with the remote tree.
 
 ### Magazine Reader — protected; not modified
 
@@ -61,7 +61,7 @@ Vantilo should implement its own independent Tool Catalog with the same architec
 
 ### Codex integration
 
-BaoCut's inspected Codex Driver uses the `codex app-server` machine protocol rather than embedding the ChatGPT website. It discovers the local Codex executable, checks version and account/login status, creates sessions, receives events, and handles tool/approval interactions. The inspected source currently declares a minimum Codex version of `0.158.0`; treat that as a source-version detail, not a permanent requirement. The actual CLI version and login state on this Mac have **not** been verified because the local command-execution probe did not run successfully.
+BaoCut's inspected Codex Driver uses the `codex app-server` machine protocol rather than embedding the ChatGPT website. It discovers the local Codex executable, checks version and account/login status, creates sessions, receives events, and handles tool/approval interactions. The inspected source currently declares a minimum Codex version of `0.158.0`; treat that as a source-version detail, not a permanent requirement. The WebCodex Runner does not expose `codex` in its PATH, and checks of several common executable locations found no CLI there. The actual CLI version and login state in the user's interactive Mac shell remain unverified; the Runner result does not prove that Codex is absent from the regular Terminal environment.
 
 Vantilo should first use the supported local Codex CLI/app-server path and report installation/login state without reading or printing private credential files. Do not build a custom OAuth flow or scrape ChatGPT cookies before confirming that the supported CLI protocol meets the product need.
 
