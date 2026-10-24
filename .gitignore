@@ -1,0 +1,30 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+build/
+out/
+coverage/
+test-results/
+playwright-report/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+*.pem
+*.key
+secrets/
+credentials/
+
+# Runtime data and logs
+.runtime/
+runtime-data/
+logs/
+*.log
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
