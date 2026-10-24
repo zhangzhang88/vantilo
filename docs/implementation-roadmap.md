@@ -7,8 +7,9 @@
 - [x] Perform a read-only source and architecture audit.
 - [x] Create README, AGENTS, ignore rules, audit, and roadmap locally.
 - [x] Publish those initial documents to the private GitHub repository; verify each local file matches its remote copy exactly.
-- [ ] Initialize local Git and connect `origin`.
-- [ ] Reconcile local Git history with the already-created remote commits and verify the branch state.
+- [x] Initialize local Git on branch `main` and configure `origin`.
+- [ ] Fetch remote `main` and reconcile local history; HTTPS access to `github.com:443` from the WebCodex Runner currently times out.
+- [ ] Verify Codex CLI installation/login state in the interactive Mac shell; `codex` is not exposed in the Runner's PATH.
 
 ## Phase 1 — Agent workspace vertical slice
 
