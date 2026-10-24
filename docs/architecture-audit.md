@@ -14,7 +14,7 @@
 - GitHub repository: [zhangzhang88/vantilo](https://github.com/zhangzhang88/vantilo).
 - GitHub metadata confirms it is **private**, uses `main` as the default branch, and has repository size `0`. A tree request returned GitHub API 409, `Git Repository is empty`.
 
-The initial files in this directory can therefore be created without overwriting existing Vantilo files. Git initialization and remote synchronization are a separate step.
+The initial files were created without overwriting existing Vantilo files. They were then published to the private GitHub repository through the GitHub Contents API. The local and remote copies of `README.md`, `AGENTS.md`, `.gitignore`, `docs/architecture-audit.md`, and `docs/implementation-roadmap.md` were compared and match exactly. The remote files now exist on `main`. However, the local directory is still not a Git repository, so its `origin` remote and local commit history have not yet been initialized or reconciled. Do not describe local Git synchronization as complete.
 
 ### Magazine Reader — protected; not modified
 
