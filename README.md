@@ -27,8 +27,9 @@ Vantilo is a new, independent Mac application project. Its core is a BaoCut/Code
 - [x] Local project directory confirmed empty before initialization
 - [x] Read-only remote/local architecture audit completed
 - [x] Initial project documents published to the private GitHub repository; local and remote file contents verified identical
-- [ ] Local Git initialized and connected to the private remote
-- [ ] Codex CLI installation/login status verified on this Mac
+- [x] Local Git initialized on branch `main` and `origin` configured
+- [ ] Fetch remote `main` and reconcile local history (WebCodex Runner HTTPS access to `github.com:443` currently times out)
+- [ ] Verify Codex CLI installation/login status in the interactive Mac shell (the WebCodex Runner PATH does not expose `codex`)
 - [ ] Agent workspace MVP implemented
 
 See [the architecture audit](docs/architecture-audit.md) and [the roadmap](docs/implementation-roadmap.md).
