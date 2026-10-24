@@ -3,12 +3,12 @@
 ## Phase 0 — Repository foundation
 
 - [x] Confirm the local Vantilo directory was empty.
-- [x] Confirm the private GitHub repository exists and is empty.
+- [x] Confirm the private GitHub repository existed and was empty before setup.
 - [x] Perform a read-only source and architecture audit.
+- [x] Create README, AGENTS, ignore rules, audit, and roadmap locally.
+- [x] Publish those initial documents to the private GitHub repository; verify each local file matches its remote copy exactly.
 - [ ] Initialize local Git and connect `origin`.
-- [ ] Commit the project instructions and audit report.
-- [ ] Push the initial commit to the private repository.
-- [ ] Verify local and remote commit IDs match.
+- [ ] Reconcile local Git history with the already-created remote commits and verify the branch state.
 
 ## Phase 1 — Agent workspace vertical slice
 
