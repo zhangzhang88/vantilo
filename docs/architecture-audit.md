@@ -14,7 +14,7 @@
 - GitHub repository: [zhangzhang88/vantilo](https://github.com/zhangzhang88/vantilo).
 - GitHub metadata confirms it is **private** and uses `main` as the default branch. **At the initial pre-setup check**, repository size was `0` and a tree request returned GitHub API 409 (`Git Repository is empty`), confirming that the remote was empty before the starter documents were published.
 
-The initial files were created without overwriting existing Vantilo files and published to the private GitHub repository through the GitHub Contents API. The local and remote copies of `README.md`, `AGENTS.md`, `.gitignore`, `docs/architecture-audit.md`, and `docs/implementation-roadmap.md` were compared and matched exactly before the latest status update. The local directory has since been initialized as a Git repository on branch `main`, and `origin` is configured as `https://github.com/zhangzhang88/vantilo.git`. No local commit has been created; the five project files remain untracked. A read-only `git ls-remote` probe and a bounded HTTPS probe both timed out connecting to `github.com:443` from the WebCodex Runner. Therefore the local repository has not fetched or reconciled the remote commit history. Do not create an unrelated root commit; first restore GitHub HTTPS access, fetch `origin/main`, and reconcile the existing files with the remote tree.
+The initial files were created without overwriting existing Vantilo files and published to the private GitHub repository through the GitHub Contents API. The local and remote copies of `README.md`, `AGENTS.md`, `.gitignore`, `docs/architecture-audit.md`, and `docs/implementation-roadmap.md` were compared and matched exactly before the latest status update. At the time of this audit, the local repository had been initialized on branch `main`, `origin` was configured as `https://github.com/zhangzhang88/vantilo.git`, and GitHub HTTPS probes from the WebCodex Runner timed out, so the remote history had not yet been fetched or reconciled. This is historical status: `origin/main` was subsequently fetched and reconciled into local `main`; the current Git history records that relationship. The initial network limitation and recommendation not to create an unrelated root commit no longer describe the current repository state.
 
 ### Magazine Reader — protected; not modified
 
@@ -43,7 +43,7 @@ Sources reviewed include BaoCut's public README, desktop README, Runtime, Runtim
 
 ### Desktop UI
 
-BaoCut's desktop application uses Electron. The main process manages the window and supervises the Runtime; preload and renderer are separate; shared UI components implement the Home workspace and conversation view. The Home workspace combines a conversation sidebar, central conversation, and workspace panes for task outputs. This is the right interaction reference for Vantilo, without copying BaoCut's UI code, branding, or assets.
+BaoCut's desktop application uses Electron. The main process manages the window and supervises the Runtime; preload and renderer are separate; shared UI components implement the Home workspace and conversation view. The Home workspace combines a conversation sidebar, central conversation, and workspace panes for task outputs. This was the interaction reference during initial architecture planning. A subsequent corrective implementation review replaced the previously BaoCut-attributed UI and browser-host modules with Vantilo-owned implementations; only separately licensed Spectrum dependencies and the attributed third-party Codex icon remain. See [the independent UI implementation review](independent-ui-reimplementation.md).
 
 ### Runtime and Tool Catalog
 
@@ -63,7 +63,7 @@ Vantilo should implement its own independent Tool Catalog with the same architec
 
 BaoCut's inspected Codex Driver uses the `codex app-server` machine protocol rather than embedding the ChatGPT website. It discovers the local Codex executable, checks version and account/login status, creates sessions, receives events, and handles tool/approval interactions. The inspected source currently declares a minimum Codex version of `0.158.0`; treat that as a source-version detail, not a permanent requirement. The WebCodex Runner does not expose `codex` in its PATH, and checks of several common executable locations found no CLI there. The actual CLI version and login state in the user's interactive Mac shell remain unverified; the Runner result does not prove that Codex is absent from the regular Terminal environment.
 
-Vantilo should first use the supported local Codex CLI/app-server path and report installation/login state without reading or printing private credential files. Do not build a custom OAuth flow or scrape ChatGPT cookies before confirming that the supported CLI protocol meets the product need.
+Vantilo should use the supported local Codex CLI/app-server path and report installation/login state without reading or printing private credential files. The CLI and login state were unverified at the time of this initial audit; later protocol checks and the real Codex integration are recorded in the implementation roadmap. Do not build a custom OAuth flow or scrape ChatGPT cookies.
 
 ## 3. Magazine Reader typing-game findings
 
@@ -162,7 +162,7 @@ Acceptance:
 
 ## 8. Outstanding verification
 
-- Actual Codex CLI install/version/login status on the Mac.
+- [x] Actual Codex CLI install/version/login status on the Mac was verified later; see the implementation roadmap's protocol/environment record.
 - The exact current BaoCut CLI/MCP command contract and the locally installed BaoCut version (BaoCut was not listed as a local project; source was reviewed remotely).
 - Full rights status for Worm game source and audio assets.
 - Local code signing/notarization and packaging requirements for a distributable Mac app.

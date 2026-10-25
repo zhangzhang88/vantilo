@@ -1,35 +1,31 @@
 # Vantilo
 
-**An agent-first workspace for macOS.**
+An independent Electron + React + TypeScript macOS Agent workspace.
 
-Vantilo is a new, independent Mac application project. Its core is a BaoCut/Codex-style agent workspace backed by a local Runtime and a unified tool catalog. Agents should be able to compose tools to reshape workflows rather than forcing users through a single fixed sequence.
+## Phase 1/2 status
 
-## Product direction
+The desktop workspace connects to the locally installed Codex CLI through its `codex app-server --stdio` JSONL protocol. It initializes or resumes a Codex thread, submits user turns, streams actual agent-message deltas, displays activity and terminal task states, and supports cancelling the active turn. A dedicated Electron `utilityProcess` hosts Runtime/session orchestration and owns the Codex child process; the Electron main process supervises that Runtime and brokers validated requests over a versioned message protocol. The renderer only receives a narrow preload IPC API.
 
-- **Agent workspace:** conversation-first UI, streaming activity, visible tool calls, approvals, task status, and artifacts.
-- **Local Runtime:** owns agent sessions, tasks, event delivery, tool execution, permissions, persistence, and audit logs.
-- **Agent drivers:** Codex app-server first; additional engines only after separate compatibility work.
-- **Tool catalog:** a single, validated contract for tools that agents can discover and call.
-- **Domain capabilities:** local files and projects first; reading and English typing practice next; video workflows through an independent BaoCut adapter later.
+The composer now exposes a per-conversation Codex model and reasoning-effort picker. Its catalog is queried from the installed app-server `model/list` protocol; Runtime validates selections and persists them per session. A stored `modelId: null` / `reasoningEffort: null` means “use the live model catalog defaults”: Runtime resolves the unique `isDefault` model and that model's `defaultReasoningEffort` from `model/list`, then explicitly sends those concrete values on `thread/start` or `thread/resume` and `turn/start`. In particular, null reasoning effort resolves to the model catalog's declared default, not necessarily a reasoning preference from the user's Codex configuration; Vantilo does not read or promise to follow that configuration. The driver checks the server-reported effective model on thread start/resume; if catalog resolution or verification fails, the task does not run. A reasoning-only setting is validated against that same effective model. Session storage migrates v1–v3 history on read and writes the v4 schema on its next mutation; v4 records each conversation's workspace root and pin state. The composer has an adaptive prompt field, session-local drafts, a `+` menu for selecting workspace file/folder references, `@` completion for selected references, `/list` and `/read` prompt shortcuts, and send/cancel controls. The native picker returns only workspace-relative references after Runtime scope checks; selecting a path does not read it or bypass the usual per-call tool approval. Access stays read-only. Vantilo independently implements the app rail, resizable sidebar, project/recent-session navigation, top conversation/browser tabs, Composer PromptField wrapper and picker, and conversation presentation; React Spectrum S2 and Spectrum AI remain separately licensed dependencies, not BaoCut source code. The extra Vantilo task-inspector column is removed; workspace selection and Runtime status are integrated compactly into the sidebar, while unfinished destinations remain visual placeholders. Visible Vantilo interface copy is in Simplified Chinese (model names and underlying Runtime error details may retain their original wording). A new browser tab uses a separate sandboxed Electron `WebContentsView` with no preload or Node access, isolated cookies, HTTP(S)-only top-level navigation, and request filtering that rejects loopback host literals and Vantilo app origins. This filtering does not validate DNS answers: a public hostname resolving to loopback, private, or link-local addresses may still reach those endpoints, so DNS-rebinding and actual-connection-target protection remain unresolved. Do not treat browser network isolation as fully secure until a network-layer design and its tests address this limitation. The browser host and address policy are Vantilo-owned modules. Messages use licensed Spectrum primitives with Vantilo-owned transcript structure, omit role-name labels, and provide local copy actions. Codex replies render CommonMark/GFM with CJK-friendly emphasis parsing (so Chinese bold text does not expose raw `**` markers); raw HTML and remote images are not rendered, and clicked HTTP(S) links open in Vantilo's isolated browser. The Codex mark is a separately licensed third-party asset with attribution retained in the notices. Recent conversations are scoped to the selected workspace; history with no recoverable workspace association remains visible in a separate unassigned section. Switching workspaces opens that project's latest session or creates one, and mismatched sessions remain history-only until the matching workspace is selected. Permanent session deletion requires confirmation and removes both the Codex thread and Vantilo local record; if Codex deletion fails, the local record remains. Deletion is blocked while that session has an active task. Project removal does not delete project files or session history. Workspace references and Agent tool calls still pass through Vantilo's scope checks and per-call approvals. Third-party license notices are preserved under `licenses/`; retained BaoCut license/reference files do not grant commercial distribution permission.
 
-## Project boundaries
+The app-server connection is experimental and depends on a locally installed, logged-in Codex CLI. Turns run in Codex's read-only sandbox with network access disabled and native approval policy `never`; Vantilo's two dynamic workspace tools are independently gated by a one-time Vantilo approval for every call. The tools list regular files under, or read a bounded UTF-8 text file from, the user-selected workspace. Runtime revalidates workspace-relative paths, excludes sensitive names and common build/dependency directories, rejects symlinks and hard-linked files, bounds listings and file size, and never exposes shell or write operations. The four MCP servers observed in the inspected local app-server environment are disabled through process-local Codex config overrides; unexpected MCP startup or unsupported privileged activity fails closed. The user's Codex configuration/authentication files are not modified.
 
-- This repository is independent from `magazine-reader` and BaoCut.
-- Do not modify either original project as part of Vantilo work.
-- Do not copy BaoCut code, binaries, UI components, or brand assets into Vantilo. The initial video integration should use public interfaces only.
-- Magazine Reader's typing game has code and audio assets whose upstream license status still needs clarification. Do not copy those assets until the rights are verified; a clean reimplementation of the behavior may be preferable.
-- Never copy user books, magazine EPUBs, API keys, tokens, cookies, local settings, or private data into this repository.
+## Development
 
-## Current status
+```sh
+npm install
+npm run typecheck
+npm run build
+npm test
+npm run desktop:dev
+# Optional: real local Codex app-server approved/rejected tool-call integration check
+npm run test:e2e:codex
+```
 
-- [x] Product name selected: Vantilo
-- [x] Private GitHub repository created
-- [x] Local project directory confirmed empty before initialization
-- [x] Read-only remote/local architecture audit completed
-- [x] Initial project documents published to the private GitHub repository; local and remote file contents verified identical
-- [x] Local Git initialized on branch `main` and `origin` configured
-- [ ] Fetch remote `main` and reconcile local history (WebCodex Runner HTTPS access to `github.com:443` currently times out)
-- [ ] Verify Codex CLI installation/login status in the interactive Mac shell (the WebCodex Runner PATH does not expose `codex`)
-- [ ] Agent workspace MVP implemented
+`npm run desktop:dev` starts Vite on `127.0.0.1:5173` with strict port handling, then starts Electron. The Electron window loads packaged `dist/index.html` in production. Packaging, code signing, and notarization are not configured.
 
-See [the architecture audit](docs/architecture-audit.md) and [the roadmap](docs/implementation-roadmap.md).
+## Security boundaries and remaining work
+
+Renderer Node integration is disabled; IPC validates that requests come from the main Vantilo frame, and Runtime request/response/event messages use strict schemas and request IDs. Renderer requests can only manage conversations, select/clear a workspace through the native directory picker, submit/cancel tasks, and decide a pending one-time approval by opaque approval/session/task IDs; they cannot provide a file path to a privileged read API. Runtime resolves tools against the persisted authorization and rechecks it before execution. The main process tracks the Runtime-owned Codex PID so an unexpected Runtime exit can terminate that child. Codex server-initiated requests other than the verified dynamic-tool call are rejected.
+
+Runtime stores local conversation history and per-session Codex model settings in a versioned `sessions.json` under Electron `userData`, with serialized atomic writes and restrictive directory/file permissions. Messages are saved in order, recognized credential patterns are redacted, damaged JSON is preserved to a sidecar with a UI warning, and unfinished assistant turns are marked interrupted on restart. Codex thread IDs and the Tool Catalog version are stored per Vantilo conversation and resumed with `thread/resume`; the local transcript remains available independently of Codex availability. Workspace authorization is stored separately in `workspace.json`; the renderer displays each request's tool, reason, operation, workspace, relative path, and expiry, with explicit “仅本次允许” and “拒绝” actions. Approvals are task/session/request-bound, expire, and are never persisted. See the implementation roadmap for remaining work.

@@ -10,7 +10,7 @@
 ## Development rules
 
 - Read `README.md`, this file, and relevant documents in `docs/` before implementation.
-- Keep Vantilo independent; do not copy an entire source repository or Git history from either original project.
+- Keep Vantilo independent; never copy an entire source repository or Git history from either original project. Reuse of individual BaoCut source files, UI components, or assets is not categorically prohibited: before reuse, verify that the exact license permits the intended use and distribution, or obtain written permission. Record provenance and preserve applicable notices. If permission or license scope is unclear, implement independently. The upstream BaoCut repository remains read-only and must never be modified.
 - Prefer public protocols/adapters over embedding another product's engine.
 - Keep UI, Runtime, Agent Driver, Tool Catalog, permission policy, and domain tools as distinct modules.
 - The Renderer must not have unrestricted filesystem or shell access. Route privileged operations through the Runtime with explicit scope checks.
