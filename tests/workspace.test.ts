@@ -42,6 +42,19 @@ describe('authorized workspace boundary',()=>{
     await expect(workspace.openReadOnly('large.txt')).rejects.toMatchObject({code:'file_too_large'});
     await expect(workspace.openReadOnly('safe.txt')).resolves.toMatchObject({path:'safe.txt',content:'actual text',bytes:11});
   });
+  it('reads only a bounded explicit text range through WorkspaceAuthority',async()=>{
+    const {root,workspace}=await fixture();await writeFile(path.join(root,'article.md'),'first\r\nsecond\r\nthird\r\nfourth');
+    await expect(workspace.readTextRange('article.md',2,3)).resolves.toMatchObject({path:'article.md',startLine:2,endLine:3,content:'second\nthird'});
+    await expect(workspace.readTextRange('article.md',1,41)).rejects.toMatchObject({code:'invalid_range'});
+    await expect(workspace.readTextRange('article.md',4,5)).rejects.toMatchObject({code:'invalid_range'});
+    await writeFile(path.join(root,'too-long.txt'),'x'.repeat(12001));await expect(workspace.readTextRange('too-long.txt',1,1)).rejects.toMatchObject({code:'passage_too_large'});
+    const outside=path.join(os.tmpdir(),`vantilo-range-outside-${Date.now()}`);await writeFile(outside,'outside\n');roots.push(outside);await symlink(outside,path.join(root,'escape.md'));await link(outside,path.join(root,'hardlink.md'));
+    await expect(workspace.readTextRange('../outside.md',1,1)).rejects.toMatchObject({code:'out_of_scope'});
+    await expect(workspace.readTextRange('.env',1,1)).rejects.toMatchObject({code:'sensitive_path'});
+    await expect(workspace.readTextRange('escape.md',1,1)).rejects.toMatchObject({code:'symlink_rejected'});
+    await expect(workspace.readTextRange('hardlink.md',1,1)).rejects.toMatchObject({code:'hard_link_rejected'});
+    const unauthorized=new WorkspaceAuthority({userDataPath:path.join(root,'no-auth')});await expect(unauthorized.readTextRange('article.md',1,1)).rejects.toMatchObject({code:'workspace_unavailable'});
+  });
   it('validates user-selected references inside the authorized workspace without reading file contents',async()=>{
     const {root,workspace}=await fixture();await mkdir(path.join(root,'docs'));await writeFile(path.join(root,'docs','guide.md'),'do not return this content');await writeFile(path.join(root,'.env'),'secret');
     const outside=path.join(os.tmpdir(),`vantilo-reference-outside-${Date.now()}`);await writeFile(outside,'private');roots.push(outside);await symlink(outside,path.join(root,'link.md'));await link(outside,path.join(root,'hardlink.md'));

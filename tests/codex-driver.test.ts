@@ -86,11 +86,11 @@ describe('Codex app-server JSONL driver',()=>{
     expect(originalResume.params).toMatchObject({threadId:'thread-saved',cwd:'/workspace',approvalPolicy:'never',sandbox:'read-only',excludeTurns:true});
     child.reply(originalResume.id,{thread:{id:'thread-saved'},model:'gpt-6-luna'});await expect(resumed).resolves.toBe('thread-saved');
 
-    const continuing=driver.startTurn('continue','thread-saved',{model:'gpt-6.1-sol',effort:'low'});await new Promise(resolve=>setImmediate(resolve));
+    const continuing=driver.startTurn('continue','thread-saved',{model:'gpt-6.1-sol',effort:'low',dynamicTools:[{type:'function',name:'new_tool',description:'not verified for this thread',inputSchema:{type:'object'}}]});await new Promise(resolve=>setImmediate(resolve));
     const resumes=child.messages.filter(x=>x.method==='thread/resume');
     expect(resumes).toHaveLength(1);
     const turn=child.messages.find(x=>x.method==='turn/start');
-    expect(turn.params).toMatchObject({threadId:'thread-saved',model:'gpt-6.1-sol',effort:'low'});
+    expect(turn.params).toMatchObject({threadId:'thread-saved',model:'gpt-6.1-sol',effort:'low'});expect(turn.params).not.toHaveProperty('dynamicTools');
     child.reply(turn.id,{turn:{id:'turn-next'}});await expect(continuing).resolves.toMatchObject({threadId:'thread-saved',turnId:'turn-next'});
     await driver.close();
   });

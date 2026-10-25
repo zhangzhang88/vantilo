@@ -166,6 +166,65 @@ class WorkspaceAuthority {
     return references;
   }
 
+  async readTextRange(relativePath, startLine, endLine, { maxLines = 40, maxOutputChars = 12000, maxScanBytes = MAX_READ_BYTES, signal } = {}) {
+    if (!Number.isInteger(maxLines) || maxLines < 1 || maxLines > 40 || !Number.isInteger(maxOutputChars) || maxOutputChars < 1 || maxOutputChars > 12000 || !Number.isInteger(maxScanBytes) || maxScanBytes < 1) throw new WorkspaceError('invalid_range', 'The requested passage limits are invalid.');
+    maxScanBytes = Math.min(maxScanBytes, MAX_READ_BYTES);
+    if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine || endLine - startLine + 1 > maxLines) throw new WorkspaceError('invalid_range', 'The requested line range is invalid or exceeds the allowed range.');
+    const inspected = await this.inspect(relativePath, { expectFile: true });
+    if (inspected.stat.nlink > 1) throw new WorkspaceError('hard_link_rejected', 'Files with additional hard links are not read by workspace tools.');
+    if (!Number.isSafeInteger(inspected.stat.size) || inspected.stat.size < 0) throw new WorkspaceError('file_too_large', 'The requested file size is not supported.');
+    let handle;
+    try {
+      const noFollow = fsConstants.O_NOFOLLOW || 0;
+      handle = await fs.open(inspected.absolutePath, fsConstants.O_RDONLY | noFollow);
+      const info = await handle.stat();
+      const reopenedCanonical = await fs.realpath(inspected.absolutePath);
+      if (!isWithin(this.root, reopenedCanonical) || reopenedCanonical !== inspected.canonicalPath || !info.isFile() || info.nlink > 1 || info.dev !== inspected.stat.dev || info.ino !== inspected.stat.ino || info.size !== inspected.stat.size || info.mtimeMs !== inspected.stat.mtimeMs) throw new WorkspaceError('path_changed', 'The file changed while access was being checked.');
+      const chunks = []; let bytesRead = 0; let separators = 0; let previousWasCR = false; let reachedRange = false;
+      const chunk = Buffer.alloc(4096);
+      while (bytesRead < Math.min(info.size, maxScanBytes) && !reachedRange) {
+        if (signal?.aborted) throw new WorkspaceError('cancelled', 'The workspace request was cancelled.');
+        const length = Math.min(chunk.length, info.size - bytesRead, maxScanBytes - bytesRead);
+        const result = await handle.read(chunk, 0, length, bytesRead);
+        if (signal?.aborted) throw new WorkspaceError('cancelled', 'The workspace request was cancelled.');
+        if (!result.bytesRead) break;
+        const part = Buffer.from(chunk.subarray(0, result.bytesRead)); chunks.push(part);
+        for (const byte of part) {
+          if (byte === 0x0d) { separators++; previousWasCR = true; }
+          else if (byte === 0x0a) { if (!previousWasCR) separators++; previousWasCR = false; }
+          else previousWasCR = false;
+        }
+        bytesRead += result.bytesRead;
+        reachedRange = separators >= endLine;
+      }
+      const eof = bytesRead >= info.size;
+      const bytes = Buffer.concat(chunks, bytesRead);
+      const lineCount = separators + (bytesRead > 0 && bytes[bytesRead - 1] !== 0x0a && bytes[bytesRead - 1] !== 0x0d ? 1 : 0);
+      if (!reachedRange && !eof && bytesRead >= maxScanBytes) throw new WorkspaceError('range_scan_limit', 'The requested line range is beyond the bounded scan limit.');
+      if (endLine > lineCount) throw new WorkspaceError('invalid_range', 'The requested line range extends beyond the file.');
+      const selected = []; let line = 1; let lineStart = 0; let index = 0;
+      while (index < bytes.length && line <= endLine) {
+        if (bytes[index] !== 0x0a && bytes[index] !== 0x0d) { index++; continue; }
+        const lineEnd = index;
+        if (line >= startLine) selected.push(bytes.subarray(lineStart, lineEnd));
+        const isCRLF = bytes[index] === 0x0d && bytes[index + 1] === 0x0a;
+        index += isCRLF ? 2 : 1; line++; lineStart = index;
+      }
+      if (line === endLine && (eof || reachedRange && lineCount === endLine)) selected.push(bytes.subarray(lineStart));
+      if (selected.length !== endLine - startLine + 1) throw new WorkspaceError('invalid_range', 'The requested line range could not be read completely.');
+      let content;
+      try { content = selected.map(value => new TextDecoder('utf-8', { fatal: true }).decode(value)).join('\n'); }
+      catch { throw new WorkspaceError('binary_file', 'The selected passage is not valid UTF-8 text.'); }
+      if (content.includes('\0')) throw new WorkspaceError('binary_file', 'The selected passage contains binary data.');
+      if (content.length > maxOutputChars || Buffer.byteLength(content, 'utf8') > maxOutputChars * 4) throw new WorkspaceError('passage_too_large', 'The requested passage exceeds the output size limit.');
+      if (signal?.aborted) throw new WorkspaceError('cancelled', 'The workspace request was cancelled.');
+      const finalInfo = await handle.stat(); const finalCanonical = await fs.realpath(inspected.absolutePath);
+      if (!isWithin(this.root, finalCanonical) || finalCanonical !== inspected.canonicalPath || finalInfo.dev !== info.dev || finalInfo.ino !== info.ino || finalInfo.size !== info.size || finalInfo.mtimeMs !== info.mtimeMs) throw new WorkspaceError('path_changed', 'The file changed while access was being checked.');
+      return { path: inspected.relativePath, startLine, endLine, content, chars: content.length };
+    } catch (error) { throw error instanceof WorkspaceError ? error : this.#mapFsError(error); }
+    finally { if (handle) await handle.close().catch(() => {}); }
+  }
+
   async openReadOnly(relativePath) {
     const inspected = await this.inspect(relativePath, { expectFile: true });
     if (inspected.stat.nlink > 1) throw new WorkspaceError('hard_link_rejected', 'Files with additional hard links are not read by workspace tools.');

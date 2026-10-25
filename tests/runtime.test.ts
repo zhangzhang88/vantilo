@@ -9,6 +9,7 @@ const { AgentRuntime } = require('../electron/runtime.cjs') as { AgentRuntime: n
 const { SessionStore } = require('../electron/session-store.cjs') as { SessionStore: new(options:any)=>any };
 const { WorkspaceAuthority } = require('../electron/workspace.cjs') as { WorkspaceAuthority:new(options:any)=>any };
 const { ProjectStore } = require('../electron/project-store.cjs') as { ProjectStore:new(options:any)=>any };
+const { LEGACY_TOOL_CATALOG_FINGERPRINTS } = require('../electron/tool-catalog-fingerprint.cjs') as { LEGACY_TOOL_CATALOG_FINGERPRINTS:Record<number,string> };
 const roots:string[]=[];
 class FakeDriver extends EventEmitter {
   turnId='turn-1'; closed=false; threadCounter=0; active=false;
@@ -16,8 +17,9 @@ class FakeDriver extends EventEmitter {
   threadId:string|null=null;
   effectiveByThread=new Map<string,{model:string;effort:string|null}>();
   executedSettings:Array<{threadId:string;model:string;effort:string|null}>=[];
+  threadStartDefinitions:any[]=[];
   listModels=vi.fn(async()=>[{id:'gpt-6.1-sol',catalogId:'catalog-sol',displayName:'GPT 6.1 Sol',description:'Current default model',isDefault:true,defaultEffort:'low',efforts:[{id:'low',description:'Fast'},{id:'high',description:'Deep'}]},{id:'gpt-6-luna',catalogId:'catalog-luna',displayName:'GPT 6 Luna',description:'Alternative model',isDefault:false,defaultEffort:'low',efforts:[{id:'low',description:'Fast'},{id:'high',description:'Deep'}]}]);
-  startTurn=vi.fn(async(_text:string,threadId:string|null=null,options:any={})=>{this.active=true;this.threadId=threadId||`thread-${++this.threadCounter}`;const previous=this.effectiveByThread.get(this.threadId)||{model:'gpt-6.1-sol',effort:'low'};const effective={model:options.model??previous.model,effort:options.effort??previous.effort};this.effectiveByThread.set(this.threadId,effective);this.executedSettings.push({threadId:this.threadId,...effective});return {threadId:this.threadId,turnId:this.turnId}});
+  startTurn=vi.fn(async(_text:string,threadId:string|null=null,options:any={})=>{this.active=true;if(!threadId)this.threadStartDefinitions=structuredClone(options.dynamicTools||[]);this.threadId=threadId||`thread-${++this.threadCounter}`;const previous=this.effectiveByThread.get(this.threadId)||{model:'gpt-6.1-sol',effort:'low'};const effective={model:options.model??previous.model,effort:options.effort??previous.effort};this.effectiveByThread.set(this.threadId,effective);this.executedSettings.push({threadId:this.threadId,...effective});return {threadId:this.threadId,turnId:this.turnId}});
   cancelTurn=vi.fn(async()=>{});resumeThread=vi.fn(async(id:string)=>{this.threadId=id;return id});readThreadCwd=vi.fn(async()=>null as string|null);deleteThread=vi.fn(async(id:string)=>({threadId:id}));
   setToolCallHandler(handler:any){this.toolCallHandler=handler;}
   invokeTool(call:any){if(!this.toolCallHandler)throw new Error('No tool handler');return this.toolCallHandler(call);}
@@ -50,6 +52,12 @@ describe('AgentRuntime sessions and tasks',()=>{
     expect(runtime.listSessions()).toMatchObject({sessions:[{id:session.id,messageCount:0,threadState:'new'}],storage:{available:true}});
     const {taskId}=await runtime.submit(session.id,'hello');
     await waitFor(()=>driver.startTurn.mock.results.length>0&&store.get(session.id).codexThreadId==='thread-1');
+    const sentDefinitions=driver.threadStartDefinitions;const taskSnapshot=runtime.toolCatalog.snapshot();
+    expect(sentDefinitions).toEqual(runtime.toolCatalog.dynamicTools(taskSnapshot));
+    expect(sentDefinitions.map((definition:any)=>definition.name)).toEqual(['list_workspace_files','read_workspace_file','read_workspace_passage']);
+    expect(sentDefinitions.find((definition:any)=>definition.name==='read_workspace_passage').inputSchema).toEqual(runtime.toolCatalog.dynamicTools(taskSnapshot).find((definition:any)=>definition.name==='read_workspace_passage').inputSchema);
+    expect(store.get(session.id).toolCatalogFingerprint).toBe(runtime.toolCatalog.fingerprint(taskSnapshot));
+    expect(driver.startTurn).toHaveBeenLastCalledWith('hello',null,expect.objectContaining({dynamicTools:sentDefinitions}));
     driver.emit('delta',{delta:'reply ',turnId:'turn-1'});driver.emit('delta',{delta:'text',turnId:'turn-1'});driver.emit('turn',{status:'completed',turnId:'turn-1'});
     await waitFor(()=>events.some(event=>event.type==='task-status'&&event.status==='completed'));
     const saved=store.get(session.id);
@@ -94,10 +102,10 @@ describe('AgentRuntime sessions and tasks',()=>{
   });
   it('reapplies the current session model and effort after restoring a historical thread',async()=>{
     const {runtime,store,driver}=await runtimeWith();const {session}=await runtime.createSession();
-    await store.setCodexThread(session.id,'saved-thread',1);
+    await store.setCodexThread(session.id,'saved-thread',LEGACY_TOOL_CATALOG_FINGERPRINTS[1]);
     await store.setModelConfig(session.id,null,'high');
     const opened=await runtime.openSession(session.id);
-    expect(opened.threadState).toBe('connected');expect(driver.resumeThread).toHaveBeenCalledWith('saved-thread',session.workspaceRoot);
+    expect(opened.threadState).toBe('connected');expect(opened.toolCatalogCompatibility).toBe('partial');expect(opened.availableToolNames).toEqual(['list_workspace_files','read_workspace_file']);expect(driver.resumeThread).toHaveBeenCalledWith('saved-thread',session.workspaceRoot);
     await runtime.submit(session.id,'continue with current settings');await waitFor(()=>driver.startTurn.mock.calls.length===1);
     expect(driver.startTurn).toHaveBeenCalledWith('continue with current settings','saved-thread',expect.objectContaining({model:'gpt-6.1-sol',effort:'high'}));
     expect(driver.executedSettings.at(-1)).toEqual({threadId:'saved-thread',model:'gpt-6.1-sol',effort:'high'});
@@ -123,7 +131,7 @@ describe('AgentRuntime sessions and tasks',()=>{
     const {runtime,store,driver,workspace}=await runtimeWith();
     const {session}=await runtime.createSession();
     expect(session.workspaceRoot).toBe(workspace.state().root);
-    await store.setCodexThread(session.id,'thread-project-a',1);
+    await store.setCodexThread(session.id,'thread-project-a',LEGACY_TOOL_CATALOG_FINGERPRINTS[1]);
     const other=path.join(roots.at(-1)!,'other-project');await mkdir(other);
     await runtime.setWorkspace(other);
     const opened=await runtime.openSession(session.id);
@@ -152,7 +160,7 @@ describe('AgentRuntime sessions and tasks',()=>{
   });
   it('recovers a legacy session project from Codex cwd metadata before deciding whether it can resume',async()=>{
     const {runtime,store,driver,workspace}=await runtimeWith();
-    const session=await store.create(null);await store.setCodexThread(session.id,'thread-legacy',1);
+    const session=await store.create(null);await store.setCodexThread(session.id,'thread-legacy',LEGACY_TOOL_CATALOG_FINGERPRINTS[1]);
     driver.readThreadCwd.mockResolvedValue(workspace.state().root);
     const opened=await runtime.openSession(session.id);
     expect(driver.readThreadCwd).toHaveBeenCalledWith('thread-legacy');
@@ -162,7 +170,7 @@ describe('AgentRuntime sessions and tasks',()=>{
   });
   it('does not guess a legacy project from the currently selected workspace when Codex metadata is unavailable',async()=>{
     const {runtime,store,driver,workspace}=await runtimeWith();
-    const session=await store.create(null);await store.setCodexThread(session.id,'thread-metadata-missing',1);
+    const session=await store.create(null);await store.setCodexThread(session.id,'thread-metadata-missing',LEGACY_TOOL_CATALOG_FINGERPRINTS[1]);
     driver.readThreadCwd.mockRejectedValue(new Error('metadata unavailable'));
     const opened=await runtime.openSession(session.id);
     expect(opened.session.workspaceRoot).toBeNull();
@@ -194,6 +202,21 @@ describe('AgentRuntime sessions and tasks',()=>{
     driver.listModels=vi.fn(async()=>{throw new Error('model/list unavailable')});
     await expect(runtime.listModels()).rejects.toThrow('model/list unavailable');
   });
+  it('limits a migrated v1 thread to its archived tools and rejects the new passage tool before approval',async()=>{
+    const {runtime,store,driver,workspace}=await runtimeWith();const {session}=await runtime.createSession();await store.setCodexThread(session.id,'thread-v1',LEGACY_TOOL_CATALOG_FINGERPRINTS[1]);const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));
+    const opened=await runtime.openSession(session.id);expect(opened.toolCatalogCompatibility).toBe('partial');expect(opened.availableToolNames).toEqual(['list_workspace_files','read_workspace_file']);
+    await runtime.submit(session.id,'Continue on the migrated thread');await waitFor(()=>driver.startTurn.mock.calls.length===1);const definitions=driver.startTurn.mock.calls[0][2].dynamicTools;expect(definitions.map((definition:any)=>definition.name)).toEqual(['list_workspace_files','read_workspace_file']);
+    const spy=vi.spyOn(workspace,'readTextRange');const response=await driver.invokeTool({requestId:69,callId:'old-thread-passage',threadId:'thread-v1',turnId:'turn-1',namespace:null,tool:'read_workspace_passage',arguments:{path:'article.md',startLine:1,endLine:2,reason:'Read this passage'}});
+    expect(response.success).toBe(false);expect(spy).not.toHaveBeenCalled();expect(events.some(event=>event.type==='tool-approval-requested'&&event.taskId===runtime.activeTask.id)).toBe(false);driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
+  });
+  it('keeps ordinary chat available for threads with unknown catalog metadata but gives them no tools',async()=>{
+    const {runtime,store,driver,workspace}=await runtimeWith();const {session}=await runtime.createSession();await store.setCodexThread(session.id,'thread-with-unknown-catalog');
+    const opened=await runtime.openSession(session.id);expect(opened.toolCatalogCompatibility).toBe('unknown');expect(opened.availableToolNames).toEqual([]);
+    const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));await runtime.submit(session.id,'Continue ordinary conversation');await waitFor(()=>driver.startTurn.mock.calls.length===1);
+    expect(driver.startTurn).toHaveBeenLastCalledWith('Continue ordinary conversation','thread-with-unknown-catalog',expect.objectContaining({dynamicTools:[]}));
+    const read=vi.spyOn(workspace,'openReadOnly');const response=await driver.invokeTool({requestId:70,callId:'unknown-thread-read',threadId:'thread-with-unknown-catalog',turnId:'turn-1',namespace:null,tool:'read_workspace_file',arguments:{path:'secret.txt',reason:'Try a tool'}});
+    expect(response.success).toBe(false);expect(read).not.toHaveBeenCalled();expect(events.some(event=>event.type==='tool-approval-requested')).toBe(false);driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
+  });
   it('rejects overlapping tasks, validates cancellation IDs, and supports repeated cancellation',async()=>{
     const {runtime,driver}=await runtimeWith();const {session}=await runtime.createSession();const {taskId}=await runtime.submit(session.id,'one');
     await waitFor(()=>driver.startTurn.mock.results.length>0);
@@ -201,6 +224,11 @@ describe('AgentRuntime sessions and tasks',()=>{
     await expect(runtime.cancel('other')).rejects.toThrow(/不存在/);
     await runtime.cancel(taskId);await runtime.cancel(taskId);expect(driver.cancelTurn).toHaveBeenCalledOnce();
     driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
+  });
+  it('rejects tool requests from a different session thread before approval or execution',async()=>{
+    const {runtime,store,driver,workspace}=await runtimeWith();const {session}=await runtime.createSession();const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));await runtime.submit(session.id,'A task');await waitFor(()=>store.get(session.id).codexThreadId==='thread-1'&&runtime.activeTask.turnId==='turn-1');const read=vi.spyOn(workspace,'openReadOnly');
+    const response=await driver.invokeTool({requestId:79,callId:'foreign-thread-call',threadId:'thread-from-another-session',turnId:'turn-1',namespace:null,tool:'read_workspace_file',arguments:{path:'actual.txt',reason:'Read the requested file'}});
+    expect(response.success).toBe(false);expect(read).not.toHaveBeenCalled();expect(events.some(event=>event.type==='tool-approval-requested')).toBe(false);driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
   });
   it('waits for a request-bound approval before reading and returns the real structured file result',async()=>{
     const {runtime,store,driver,workspace}=await runtimeWith();await writeFile(path.join(workspace.state().root,'actual.txt'),'actual authorized contents');
@@ -229,6 +257,17 @@ describe('AgentRuntime sessions and tasks',()=>{
     await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===2);await runtime.cancel(taskId);
     expect((await cancelled).success).toBe(false);expect(read).not.toHaveBeenCalled();
     driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
+  });
+  it('gates reading passages on approval and emits every user-visible execution outcome',async()=>{
+    const {runtime,store,driver,workspace}=await runtimeWith();const articlePath=path.join(workspace.state().root,'article.md');await writeFile(articlePath,'line one\nline two\nline three');
+    const {session}=await runtime.createSession();const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));const {taskId}=await runtime.submit(session.id,'Read a selected article passage');await waitFor(()=>store.get(session.id).codexThreadId==='thread-1'&&runtime.activeTask.turnId==='turn-1');
+    const read=vi.spyOn(workspace,'readTextRange');const call=(requestId:number)=>driver.invokeTool({requestId,callId:`passage-${requestId}`,threadId:'thread-1',turnId:'turn-1',namespace:null,tool:'read_workspace_passage',arguments:{path:'article.md',startLine:2,endLine:3,reason:'Explain these lines'}});
+    const approvedCall=call(101);await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===1);const approved=events.find(event=>event.type==='tool-approval-requested');expect(approved).toMatchObject({toolName:'read_workspace_passage',relativePath:'article.md',operation:'read',lineRange:{startLine:2,endLine:3},taskId,sessionId:session.id});expect(read).not.toHaveBeenCalled();
+    runtime.resolveToolApproval({approvalId:approved.approvalId,sessionId:session.id,taskId,decision:'approved'});const successful=await approvedCall;expect(successful.success).toBe(true);expect(JSON.parse(successful.contentItems[0].text)).toMatchObject({ok:true,data:{sourcePath:'article.md',startLine:2,endLine:3,content:'line two\nline three',trust:'untrusted'}});expect(read).toHaveBeenCalledOnce();
+    const completedEvents=events.filter(event=>event.type==='tool-execution'&&event.approvalId===approved.approvalId);expect(completedEvents.map(event=>event.stage)).toEqual(['started','completed']);
+    read.mockRejectedValueOnce(Object.assign(new Error('bounded read failed'),{code:'tool_error'}));const failedCall=call(102);await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===2);const failedApproval=events.filter(event=>event.type==='tool-approval-requested').at(-1);runtime.resolveToolApproval({approvalId:failedApproval.approvalId,sessionId:session.id,taskId,decision:'approved'});expect((await failedCall).success).toBe(false);expect(events.some(event=>event.type==='tool-execution'&&event.approvalId===failedApproval.approvalId&&event.stage==='failed')).toBe(true);
+    const rejectedCall=call(103);await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===3);const rejectedApproval=events.filter(event=>event.type==='tool-approval-requested').at(-1);const readsBeforeReject=read.mock.calls.length;runtime.resolveToolApproval({approvalId:rejectedApproval.approvalId,sessionId:session.id,taskId,decision:'rejected'});expect((await rejectedCall).success).toBe(false);expect(read.mock.calls.length).toBe(readsBeforeReject);expect(events.some(event=>event.type==='tool-execution'&&event.approvalId===rejectedApproval.approvalId&&event.stage==='denied')).toBe(true);
+    const cancelledCall=call(104);await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===4);const cancelledApproval=events.filter(event=>event.type==='tool-approval-requested').at(-1);await runtime.cancel(taskId);expect((await cancelledCall).success).toBe(false);expect(events.some(event=>event.type==='tool-execution'&&event.approvalId===cancelledApproval.approvalId&&event.stage==='cancelled')).toBe(true);driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
   });
   it('reports persistence failure and interrupts the active Codex turn',async()=>{
     const {runtime,store,driver}=await runtimeWith();const {session}=await runtime.createSession();const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));

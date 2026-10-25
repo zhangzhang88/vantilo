@@ -19,6 +19,7 @@ class ApprovalService extends EventEmitter {
 
   request(details) {
     if (this.pending.size >= this.maxPending) throw new Error('Too many workspace tool approvals are already pending.');
+    if (details.lineRange !== undefined && (!details.lineRange || !Number.isInteger(details.lineRange.startLine) || !Number.isInteger(details.lineRange.endLine) || details.lineRange.startLine < 1 || details.lineRange.endLine < details.lineRange.startLine || details.lineRange.endLine - details.lineRange.startLine + 1 > 40)) throw new Error('Invalid approved line range.');
     const key = requestKey(details.serverRequestId);
     this.#pruneSeen();
     if (this.seenRequests.has(key)) throw new Error('Duplicate or replayed Codex tool request.');
@@ -30,7 +31,7 @@ class ApprovalService extends EventEmitter {
       approvalId, serverRequestId: details.serverRequestId, callId: details.callId,
       sessionId: details.sessionId, taskId: details.taskId, threadId: details.threadId, turnId: details.turnId,
       toolName: details.toolName, reason: details.reason, relativePath: details.relativePath,
-      operation: details.operation, readOnly: true, workspaceRoot: details.workspaceRoot,
+      operation: details.operation, ...(details.lineRange ? {lineRange:{startLine:details.lineRange.startLine,endLine:details.lineRange.endLine}} : {}), readOnly: true, workspaceRoot: details.workspaceRoot,
       workspaceRevision: details.workspaceRevision, createdAt: new Date(createdAt).toISOString(),
       expiresAt: new Date(createdAt + this.timeoutMs).toISOString()
     };

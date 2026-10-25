@@ -2,8 +2,9 @@ const { randomUUID } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { z } = require('zod');
+const { LEGACY_TOOL_CATALOG_FINGERPRINTS } = require('./tool-catalog-fingerprint.cjs');
 
-const VERSION = 4;
+const VERSION = 5;
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_TITLE = 'New conversation';
 const MessageSchema = z.object({
@@ -16,8 +17,10 @@ const LegacySessionSchema = z.object({
 }).strict();
 const Version2SessionSchema = LegacySessionSchema.extend({ modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable() }).strict();
 const Version3SessionSchema = Version2SessionSchema.extend({ workspaceRoot: z.string().min(1).max(4096).nullable() }).strict();
-const SessionSchema = Version3SessionSchema.extend({ pinned: z.boolean() }).strict();
+const Version4SessionSchema = Version3SessionSchema.extend({ pinned: z.boolean() }).strict();
+const SessionSchema = Version4SessionSchema.omit({ toolCatalogVersion: true }).extend({ toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable() }).strict();
 const DocumentSchema = z.object({ version: z.literal(VERSION), sessions: z.array(SessionSchema) }).strict();
+const Version4DocumentSchema = z.object({ version: z.literal(4), sessions: z.array(Version4SessionSchema) }).strict();
 const Version3DocumentSchema = z.object({ version: z.literal(3), sessions: z.array(Version3SessionSchema) }).strict();
 const Version2DocumentSchema = z.object({ version: z.literal(2), sessions: z.array(Version2SessionSchema) }).strict();
 const LegacyDocumentSchema = z.object({ version: z.literal(1), sessions: z.array(LegacySessionSchema) }).strict();
@@ -50,6 +53,11 @@ function preview(session) {
   return last ? redactSecrets(last.text).replace(/\s+/g, ' ').slice(0, 120) : '';
 }
 function clone(value) { return structuredClone(value); }
+function migrateToolCatalogMetadata(session) {
+  const fingerprint = session.codexThreadId && session.toolCatalogVersion === 1 ? LEGACY_TOOL_CATALOG_FINGERPRINTS[1] : null;
+  const { toolCatalogVersion, ...rest } = session;
+  return { ...rest, toolCatalogFingerprint: fingerprint };
+}
 
 class SessionStore {
   constructor({ filePath }) {
@@ -98,17 +106,21 @@ class SessionStore {
       const current = DocumentSchema.safeParse(candidate);
       if (current.success) parsed = current.data;
       else {
+        const version4 = Version4DocumentSchema.safeParse(candidate);
+        if (version4.success) parsed = { version: VERSION, sessions: version4.data.sessions.map(session => ({ ...migrateToolCatalogMetadata(session), pinned: session.pinned })) };
+        else {
         const version3 = Version3DocumentSchema.safeParse(candidate);
-        if (version3.success) parsed = { version: VERSION, sessions: version3.data.sessions.map(session => ({ ...session, pinned: false })) };
+        if (version3.success) parsed = { version: VERSION, sessions: version3.data.sessions.map(session => ({ ...migrateToolCatalogMetadata(session), pinned: false })) };
         else {
           const version2 = Version2DocumentSchema.safeParse(candidate);
           if (version2.success) {
-            parsed = { version: VERSION, sessions: version2.data.sessions.map(session => ({ ...session, toolCatalogVersion: session.toolCatalogVersion ?? null, workspaceRoot: null, pinned: false })) };
+            parsed = { version: VERSION, sessions: version2.data.sessions.map(session => ({ ...migrateToolCatalogMetadata({ ...session, toolCatalogVersion: session.toolCatalogVersion ?? null }), workspaceRoot: null, pinned: false })) };
           } else {
             const legacy = LegacyDocumentSchema.safeParse(candidate);
             if (!legacy.success) throw current.error;
-            parsed = { version: VERSION, sessions: legacy.data.sessions.map(session => ({ ...session, toolCatalogVersion: session.toolCatalogVersion ?? null, modelId: null, reasoningEffort: null, workspaceRoot: null, pinned: false })) };
+            parsed = { version: VERSION, sessions: legacy.data.sessions.map(session => ({ ...migrateToolCatalogMetadata({ ...session, toolCatalogVersion: session.toolCatalogVersion ?? null }), modelId: null, reasoningEffort: null, workspaceRoot: null, pinned: false })) };
           }
+        }
         }
       }
     }
@@ -136,7 +148,7 @@ class SessionStore {
     this.#assertLoaded();
     return clone(this.data.sessions).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(session => ({
       id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt,
-      codexThreadId: session.codexThreadId, toolCatalogVersion: session.toolCatalogVersion ?? null, modelId: session.modelId ?? null, reasoningEffort: session.reasoningEffort ?? null, workspaceRoot: session.workspaceRoot ?? null, pinned: session.pinned ?? false, messageCount: session.messages.length, preview: preview(session)
+      codexThreadId: session.codexThreadId, toolCatalogFingerprint: session.toolCatalogFingerprint ?? null, modelId: session.modelId ?? null, reasoningEffort: session.reasoningEffort ?? null, workspaceRoot: session.workspaceRoot ?? null, pinned: session.pinned ?? false, messageCount: session.messages.length, preview: preview(session)
     }));
   }
 
@@ -151,7 +163,7 @@ class SessionStore {
     if (workspaceRoot !== null && (typeof workspaceRoot !== 'string' || !path.isAbsolute(workspaceRoot) || workspaceRoot.length > 4096)) throw new Error('A canonical absolute workspace path is required.');
     return this.#mutate(data => {
       const now = new Date().toISOString();
-      const session = { id: randomUUID(), title: DEFAULT_TITLE, createdAt: now, updatedAt: now, codexThreadId: null, toolCatalogVersion: null, modelId: null, reasoningEffort: null, workspaceRoot, pinned: false, messages: [] };
+      const session = { id: randomUUID(), title: DEFAULT_TITLE, createdAt: now, updatedAt: now, codexThreadId: null, toolCatalogFingerprint: null, modelId: null, reasoningEffort: null, workspaceRoot, pinned: false, messages: [] };
       data.sessions.push(session);
       return session;
     });
@@ -226,11 +238,12 @@ class SessionStore {
     });
   }
 
-  setCodexThread(sessionId, threadId, toolCatalogVersion = null) {
+  setCodexThread(sessionId, threadId, toolCatalogFingerprint = null) {
     return this.#mutate(data => {
       const session = this.#find(data, sessionId);
       session.codexThreadId = threadId;
-      session.toolCatalogVersion = toolCatalogVersion;
+      if (toolCatalogFingerprint !== null && (typeof toolCatalogFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(toolCatalogFingerprint))) throw new Error('A valid tool catalog fingerprint is required.');
+      session.toolCatalogFingerprint = toolCatalogFingerprint;
       session.updatedAt = new Date().toISOString();
       return session;
     });

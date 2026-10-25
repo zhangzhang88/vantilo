@@ -22,6 +22,10 @@ describe('one-shot request-bound tool approvals',()=>{
     service.decide({approvalId:request.approvalId,sessionId:details().sessionId,taskId:details().taskId,decision:'rejected'});
     await expect(waiting).resolves.toMatchObject({status:'rejected'});
   });
+  it('retains a validated article line range in the one-time approval receipt',async()=>{
+    const service=new ApprovalService();const events:any[]=[];service.on('requested',(event:any)=>events.push(event));const waiting=service.request(details({lineRange:{startLine:4,endLine:10}}));expect(events[0].lineRange).toEqual({startLine:4,endLine:10});service.decide({approvalId:events[0].approvalId,sessionId:details().sessionId,taskId:details().taskId,decision:'rejected'});await expect(waiting).resolves.toMatchObject({status:'rejected'});
+    expect(()=>service.request(details({serverRequestId:8,lineRange:{startLine:1,endLine:41}}))).toThrow(/line range/);
+  });
   it('expires approvals closed and rejects pending calls on cancellation or Runtime shutdown',async()=>{
     vi.useFakeTimers();const service=new ApprovalService({timeoutMs:50});const requests:any[]=[];const resolved:any[]=[];service.on('requested',(request:any)=>requests.push(request));service.on('resolved',(request:any)=>resolved.push(request));
     const expiring=service.request(details());await vi.advanceTimersByTimeAsync(51);await expect(expiring).resolves.toMatchObject({status:'expired'});expect(resolved.at(-1).status).toBe('expired');

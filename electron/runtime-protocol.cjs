@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const path = require('node:path');
 
-const PROTOCOL_VERSION = 6;
+const PROTOCOL_VERSION = 7;
 const MAX_PROMPT_LENGTH = 20000;
 const Uuid = z.string().uuid();
 const RuntimeStatus = z.object({ status: z.enum(['connecting', 'ready', 'error', 'stopped']), error: z.string().optional() }).strict();
@@ -18,30 +18,30 @@ const SessionMessage = z.object({
 }).strict();
 const SessionSummary = z.object({
   id: Uuid, title: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
-  codexThreadId: z.string().nullable(), toolCatalogVersion: z.number().int().positive().nullable(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messageCount: z.number().int().nonnegative(), preview: z.string(),
+  codexThreadId: z.string().nullable(), toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), toolCatalogCompatibility: z.enum(['new','current','partial','incompatible','unknown']).optional(), availableToolNames: z.array(z.enum(['list_workspace_files','read_workspace_file','read_workspace_passage'])).max(100).optional(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messageCount: z.number().int().nonnegative(), preview: z.string(),
   threadState: z.enum(['new', 'history', 'connected'])
 }).strict();
 const Session = z.object({
   id: Uuid, title: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
-  codexThreadId: z.string().nullable(), toolCatalogVersion: z.number().int().positive().nullable(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messages: z.array(SessionMessage)
+  codexThreadId: z.string().nullable(), toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messages: z.array(SessionMessage)
 }).strict();
 const SessionView = z.object({
-  session: Session, threadState: z.enum(['new', 'history', 'connected']), connectionError: z.string().nullable()
+  session: Session, threadState: z.enum(['new', 'history', 'connected']), connectionError: z.string().nullable(), toolCatalogCompatibility: z.enum(['new','current','partial','incompatible','unknown']).optional(), availableToolNames: z.array(z.enum(['list_workspace_files','read_workspace_file','read_workspace_passage'])).max(100).optional()
 }).strict();
 const AgentEvent = z.union([
   z.object({ type: z.literal('task-started'), taskId: Uuid, sessionId: Uuid, text: z.string(), status: z.literal('running'), userMessage: SessionMessage, assistantMessage: SessionMessage }).strict(),
   z.object({ type: z.literal('message-delta'), taskId: Uuid, sessionId: Uuid, messageId: Uuid, delta: z.string() }).strict(),
   z.object({ type: z.literal('message-status'), taskId: Uuid, sessionId: Uuid, record: SessionMessage }).strict(),
-  z.object({ type: z.literal('task-status'), taskId: Uuid, sessionId: Uuid, status: z.enum(['running', 'cancelling', 'completed', 'failed', 'cancelled']), error: z.string().nullable().optional(), message: z.string().optional() }).strict(),
+  z.object({ type: z.literal('task-status'), taskId: Uuid, sessionId: Uuid, status: z.enum(['running', 'cancelling', 'completed', 'failed', 'cancelled']), error: z.string().nullable().optional(), message: z.string().optional(), cause: z.enum(['runtime-disconnected']).optional() }).strict(),
   z.object({ type: z.literal('activity'), taskId: Uuid.optional(), sessionId: Uuid.optional(), message: z.string() }).strict(),
   z.object({ type: z.literal('session-updated'), session: SessionSummary }).strict(),
   z.object({ type: z.literal('storage-warning'), message: z.string() }).strict(),
   z.object({ type: z.literal('storage-error'), message: z.string() }).strict(),
   z.object({ type: z.literal('workspace-updated'), workspace: WorkspaceState }).strict(),
   z.object({ type: z.literal('projects-updated'), projects: z.array(ProjectEntry).max(500) }).strict(),
-  z.object({ type: z.literal('tool-approval-requested'), approvalId: Uuid, serverRequestId: z.union([z.string().max(256), z.number()]), callId: z.string().min(1).max(256), sessionId: Uuid, taskId: Uuid, threadId: z.string().min(1).max(512), turnId: z.string().min(1).max(512), toolName: z.enum(['list_workspace_files', 'read_workspace_file']), reason: z.string().max(500), relativePath: z.string().min(1).max(1024), operation: z.enum(['list', 'read']), readOnly: z.literal(true), workspaceRoot: z.string().min(1).max(4096), workspaceRevision: z.number().int().positive(), createdAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
+  z.object({ type: z.literal('tool-approval-requested'), approvalId: Uuid, serverRequestId: z.union([z.string().max(256), z.number()]), callId: z.string().min(1).max(256), sessionId: Uuid, taskId: Uuid, threadId: z.string().min(1).max(512), turnId: z.string().min(1).max(512), toolName: z.enum(['list_workspace_files', 'read_workspace_file', 'read_workspace_passage']), reason: z.string().max(500), relativePath: z.string().min(1).max(1024), operation: z.enum(['list', 'read']), lineRange: z.object({startLine:z.number().int().positive(),endLine:z.number().int().positive()}).strict().optional(), readOnly: z.literal(true), workspaceRoot: z.string().min(1).max(4096), workspaceRevision: z.number().int().positive(), createdAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
   z.object({ type: z.literal('tool-approval-resolved'), approvalId: Uuid, sessionId: Uuid, taskId: Uuid, status: z.enum(['approved', 'rejected', 'expired', 'cancelled']) }).strict(),
-  z.object({ type: z.literal('tool-execution'), approvalId: Uuid, sessionId: Uuid, taskId: Uuid, toolName: z.enum(['list_workspace_files', 'read_workspace_file']), stage: z.enum(['started', 'completed', 'failed', 'denied']), summary: z.string().max(4096), error: z.string().max(4096).nullable() }).strict()
+  z.object({ type: z.literal('tool-execution'), approvalId: Uuid, sessionId: Uuid, taskId: Uuid, toolName: z.enum(['list_workspace_files', 'read_workspace_file', 'read_workspace_passage']), stage: z.enum(['started', 'completed', 'failed', 'denied', 'cancelled']), summary: z.string().max(4096), error: z.string().max(4096).nullable() }).strict()
 ]);
 const Request = z.object({
   version: z.literal(PROTOCOL_VERSION), type: z.literal('request'), requestId: Uuid,

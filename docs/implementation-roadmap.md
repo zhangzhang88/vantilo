@@ -12,7 +12,7 @@
 - [x] Electron `utilityProcess` Runtime lifecycle supervised by the main process; Runtime owns the Codex child process.
 - [x] Codex app-server initialize/thread/turn protocol, JSONL buffering/parsing, request IDs, timeouts, error/exit handling, streaming deltas, and cancellation.
 - [x] Real conversation messages, activity, runtime status, task completion/error/cancellation in the workspace UI.
-- [x] Read-only sandbox; turn-level network disabled; native Codex approval policy `never`. Only the two Vantilo dynamic workspace tools are exposed to Codex; every invocation requires a distinct one-time Vantilo approval. Other server-initiated requests are denied; unrecognized MCP startup fails closed.
+- [x] Read-only sandbox; turn-level network disabled; native Codex approval policy `never`. Only the Vantilo Tool Catalog tools are exposed to Codex; every invocation requires a distinct one-time Vantilo approval. Other server-initiated requests are denied; unrecognized MCP startup fails closed.
 - [x] Unit tests for JSONL framing, request correlation, deltas, statuses, cancel routing, timeouts, process errors/cleanup, Runtime IPC schemas/correlation/crash handling, and renderer IPC boundary.
 - [x] Runtime-owned persistent sessions and local conversation history UI; per-session message isolation and Codex thread recovery.
 - [x] Explicit workspace selection, Runtime-owned authorization, and secure exposure of only the Vantilo read-only file catalog.
@@ -50,7 +50,7 @@
 - Actual Codex app-server SIGKILL was tested after the split: the Runtime stayed responsive and returned a structured error through the UI IPC.
 - Unit tests cover startup timeout, malformed messages, concurrent request correlation, cancellation routing, unexpected Runtime/Codex exits, and cleanup.
 - App-server stderr is redacted to byte-count diagnostics; credentials and raw stderr are not sent to the renderer.
-- Workspace authorization is selected only through Electron's native directory picker, persisted separately under userData, canonicalized, and tied to a monotonically increasing revision. The Runtime alone handles strict versioned tool schemas for `list_workspace_files` and `read_workspace_file`.
+- Workspace authorization is selected only through Electron's native directory picker, persisted separately under userData, canonicalized, and tied to a monotonically increasing revision. The Runtime alone handles strict versioned tool schemas for `list_workspace_files`, `read_workspace_file`, and (since Phase 2.3) `read_workspace_passage`.
 - Tool requests arrive through the verified Codex `item/tool/call` JSON-RPC server request. Unsupported server requests and built-in privileged activities are denied/fail-closed. Per-call approval records carry the server request/call, Codex thread/turn, Vantilo task/session, operation, reason, workspace root/revision, and expiry; approval IDs are single-use and never persisted.
 - Automated tests cover strict catalog inputs/outputs, bounded execution and cancellation, sensitive paths, symlink/hard-link/path escapes, approval expiry/replay/session/task mismatch, Codex server-request response correlation, Runtime approval gating, real file access only after approval, and rejection/cancellation without file reads.
 - Local conversation storage is a versioned JSON document at `app.getPath('userData')/sessions.json`; queued mutations use an atomic temp-file rename, session directory/file permissions are set to `0700`/`0600`, and credential-like message text is redacted before persistence. Corrupt history is preserved to a sidecar and surfaced to the UI; pending assistant messages are recovered as interrupted after restart. Store, corruption, write-failure, ordering, isolation, and restart behavior have unit tests.
@@ -70,7 +70,28 @@
 - [x] Tool catalog, approval service, runtime correlation, IPC/preload/UI boundary, and failure/cancellation behavior covered by automated tests.
 - [x] Run `npm run test:e2e:codex` against the local authenticated Codex app-server; real model A→catalog-default switching on the same thread (including default effort), approved listing/read, Runtime restart and thread recovery, and a rejected read with zero file access all passed on 2026-10-25. The test used temporary Vantilo workspace/session data and a separate test thread, did not use the active Vantilo session, and did not edit Codex configuration/authentication. It verifies submitted settings and task success, not per-turn inference telemetry.
 
-## Phase 3 — Reading and English typing game
+### Phase 2.1 — Codex thread/tool-catalog compatibility boundary
+
+- Codex tool definitions are supplied to `thread/start`. The current Vantilo Driver does not supply updated definitions on `thread/resume` or `turn/start`; do not assume that an existing Codex thread can receive a newly added tool catalog. New threads can receive the then-current catalog, while an existing thread may retain its previous definitions.
+- Runtime must continue to reject unknown, disabled, incompatible-version, or out-of-current-task-snapshot calls, even if Codex presents or attempts to call a stale tool definition.
+- Phase 2.1 did not implement a thread-level catalog fingerprint. Phase 2.2 below adds fingerprinting and conservative migration; it still does not implement a Codex same-thread tool-definition update.
+
+### Phase 2.2 — Thread-scoped catalog compatibility (required before expanding tools)
+
+- [x] Compute a stable SHA-256 fingerprint from the sorted effective Codex tool definitions plus internal IDs/versions, effects, resource scopes, approval policy, and timeout. Persist it in session schema v5 as `toolCatalogFingerprint`; the existing numeric `toolCatalogVersion` is migrated, not retained as a parallel current field.
+- [x] Migrate only known v4/legacy `toolCatalogVersion: 1` threads to the archived fingerprint for the exact two-tool definitions shipped by that version. Missing or unrecognized version evidence maps to an unknown fingerprint and an empty allowed-tool set.
+- [x] On restore, compare the stored thread fingerprint with the current catalog. Keep only historically proven unchanged tools; unknown or incompatible calls fail before approval/execution. UI reports partial/unknown/incompatible status, offers a new conversation, and continues ordinary chat/history/model selection.
+- [x] Do not assume tool definitions refresh on `thread/resume` or `turn/start`; new definitions are sent only when creating a thread with `thread/start`. No real Codex E2E or same-thread update path is claimed.
+
+### Phase 2.3 — First reading-domain vertical slice
+
+- [x] Add `vantilo.reading.read-passage`: one explicitly requested 1-based inclusive range from authorized `.md`, `.markdown`, `.txt`, or `.text` files, with per-call approval, line/output/scan bounds, and explicit untrusted-source metadata.
+- [x] Reuse WorkspaceAuthority path, symlink, hard-link, workspace-revision, and file-identity checks; do not traverse or automatically ingest whole books.
+- [x] Fingerprint the expanded catalog while retaining the immutable v1 archive. New threads receive the passage tool; migrated v1 threads remain limited to their historically supplied list/read tools. `thread/resume` and `turn/start` do not refresh definitions.
+- [x] Bump the strict Runtime IPC protocol contract to version 7 for the new tool names and compatibility payload schema.
+- [ ] Real Codex passage E2E: **NOT RUN**. Current evidence is local Fake Driver/app-server simulation and unit tests only; this is not real Codex acceptance. The last confirmed local checks were 145 tests passed, `npm run typecheck`, `npm run build`, and `git diff --check` passed. No remote thread or real model request has been created for the Passage E2E.
+
+## Phase 3 — English typing game
 
 - [ ] Review upstream code and asset rights before reuse; otherwise independently implement domain behavior.
 

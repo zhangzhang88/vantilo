@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { SessionStore, redactSecrets, MAX_SESSION_FILE_BYTES } = require('../electron/session-store.cjs') as { SessionStore: new(options:any)=>any; redactSecrets:(text:string)=>string; MAX_SESSION_FILE_BYTES:number };
+const { LEGACY_TOOL_CATALOG_FINGERPRINTS } = require('../electron/tool-catalog-fingerprint.cjs') as { LEGACY_TOOL_CATALOG_FINGERPRINTS:Record<number,string> };
 const roots:string[]=[];
 async function makeStore() { const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-sessions-'));roots.push(dir);const filePath=path.join(dir,'sessions.json');const store=new SessionStore({filePath});await store.load();return {store,filePath,dir}; }
 afterEach(async()=>{await Promise.all(roots.splice(0).map(dir=>rm(dir,{recursive:true,force:true})))});
@@ -24,16 +25,29 @@ describe('versioned local conversation storage',()=>{
     expect(restored.messages.map((m:any)=>[m.role,m.text,m.status])).toEqual([['user','first prompt',undefined],['assistant','first answer','completed']]);
     expect(restored.messages[1].finishedAt).toMatch(/^\d{4}-\d\d-\d\dT/);
     expect(reloaded.get(second.id).messages).toEqual([]);
-    const document=JSON.parse(await readFile(filePath,'utf8'));expect(document.version).toBe(4);expect(document.sessions[0]).toMatchObject({modelId:null,reasoningEffort:null,workspaceRoot:null,pinned:false});
+    const document=JSON.parse(await readFile(filePath,'utf8'));expect(document.version).toBe(5);expect(document.sessions[0]).toMatchObject({modelId:null,reasoningEffort:null,workspaceRoot:null,pinned:false});
   });
   it('migrates version-1 history in place while preserving thread IDs and messages',async()=>{
     const {filePath}=await makeStore();
     const legacy={id:'10000000-0000-4000-8000-000000000010',title:'Legacy',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-legacy',toolCatalogVersion:1,messages:[{id:'10000000-0000-4000-8000-000000000011',role:'user',text:'kept',createdAt:'2026-10-24T00:00:00.000Z'}]};
     await writeFile(filePath,JSON.stringify({version:1,sessions:[legacy]}));
     const migrated=new SessionStore({filePath});await migrated.load();
-    expect(migrated.get(legacy.id)).toMatchObject({codexThreadId:'thread-legacy',toolCatalogVersion:1,modelId:null,reasoningEffort:null,messages:legacy.messages});
+    expect(migrated.get(legacy.id)).toMatchObject({codexThreadId:'thread-legacy',toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],modelId:null,reasoningEffort:null,messages:legacy.messages});
     await migrated.setModelConfig(legacy.id,'gpt-6.1-sol','high');
-    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:4,sessions:[{id:legacy.id,modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:null,codexThreadId:'thread-legacy'}]});
+    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:legacy.id,modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:null,codexThreadId:'thread-legacy',toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1]}]});
+  });
+  it('migrates version-4 catalog version evidence to the proven legacy fingerprint',async()=>{
+    const {filePath}=await makeStore();const messages=[{id:'10000000-0000-4000-8000-000000000032',role:'user',text:'preserve article context',createdAt:'2026-10-24T00:00:00.000Z'},{id:'10000000-0000-4000-8000-000000000033',role:'assistant',text:'preserve explanation',createdAt:'2026-10-24T00:01:00.000Z',taskId:'10000000-0000-4000-8000-000000000034',status:'completed',finishedAt:'2026-10-24T00:02:00.000Z',error:null}];
+    const session={id:'10000000-0000-4000-8000-000000000031',title:'V4',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-v4',toolCatalogVersion:1,modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages};
+    await writeFile(filePath,JSON.stringify({version:4,sessions:[session]}));const migrated=new SessionStore({filePath});await migrated.load();
+    expect(migrated.get(session.id)).toMatchObject({toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],codexThreadId:'thread-v4',modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages});
+    await migrated.rename(session.id,'migrated');expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:session.id,toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],codexThreadId:'thread-v4',modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages}]});
+  });
+  it('does not guess a catalog fingerprint for legacy threads with absent version evidence',async()=>{
+    const {filePath}=await makeStore();const old={id:'10000000-0000-4000-8000-000000000030',title:'Unversioned',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-unknown',messages:[]};
+    await writeFile(filePath,JSON.stringify({version:1,sessions:[old]}));const migrated=new SessionStore({filePath});await migrated.load();
+    expect(migrated.get(old.id)).toMatchObject({codexThreadId:'thread-unknown',toolCatalogFingerprint:null});
+    await migrated.setModelConfig(old.id,null,null);expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:old.id,toolCatalogFingerprint:null}]});
   });
   it('serializes concurrent writes without duplicating turns and redacts common credentials',async()=>{
     const {store,filePath}=await makeStore();const session=await store.create();const task='10000000-0000-4000-8000-000000000002';
@@ -53,14 +67,14 @@ describe('versioned local conversation storage',()=>{
     const restarted=new SessionStore({filePath});await restarted.load();await restarted.recoverPending();
     expect(restarted.get(session.id).messages[1]).toMatchObject({status:'failed',finishedAt:expect.stringMatching(/^\d{4}-\d\d-\d\dT/),error:expect.stringContaining('Interrupted')});
   });
-  it('migrates version-2 history with an unknown project to version 4',async()=>{
+  it('migrates version-2 history with an unknown project to version 5',async()=>{
     const {filePath}=await makeStore();
     const legacy={version:2,sessions:[{id:'10000000-0000-4000-8000-000000000020',title:'V2',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-v2',toolCatalogVersion:1,modelId:'gpt-6.1-sol',reasoningEffort:'high',messages:[]}]};
     await writeFile(filePath,JSON.stringify(legacy));
     const migrated=new SessionStore({filePath});await migrated.load();
     expect(migrated.get(legacy.sessions[0].id)).toMatchObject({codexThreadId:'thread-v2',workspaceRoot:null,modelId:'gpt-6.1-sol'});
     await migrated.setModelConfig(legacy.sessions[0].id,'gpt-6.1-sol','high');
-    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:4,sessions:[{id:legacy.sessions[0].id,workspaceRoot:null}]});
+    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:legacy.sessions[0].id,workspaceRoot:null,toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1]}]});
   });
   it('backfills a recovered Codex project path only when the local session has none',async()=>{
     const {store,filePath}=await makeStore();const session=await store.create();await store.setCodexThread(session.id,'thread-old');
@@ -89,7 +103,7 @@ describe('versioned local conversation storage',()=>{
     const recovered=new SessionStore({filePath});const health=await recovered.load();
     expect(health.available).toBe(true);expect(health.warning).toMatch(/damaged/);expect(recovered.list()).toEqual([]);
     const files=await import('node:fs/promises').then(fs=>fs.readdir(dir));expect(files.some((name:string)=>name.startsWith('sessions.json.corrupt-'))).toBe(true);
-    expect(JSON.parse(await readFile(filePath,'utf8'))).toEqual({version:4,sessions:[]});
+    expect(JSON.parse(await readFile(filePath,'utf8'))).toEqual({version:5,sessions:[]});
   });
   it('leaves oversized and symlinked history files untouched',async()=>{
     const {filePath,dir}=await makeStore();await writeFile(filePath,'');await truncate(filePath,MAX_SESSION_FILE_BYTES+1);

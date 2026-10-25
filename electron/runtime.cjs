@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { CodexDriver } = require('./codex-driver.cjs');
 const { ApprovalService } = require('./approval-service.cjs');
-const { ToolCatalog, TOOL_CATALOG_VERSION } = require('./tool-catalog.cjs');
+const { ToolCatalog } = require('./tool-catalog.cjs');
 
 const MAX_PROMPT_LENGTH = 20000;
 
@@ -145,13 +145,14 @@ class AgentRuntime extends EventEmitter {
       if (session.workspaceRoot) await this.projectStore.ensure(session.workspaceRoot);
       const summary = this.#summary(session);
       this.emit('event', { type: 'session-updated', session: summary });
-      return { session, threadState: 'new', connectionError: null };
+      const compatibility = this.#toolCompatibility(session);
+      return { session, threadState: 'new', connectionError: null, toolCatalogCompatibility: compatibility.status, availableToolNames: compatibility.availableToolNames };
     } catch (error) { this._reportStorageError(error); throw error; }
   }
 
   async openSession(sessionId) {
     let session;
-    try { session = this.store.get(sessionId); session.toolCatalogVersion ??= null; session.workspaceRoot ??= null; }
+    try { session = this.store.get(sessionId); session.toolCatalogFingerprint ??= null; session.workspaceRoot ??= null; }
     catch (error) { throw error; }
     if (!session.workspaceRoot && session.codexThreadId && await this.#recoverWorkspaceRoot(sessionId)) session = this.store.get(sessionId);
     let threadState = session.codexThreadId ? (this.connectedThreads.has(session.codexThreadId) ? 'connected' : 'history') : 'new';
@@ -173,7 +174,8 @@ class AgentRuntime extends EventEmitter {
     } else if (session.codexThreadId && this.status.status !== 'ready') {
       connectionError = this.status.error || 'Codex is not connected; showing local history only.';
     }
-    return { session, threadState, connectionError };
+    const compatibility = this.#toolCompatibility(session);
+    return { session, threadState, connectionError, toolCatalogCompatibility: compatibility.status, availableToolNames: compatibility.availableToolNames };
   }
 
   async submit(sessionId, text) {
@@ -187,8 +189,8 @@ class AgentRuntime extends EventEmitter {
     if (this.activeTask) throw new Error('当前已有任务运行，请等待完成或先取消。');
     const session = this.store.get(sessionId);
     if (session.workspaceRoot !== workspaceState.root) throw new Error('此会话属于其他项目或尚未关联项目。请切换到对应工作区，或新建会话后继续。');
-    if (session.codexThreadId && session.toolCatalogVersion !== TOOL_CATALOG_VERSION) throw new Error('This saved Codex thread predates Vantilo workspace tools. Create a new conversation to enable them.');
-    const task = { id: randomUUID(), sessionId, turnId: null, status: 'running', assistantText: '', assistantMessageId: null, eventChain: Promise.resolve(), terminalQueued: false, abortController: new AbortController(), workspaceRevision: workspaceState.revision };
+    const compatibility = this.#toolCompatibility(session);
+    const task = { id: randomUUID(), sessionId, turnId: null, status: 'running', assistantText: '', assistantMessageId: null, eventChain: Promise.resolve(), terminalQueued: false, abortController: new AbortController(), workspaceRevision: workspaceState.revision, toolSnapshot: compatibility.snapshot, threadCatalogFingerprint: session.codexThreadId ? session.toolCatalogFingerprint : this.toolCatalog.fingerprint(compatibility.snapshot), isNewThread: !session.codexThreadId };
     this.activeTask = task;
     let modelConfig;
     try { modelConfig = await this.#resolveEffectiveModelConfig(session.modelId ?? null, session.reasoningEffort ?? null); }
@@ -203,10 +205,12 @@ class AgentRuntime extends EventEmitter {
       type: 'task-started', taskId: task.id, sessionId, text: turn.userMessage.text, status: 'running',
       userMessage: turn.userMessage, assistantMessage: turn.assistantMessage
     });
-    this.driver.startTurn(text.trim(), session.codexThreadId, { dynamicTools: this.toolCatalog.dynamicTools(), workspaceRoot: workspaceState.root, model: modelConfig.modelId, effort: modelConfig.reasoningEffort }).then(async ({ threadId, turnId }) => {
+    this.driver.startTurn(text.trim(), session.codexThreadId, { dynamicTools: this.toolCatalog.dynamicTools(task.toolSnapshot), workspaceRoot: workspaceState.root, model: modelConfig.modelId, effort: modelConfig.reasoningEffort }).then(async ({ threadId, turnId }) => {
       if (threadId) {
-        try { await this.store.setCodexThread(sessionId, threadId, TOOL_CATALOG_VERSION); }
-        catch (error) { this._storageFailure(task, error); return; }
+        if (task.isNewThread) {
+          try { await this.store.setCodexThread(sessionId, threadId, task.threadCatalogFingerprint); }
+          catch (error) { this._storageFailure(task, error); return; }
+        }
         this.connectedThreads.add(threadId);
         this.emit('event', { type: 'session-updated', session: this.#summary(this.store.get(sessionId), true) });
       }
@@ -258,10 +262,20 @@ class AgentRuntime extends EventEmitter {
     this.emit('event', { type: 'storage-error', message });
   }
 
+  #toolCompatibility(session) {
+    if (!session.codexThreadId) {
+      const snapshot = this.toolCatalog.snapshot();
+      return { status:'new', snapshot, availableToolNames:snapshot.map(entry => this.toolCatalog.get(entry.id)?.codexName).filter(Boolean) };
+    }
+    const result = this.toolCatalog.compatibleSnapshot(session.toolCatalogFingerprint ?? null);
+    return { ...result, availableToolNames:result.snapshot.map(entry => this.toolCatalog.get(entry.id)?.codexName).filter(Boolean) };
+  }
+
   #summary(session, connected = false) {
+    const compatibility = this.#toolCompatibility(session);
     return {
       id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt,
-      codexThreadId: session.codexThreadId, toolCatalogVersion: session.toolCatalogVersion ?? null, modelId: session.modelId ?? null, reasoningEffort: session.reasoningEffort ?? null, workspaceRoot: session.workspaceRoot ?? null, pinned: session.pinned ?? false, messageCount: session.messageCount ?? session.messages.length,
+      codexThreadId: session.codexThreadId, toolCatalogFingerprint: session.toolCatalogFingerprint ?? null, toolCatalogCompatibility: compatibility.status, availableToolNames: compatibility.availableToolNames, modelId: session.modelId ?? null, reasoningEffort: session.reasoningEffort ?? null, workspaceRoot: session.workspaceRoot ?? null, pinned: session.pinned ?? false, messageCount: session.messageCount ?? session.messages.length,
       preview: session.preview ?? session.messages.at(-1)?.text.replace(/\s+/g, ' ').slice(0, 120) ?? '',
       threadState: session.codexThreadId ? (connected || this.connectedThreads.has(session.codexThreadId) ? 'connected' : 'history') : 'new'
     };
@@ -382,37 +396,40 @@ class AgentRuntime extends EventEmitter {
     if (call.threadId !== this.driver.threadId || (task.turnId && call.turnId !== task.turnId)) return deny('request_mismatch', 'The tool request does not match the active Codex turn.');
     if (call.namespace !== null) return deny('tool_not_allowed', 'Only the published Vantilo workspace tools are available.');
     let prepared;
-    try { prepared = this.toolCatalog.validateCall(call.tool, call.arguments); }
+    try { prepared = this.toolCatalog.validateCall(call.tool, call.arguments, task.toolSnapshot); }
     catch (error) { return deny(error.code || 'invalid_input', error.message); }
     const workspace = this.workspace.state();
     if (!workspace.root || workspace.revision !== task.workspaceRevision) return deny('workspace_unavailable', 'The authorized workspace changed or is unavailable.');
-    const operation = call.tool === 'read_workspace_file' ? 'read' : 'list';
+    const operation = call.tool === 'read_workspace_file' || call.tool === 'read_workspace_passage' ? 'read' : 'list';
     const relativePath = prepared.input.path || '.';
     let approval;
     try {
       approval = this.approvals.request({
         serverRequestId: call.requestId, callId: call.callId, sessionId: task.sessionId, taskId: task.id,
         threadId: call.threadId, turnId: call.turnId, toolName: call.tool, reason: prepared.input.reason,
-        relativePath, operation, workspaceRoot: workspace.root, workspaceRevision: workspace.revision
+        relativePath, operation, ...(call.tool === 'read_workspace_passage' ? { lineRange:{startLine:prepared.input.startLine,endLine:prepared.input.endLine} } : {}), workspaceRoot: workspace.root, workspaceRevision: workspace.revision
       });
     } catch (error) { return deny('approval_unavailable', error.message); }
     const decision = await approval;
     if (decision.status !== 'approved') {
-      this.emit('event', { type: 'tool-execution', approvalId: decision.approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: 'denied', summary: `${call.tool} was not executed.`, error: decision.status === 'expired' ? 'Approval expired.' : decision.status === 'rejected' ? 'User rejected the request.' : 'The task ended before approval.' });
+      this.emit('event', { type: 'tool-execution', approvalId: decision.approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: decision.status === 'cancelled' ? 'cancelled' : 'denied', summary: `${call.tool} was not executed.`, error: decision.status === 'expired' ? 'Approval expired.' : decision.status === 'rejected' ? 'User rejected the request.' : 'The task ended before approval.' });
       return deny(decision.status, decision.status === 'rejected' ? 'The user rejected this read-only workspace request.' : 'This approval request expired or was cancelled.');
     }
-    if (this.activeTask?.id !== task.id || task.abortController.signal.aborted || this.workspace.state().revision !== workspace.revision) return deny('cancelled', 'The task or workspace authorization changed before execution.');
+    if (this.activeTask?.id !== task.id || task.terminalQueued || task.abortController.signal.aborted || this.store.get(task.sessionId).id !== task.sessionId || this.workspace.state().revision !== workspace.revision || this.workspace.state().root !== workspace.root) return deny('cancelled', 'The task or workspace authorization changed before execution.');
     const approvalId = decision.approvalId;
     this.emit('event', { type: 'tool-execution', approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: 'started', summary: `${call.tool}: ${relativePath}`, error: null });
     try {
-      const result = await this.toolCatalog.execute(call.tool, prepared.input, { signal: task.abortController.signal });
-      if (this.activeTask?.id !== task.id || task.abortController.signal.aborted) return deny('cancelled', 'The task was cancelled during tool execution.');
-      const summary = call.tool === 'list_workspace_files' ? `Listed ${result.data.files.length} file(s) under ${result.data.directory}.` : `Read ${result.data.bytes} byte(s) from ${result.data.path}.`;
+      const result = await this.toolCatalog.execute(call.tool, prepared.input, { signal: task.abortController.signal, snapshot: task.toolSnapshot });
+      if (this.activeTask?.id !== task.id || task.abortController.signal.aborted) {
+        this.emit('event', { type: 'tool-execution', approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: 'cancelled', summary: `${call.tool} was cancelled.`, error: 'The task was cancelled during tool execution.' });
+        return deny('cancelled', 'The task was cancelled during tool execution.');
+      }
+      const summary = call.tool === 'list_workspace_files' ? `Listed ${result.data.files.length} file(s) under ${result.data.directory}.` : call.tool === 'read_workspace_passage' ? `Read lines ${result.data.startLine}-${result.data.endLine} from ${result.data.sourcePath}.` : `Read ${result.data.bytes} byte(s) from ${result.data.path}.`;
       this.emit('event', { type: 'tool-execution', approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: 'completed', summary, error: null });
       return { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workspace tool failed.';
-      this.emit('event', { type: 'tool-execution', approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: 'failed', summary: `${call.tool} failed.`, error: message });
+      this.emit('event', { type: 'tool-execution', approvalId, sessionId: task.sessionId, taskId: task.id, toolName: call.tool, stage: error?.code === 'cancelled' ? 'cancelled' : 'failed', summary: error?.code === 'cancelled' ? `${call.tool} was cancelled.` : `${call.tool} failed.`, error: message });
       return deny(error.code || 'tool_error', message);
     }
   }

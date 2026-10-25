@@ -143,7 +143,7 @@ class RuntimeSupervisor extends EventEmitter {
     this.startReject?.(error);
     for (const [id, pending] of this.pending) { clearTimeout(pending.timer); pending.reject(error); this.pending.delete(id); }
     if (this.activeTaskId) {
-      this.emit('event', { type: 'task-status', taskId: this.activeTaskId, sessionId: this.activeSessionId, status: 'failed', error: `Runtime connection lost: ${error.message}` });
+      this.emit('event', { type: 'task-status', taskId: this.activeTaskId, sessionId: this.activeSessionId, status: 'failed', cause: 'runtime-disconnected', error: `Runtime connection lost: ${error.message}` });
       this.activeTaskId = null; this.activeSessionId = null;
     }
     if (this.child && !this.exited) this.child.kill();
@@ -159,7 +159,7 @@ class RuntimeSupervisor extends EventEmitter {
       this._setStatus({ status: 'error', error: error.message });
       this.startReject?.(error);
       if (this.activeTaskId) {
-        this.emit('event', { type: 'task-status', taskId: this.activeTaskId, sessionId: this.activeSessionId, status: 'failed', error: `Runtime connection lost: ${error.message}` });
+        this.emit('event', { type: 'task-status', taskId: this.activeTaskId, sessionId: this.activeSessionId, status: 'failed', cause: 'runtime-disconnected', error: `Runtime connection lost: ${error.message}` });
         this.activeTaskId = null; this.activeSessionId = null;
       }
     } else this._setStatus({ status: 'stopped' });
