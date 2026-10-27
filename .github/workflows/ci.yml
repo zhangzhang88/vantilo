@@ -1,0 +1,32 @@
+name: Core checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # The full Reader suite also needs the separately maintained private
+      # Reader source; only self-contained tests run in this workflow.
+      - name: Test core and local model boundaries
+        run: >-
+          npx vitest run
+          tests/runtime.test.ts
+          tests/reader-ai-gateway.test.ts
+          tests/reader-intel-model.test.ts
+          tests/reader-intel-service.test.ts
+          tests/reader-llama-worker.test.ts
+          tests/reader-translation-worker.test.ts
+          tests/system-proxy.test.ts
