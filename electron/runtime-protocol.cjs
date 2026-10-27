@@ -1,10 +1,10 @@
 const { z } = require('zod');
 const path = require('node:path');
 
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 13;
 const MAX_PROMPT_LENGTH = 20000;
 const Uuid = z.string().uuid();
-const RuntimeStatus = z.object({ status: z.enum(['connecting', 'ready', 'error', 'stopped']), error: z.string().optional() }).strict();
+const RuntimeStatus = z.object({ status: z.enum(['connecting', 'ready', 'error', 'stopped']), error: z.string().optional(), activeTask:z.object({taskId:Uuid,sessionId:Uuid,owner:z.enum(['agent','reader']),phase:z.enum(['starting','running','cancelling','finishing'])}).strict().nullable().optional() }).strict();
 const StorageHealth = z.object({ available: z.boolean(), error: z.string().nullable(), warning: z.string().nullable() }).strict();
 const WorkspaceState = z.object({ root: z.string().nullable(), error: z.string().nullable(), revision: z.number().int().nonnegative() }).strict();
 const ProjectEntry = z.object({ root: z.string().min(1).max(4096), pinned: z.boolean(), removed: z.boolean() }).strict();
@@ -12,21 +12,22 @@ const ProjectMenuState = z.object({ path: z.string().min(1).max(4096), pinned: z
 const ModelOption = z.object({ id: z.string().min(1).max(256), catalogId: z.string().min(1).max(256), displayName: z.string().min(1).max(256), description: z.string().max(2048), isDefault: z.boolean(), defaultEffort: z.string().min(1).max(64).nullable(), efforts: z.array(z.object({ id: z.string().min(1).max(64), description: z.string().max(1024) }).strict()).max(32) }).strict();
 const ModelCatalog = z.object({ models: z.array(ModelOption).max(500) }).strict();
 const ModelConfig = z.object({ modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable() }).strict();
+const PermissionMode = z.enum(['supervised', 'accept-edits', 'automatic', 'full-access']);
 const SessionMessage = z.object({
   id: Uuid, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string().datetime(),
   taskId: Uuid.optional(), status: z.enum(['pending', 'completed', 'failed', 'cancelled']).optional(), finishedAt: z.string().datetime().optional(), error: z.string().nullable().optional()
 }).strict();
 const SessionSummary = z.object({
-  id: Uuid, title: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
-  codexThreadId: z.string().nullable(), toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), toolCatalogCompatibility: z.enum(['new','current','partial','incompatible','unknown']).optional(), availableToolNames: z.array(z.enum(['list_workspace_files','read_workspace_file','read_workspace_passage'])).max(100).optional(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messageCount: z.number().int().nonnegative(), preview: z.string(),
+  id: Uuid, readerScopeKey:z.string().min(1).max(512).optional(), title: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  codexThreadId: z.string().nullable(), toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), toolCatalogCompatibility: z.enum(['new','current','partial','incompatible','unknown']).optional(), availableToolNames: z.array(z.enum(['list_workspace_files','read_workspace_file','read_workspace_passage','write_workspace_file'])).max(100).optional(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), permissionMode: PermissionMode.optional(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messageCount: z.number().int().nonnegative(), preview: z.string(),
   threadState: z.enum(['new', 'history', 'connected'])
 }).strict();
 const Session = z.object({
-  id: Uuid, title: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
-  codexThreadId: z.string().nullable(), toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messages: z.array(SessionMessage)
+  id: Uuid, readerScopeKey:z.string().min(1).max(512).optional(), title: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  codexThreadId: z.string().nullable(), toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable(), permissionMode: PermissionMode.optional(), workspaceRoot: z.string().min(1).max(4096).nullable(), pinned: z.boolean(), messages: z.array(SessionMessage)
 }).strict();
 const SessionView = z.object({
-  session: Session, threadState: z.enum(['new', 'history', 'connected']), connectionError: z.string().nullable(), toolCatalogCompatibility: z.enum(['new','current','partial','incompatible','unknown']).optional(), availableToolNames: z.array(z.enum(['list_workspace_files','read_workspace_file','read_workspace_passage'])).max(100).optional()
+  session: Session, threadState: z.enum(['new', 'history', 'connected']), connectionError: z.string().nullable(), toolCatalogCompatibility: z.enum(['new','current','partial','incompatible','unknown']).optional(), availableToolNames: z.array(z.enum(['list_workspace_files','read_workspace_file','read_workspace_passage','write_workspace_file'])).max(100).optional()
 }).strict();
 const AgentEvent = z.union([
   z.object({ type: z.literal('task-started'), taskId: Uuid, sessionId: Uuid, text: z.string(), status: z.literal('running'), userMessage: SessionMessage, assistantMessage: SessionMessage }).strict(),
@@ -39,26 +40,32 @@ const AgentEvent = z.union([
   z.object({ type: z.literal('storage-error'), message: z.string() }).strict(),
   z.object({ type: z.literal('workspace-updated'), workspace: WorkspaceState }).strict(),
   z.object({ type: z.literal('projects-updated'), projects: z.array(ProjectEntry).max(500) }).strict(),
-  z.object({ type: z.literal('tool-approval-requested'), approvalId: Uuid, serverRequestId: z.union([z.string().max(256), z.number()]), callId: z.string().min(1).max(256), sessionId: Uuid, taskId: Uuid, threadId: z.string().min(1).max(512), turnId: z.string().min(1).max(512), toolName: z.enum(['list_workspace_files', 'read_workspace_file', 'read_workspace_passage']), reason: z.string().max(500), relativePath: z.string().min(1).max(1024), operation: z.enum(['list', 'read']), lineRange: z.object({startLine:z.number().int().positive(),endLine:z.number().int().positive()}).strict().optional(), readOnly: z.literal(true), workspaceRoot: z.string().min(1).max(4096), workspaceRevision: z.number().int().positive(), createdAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
+  z.object({ type: z.literal('tool-approval-requested'), approvalId: Uuid, serverRequestId: z.union([z.string().max(256), z.number()]), callId: z.string().min(1).max(256), sessionId: Uuid, taskId: Uuid, threadId: z.string().min(1).max(512), turnId: z.string().min(1).max(512), toolName: z.enum(['list_workspace_files', 'read_workspace_file', 'read_workspace_passage','write_workspace_file']), reason: z.string().max(500), relativePath: z.string().min(1).max(1024), operation: z.enum(['list', 'read','write']), lineRange: z.object({startLine:z.number().int().positive(),endLine:z.number().int().positive()}).strict().optional(), readOnly: z.boolean(), workspaceRoot: z.string().min(1).max(4096), workspaceRevision: z.number().int().positive(), createdAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
   z.object({ type: z.literal('tool-approval-resolved'), approvalId: Uuid, sessionId: Uuid, taskId: Uuid, status: z.enum(['approved', 'rejected', 'expired', 'cancelled']) }).strict(),
-  z.object({ type: z.literal('tool-execution'), approvalId: Uuid, sessionId: Uuid, taskId: Uuid, toolName: z.enum(['list_workspace_files', 'read_workspace_file', 'read_workspace_passage']), stage: z.enum(['started', 'completed', 'failed', 'denied', 'cancelled']), summary: z.string().max(4096), error: z.string().max(4096).nullable() }).strict()
+  z.object({ type: z.literal('tool-execution'), approvalId: Uuid, sessionId: Uuid, taskId: Uuid, toolName: z.enum(['list_workspace_files', 'read_workspace_file', 'read_workspace_passage','write_workspace_file']), stage: z.enum(['started', 'completed', 'failed', 'denied', 'cancelled']), summary: z.string().max(4096), error: z.string().max(4096).nullable() }).strict()
 ]);
 const Request = z.object({
   version: z.literal(PROTOCOL_VERSION), type: z.literal('request'), requestId: Uuid,
-  method: z.enum(['status', 'sessions:list', 'sessions:create', 'sessions:open', 'sessions:delete', 'sessions:menu-state', 'sessions:rename', 'sessions:pin', 'models:list', 'session:model-config', 'workspace:get', 'workspace:set', 'workspace:clear', 'workspace:references:validate', 'workspace:project-path:resolve', 'projects:list', 'project:pin', 'project:remove', 'approval:resolve', 'submit', 'cancel', 'shutdown']), payload: z.unknown()
+  method: z.enum(['reader:cancel', 'reader:ai', 'account:status', 'account:login', 'account:logout', 'status', 'sessions:list', 'sessions:create', 'sessions:open', 'sessions:delete', 'sessions:menu-state', 'sessions:rename', 'sessions:pin', 'models:list', 'session:model-config', 'workspace:get', 'workspace:set', 'workspace:clear', 'workspace:references:validate', 'workspace:project-path:resolve', 'projects:list', 'project:pin', 'project:remove', 'approval:resolve', 'submit', 'cancel', 'shutdown']), payload: z.unknown()
 }).strict();
 const Response = z.discriminatedUnion('ok', [
   z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('response'), requestId: Uuid, ok: z.literal(true), result: z.unknown() }).strict(),
   z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('response'), requestId: Uuid, ok: z.literal(false), error: z.object({ message: z.string() }).strict() }).strict()
 ]);
 const RuntimeMessage = z.union([
+  z.object({version:z.literal(PROTOCOL_VERSION),type:z.literal('reader-delta'),requestId:Uuid,delta:z.string().min(1).max(20000)}).strict(),
   z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('ready'), status: RuntimeStatus }).strict(),
   z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('status'), status: RuntimeStatus }).strict(),
   z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('event'), event: AgentEvent }).strict(),
-  z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('child-process'), pid: z.number().int().positive().nullable() }).strict(),
+  z.object({ version: z.literal(PROTOCOL_VERSION), type: z.literal('child-process'), owner:z.enum(['agent','reader']).optional(), pid: z.number().int().positive().nullable() }).strict(),
   Response
 ]);
 const Payloads = {
+  'reader:cancel': z.object({ requestId: Uuid }).strict(),
+  'reader:ai': z.object({ requestId: Uuid.optional(), instructions: z.string().min(1).max(8000), input: z.string().min(1).max(18000), modelId:z.string().min(1).max(256).nullable().optional(), reasoningEffort:z.string().min(1).max(64).nullable().optional() }).strict().refine(value => value.instructions.length + value.input.length <= 19000),
+  'account:status': z.object({}).strict(),
+  'account:login': z.object({}).strict(),
+  'account:logout': z.object({}).strict(),
   status: z.object({}).strict(),
   'sessions:list': z.object({}).strict(),
   'sessions:create': z.object({}).strict(),
@@ -69,6 +76,7 @@ const Payloads = {
   'sessions:pin': z.object({ sessionId: Uuid, pinned: z.boolean() }).strict(),
   'models:list': z.object({}).strict(),
   'session:model-config': z.object({ sessionId: Uuid, modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable() }).strict(),
+  'session:permission-mode': z.object({ sessionId: Uuid, permissionMode: PermissionMode }).strict(),
   'workspace:get': z.object({}).strict(),
   'workspace:set': z.object({ path: z.string().min(1).max(4096).refine(value => path.isAbsolute(value)) }).strict(),
   'workspace:clear': z.object({}).strict(),
@@ -77,12 +85,17 @@ const Payloads = {
   'projects:list': z.object({}).strict(),
   'project:pin': z.object({ path: z.string().min(1).max(4096).refine(value => path.isAbsolute(value)), pinned: z.boolean() }).strict(),
   'project:remove': z.object({ path: z.string().min(1).max(4096).refine(value => path.isAbsolute(value)) }).strict(),
-  'approval:resolve': z.object({ approvalId: Uuid, sessionId: Uuid, taskId: Uuid, decision: z.enum(['approved', 'rejected']) }).strict(),
-  submit: z.object({ sessionId: Uuid, text: z.string().trim().min(1).max(MAX_PROMPT_LENGTH) }).strict(),
+  'approval:resolve': z.object({ approvalId: Uuid, sessionId: Uuid, taskId: Uuid, decision: z.enum(['approved', 'rejected', 'approved-for-session']) }).strict(),
+  submit: z.object({ sessionId: Uuid, text: z.string().trim().min(1).max(MAX_PROMPT_LENGTH), permissionMode: PermissionMode.optional() }).strict(),
   cancel: z.object({ taskId: Uuid }).strict(),
   shutdown: z.object({}).strict()
 };
 const Results = {
+  'reader:cancel': z.object({cancelled:z.boolean()}).strict(),
+  'reader:ai': z.object({ output: z.string().min(1).max(20000) }).strict(),
+  'account:status': z.object({ connected: z.boolean(), email: z.string().max(320).nullable() }).strict(),
+  'account:login': z.object({ url: z.string().url().refine(value => { const u = new URL(value); return u.protocol === 'https:' && u.hostname === 'auth.openai.com' && !u.username && !u.password; }) }).strict(),
+  'account:logout': z.object({ connected: z.literal(false), email: z.null() }).strict(),
   status: RuntimeStatus,
   'sessions:list': z.object({ sessions: z.array(SessionSummary), storage: StorageHealth }).strict(),
   'sessions:create': SessionView,
@@ -107,4 +120,4 @@ const Results = {
   shutdown: z.object({ status: z.literal('stopped') }).strict()
 };
 
-module.exports = { PROTOCOL_VERSION, MAX_PROMPT_LENGTH, RuntimeStatus, StorageHealth, WorkspaceState, ModelOption, ModelCatalog, ModelConfig, SessionMessage, SessionSummary, Session, SessionView, AgentEvent, Request, Response, RuntimeMessage, Payloads, Results };
+module.exports = { PROTOCOL_VERSION, MAX_PROMPT_LENGTH, RuntimeStatus, StorageHealth, WorkspaceState, ModelOption, ModelCatalog, ModelConfig, PermissionMode, SessionMessage, SessionSummary, Session, SessionView, AgentEvent, Request, Response, RuntimeMessage, Payloads, Results };

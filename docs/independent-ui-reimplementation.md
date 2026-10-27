@@ -20,8 +20,8 @@ The separate React Spectrum S2 and Spectrum AI dependencies remain usable under 
 
 1. Replace the application rail, sidebar/resizer, session/project navigation, top tabs, and conversation header with Vantilo-owned layout/state components. Keep existing navigation routes and keyboard/pointer behavior.
 2. Rebuild the Composer and Codex picker around Vantilo's own session drafts, live catalog/status, reference completion, and strict Runtime APIs; use Spectrum components only as separately licensed dependencies.
-3. Rebuild transcript, copy/status, Markdown safety, and browser surface code as Vantilo-owned presentation. Preserve inert raw HTML/images and HTTP(S)-only delegated links.
-4. Rewrite browser URL policy and tab lifecycle as Vantilo-owned modules without changing isolation, request filtering, permission denial, tab ownership, or bounds validation.
+3. Rebuild transcript, copy/status, and Markdown safety as Vantilo-owned presentation. The browser surface in this historical plan has since been removed.
+4. [Superseded] The browser URL policy and tab lifecycle were initially rewritten as Vantilo-owned modules; the embedded browser has since been removed.
 5. Remove BaoCut source-provenance claims for replaced code, keep relevant independent third-party licenses, and update product/architecture documentation to describe the independent implementation and actual storage schema.
 6. Validate focused UI behavior, full typecheck/build/tests, security boundaries, and the running Electron app. Do not commit or push.
 
@@ -29,7 +29,7 @@ The separate React Spectrum S2 and Spectrum AI dependencies remain usable under 
 
 ### Completed
 
-- Replaced BaoCut-attributed React components and CSS with Vantilo-named modules for the application rail/navigation, sidebar/session navigation, tabs, composer, Codex picker, transcript/Markdown, and browser surface. The browser policy and tab lifecycle now live in `electron/web-navigation-policy.cjs` and `electron/isolated-web-tabs.cjs`; the renderer still receives no privileged browser or filesystem API.
+- Replaced BaoCut-attributed React components and CSS with Vantilo-named modules for the application rail/navigation, sidebar/session navigation, tabs, composer, Codex picker, transcript/Markdown, and browser surface. The browser host, policy, interface, and IPC have since been removed; Vantilo no longer provides an embedded browser.
 - Rewrote the sidebar implementation styles and removed the obsolete copied sidebar style block from `src/style.css`. Replaced copied-source comments and updated license notices: Spectrum/Spectrum AI dependencies and the separately licensed Codex icon remain attributed; BaoCut license/reference files are retained without implying commercial permission.
 - Added picker loading, error/retry, empty-catalog, unavailable-model recovery, default selection, reasoning-only configuration, keyboard, dismissal, viewport-boundary, and session-isolation UI tests. Removed obsolete menu state/JSX.
 - Chat output now follows the bottom only while the reader is near the bottom; it preserves a reader's upward position and scrolls to the bottom on session changes/new sessions.

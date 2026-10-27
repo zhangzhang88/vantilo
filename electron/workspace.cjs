@@ -8,6 +8,7 @@ const { z } = require('zod');
 const WORKSPACE_SETTINGS_VERSION = 1;
 const MAX_WORKSPACE_SETTINGS_BYTES = 4096;
 const MAX_READ_BYTES = 1024 * 1024;
+const MAX_WRITE_BYTES = 1024 * 1024;
 const SENSITIVE_NAME = /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|\.ssh|\.aws|\.azure|\.gnupg|\.kube|\.docker|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|known_hosts|authorized_keys|credentials?(?:\..*)?|secrets?(?:\..*)?|auth(?:entication)?(?:\..*)?|tokens?(?:\..*)?|.*(?:api[_-]?key|client[_-]?secret|credential|password|passwd|secret|private[_-]?key|access[_-]?token|refresh[_-]?token)(?:\..*)?|.*\.(?:pem|key|p12|pfx|p8|der|crt|cer|keystore|jks)|.*\.tfstate(?:\.backup)?)$/i;
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.next', '.turbo', '.venv', 'venv', '__pycache__']);
 const Settings = z.object({ version: z.literal(WORKSPACE_SETTINGS_VERSION), root: z.string().min(1).max(4096) }).strict();
@@ -251,6 +252,35 @@ class WorkspaceAuthority {
     finally { if (handle) await handle.close().catch(() => {}); }
   }
 
+  async writeTextFile(relativePath, content, { signal } = {}) {
+    if (typeof content !== 'string' || content.length > MAX_WRITE_BYTES || Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) throw new WorkspaceError('file_too_large', 'Written text exceeds the 1 MiB limit.');
+    if (content.includes('\0')) throw new WorkspaceError('invalid_content', 'Binary content is not accepted by the text write tool.');
+    if (signal?.aborted) throw new WorkspaceError('cancelled', 'The workspace request was cancelled.');
+    const normalized = normalizeRelativePath(relativePath);
+    if (isSensitivePath(normalized) || normalized.split('/').some(part => EXCLUDED_DIRS.has(part.toLowerCase()))) throw new WorkspaceError('sensitive_path', 'This path is excluded from workspace writes.');
+    const parent = path.posix.dirname(normalized) === '.' ? '.' : path.posix.dirname(normalized);
+    const parentInfo = await this.inspect(parent, { allowRoot: true, expectDirectory: true });
+    const target = path.join(parentInfo.absolutePath, path.posix.basename(normalized));
+    let existing = null;
+    try {
+      existing = await this.inspect(normalized, { expectFile: true });
+      if (existing.stat.nlink > 1) throw new WorkspaceError('hard_link_rejected', 'Files with additional hard links cannot be modified.');
+    } catch (error) {
+      if (!(error instanceof WorkspaceError) || !['not_found'].includes(error.code)) throw error;
+    }
+    const temporary = path.join(parentInfo.absolutePath, `.${path.posix.basename(normalized)}.vantilo-${randomUUID()}.tmp`);
+    try {
+      await fs.writeFile(temporary, content, { encoding: 'utf8', flag: 'wx', mode: existing?.stat.mode & 0o777 || 0o600 });
+      if (signal?.aborted) throw new WorkspaceError('cancelled', 'The workspace request was cancelled.');
+      await fs.rename(temporary, target);
+      const result = await this.inspect(normalized, { expectFile: true });
+      return { path: result.relativePath, bytes: Buffer.byteLength(content, 'utf8'), modifiedAt: result.stat.mtime.toISOString(), created: !existing };
+    } catch (error) {
+      try { await fs.unlink(temporary); } catch { /* best effort */ }
+      throw error instanceof WorkspaceError ? error : this.#mapFsError(error);
+    }
+  }
+
   async listFiles(relativePath = '.', limit = 100, { signal, maxEntries = 10000 } = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new WorkspaceError('invalid_input', 'File listing limit must be between 1 and 200.');
     const base = await this.inspect(relativePath, { allowRoot: true, expectDirectory: true });
@@ -313,4 +343,4 @@ class WorkspaceAuthority {
   }
 }
 
-module.exports = { WorkspaceAuthority, WorkspaceError, normalizeRelativePath, isSensitivePath, isWithin, EXCLUDED_DIRS, MAX_READ_BYTES, MAX_WORKSPACE_SETTINGS_BYTES, WORKSPACE_SETTINGS_VERSION };
+module.exports = { WorkspaceAuthority, WorkspaceError, normalizeRelativePath, isSensitivePath, isWithin, EXCLUDED_DIRS, MAX_READ_BYTES, MAX_WRITE_BYTES, MAX_WORKSPACE_SETTINGS_BYTES, WORKSPACE_SETTINGS_VERSION };

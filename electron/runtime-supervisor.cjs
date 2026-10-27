@@ -12,7 +12,7 @@ class RuntimeSupervisor extends EventEmitter {
     this.pending = new Map();
     this.activeTaskId = null;
     this.activeSessionId = null;
-    this.codexPid = null;
+    this.codexPid = null; this.readerCodexPid = null;
     this.started = false;
     this.runtimeReady = false;
     this.stopping = false;
@@ -62,7 +62,7 @@ class RuntimeSupervisor extends EventEmitter {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error(`Runtime request timed out: ${method}.`));
-      }, this.requestTimeoutMs);
+      }, method === 'reader:ai' ? Math.max(this.requestTimeoutMs, 105000) : this.requestTimeoutMs);
       this.pending.set(requestId, { method, resolve, reject, timer });
       try { this.child.postMessage({ version: PROTOCOL_VERSION, type: 'request', requestId, method, payload: parsed.data }); }
       catch (error) { clearTimeout(timer); this.pending.delete(requestId); reject(error); }
@@ -103,7 +103,8 @@ class RuntimeSupervisor extends EventEmitter {
       return;
     }
     if (message.type === 'status') { this._setStatus(message.status); return; }
-    if (message.type === 'child-process') { this.codexPid = message.pid; return; }
+    if (message.type === 'child-process') { if(message.owner==='reader')this.readerCodexPid=message.pid;else this.codexPid = message.pid; return; }
+    if (message.type === 'reader-delta') { this.emit('reader-delta', {requestId:message.requestId,delta:message.delta}); return; }
     if (message.type === 'event') {
       const event = message.event;
       if (event.type === 'task-started') { this.activeTaskId = event.taskId; this.activeSessionId = event.sessionId; }
@@ -168,14 +169,12 @@ class RuntimeSupervisor extends EventEmitter {
   }
 
   _terminateCodex() {
-    const pid = this.codexPid;
-    this.codexPid = null;
-    if (!Number.isInteger(pid) || pid <= 0) return;
-    try { process.kill(pid, 'SIGTERM'); } catch { return; }
-    const escalation = setTimeout(() => {
-      try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* the owned child has already exited */ }
-    }, 1500);
-    escalation.unref();
+    const pids=[this.codexPid,this.readerCodexPid];this.codexPid=null;this.readerCodexPid=null;
+    for(const pid of pids){
+      if(!Number.isInteger(pid)||pid<=0)continue;
+      try{process.kill(pid,'SIGTERM');}catch{continue;}
+      const escalation=setTimeout(()=>{try{process.kill(pid,0);process.kill(pid,'SIGKILL');}catch{}},1500);escalation.unref();
+    }
   }
 
   _waitForExit(timeoutMs) {

@@ -8,7 +8,7 @@
 
 ### Vantilo
 
-- Local directory: `/Users/world/Downloads/code/Vantilo`.
+- Local directory: the Vantilo repository checkout.
 - The initial project listing showed this directory was empty before setup.
 - At the initial audit, Git status reported that `Vantilo` was not yet a Git repository.
 - GitHub repository: [zhangzhang88/vantilo](https://github.com/zhangzhang88/vantilo).
@@ -86,7 +86,7 @@ The current components use React portals for the full-screen game. `learning-sta
 
 ### Reuse and license status
 
-The Magazine Reader migration audit identifies `/Users/world/Downloads/code/pke-course-studio/worm_28-experiment` as the read-only upstream source and records upstream commit `babc41aa1ef3ced46c55d06878d25ef4a98cfee3`. The expected `LICENSE` files at the upstream subdirectory and parent root were not found by the local file-read checks. This does **not** prove that no other license or rights statement exists; it means permission is not yet verified.
+The Magazine Reader migration audit identifies `pke-course-studio/worm_28-experiment` as the read-only upstream source and records upstream commit `babc41aa1ef3ced46c55d06878d25ef4a98cfee3`. The expected `LICENSE` files at the upstream subdirectory and parent root were not found by the local file-read checks. This does **not** prove that no other license or rights statement exists; it means permission is not yet verified.
 
 Therefore:
 - do not copy the Worm source components or the three MP3 files into Vantilo until the applicable rights are confirmed;

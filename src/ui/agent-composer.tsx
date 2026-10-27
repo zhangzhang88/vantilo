@@ -16,8 +16,8 @@ function promptValue(text: string) {
 export const AgentComposer = forwardRef<ComposerHandle, {
   value: string; onChange: (value: string) => void; placeholder: string; disabled: boolean; busy: boolean; referenceBusy: boolean;
   note: string; triggerValue: string | null; completions: readonly ComposerCompletion[]; onPickReferences: () => void;
-  onSubmit: (value: string) => void; onCancel: () => void; modelControl: ReactNode;
-}>(({ value, onChange, placeholder, disabled, busy, referenceBusy, note, triggerValue, completions, onPickReferences, onSubmit, onCancel, modelControl }, forwardedRef) => {
+  onSubmit: (value: string) => void; onCancel: () => void; modelControl: ReactNode; permissionControl?: ReactNode; showReferences?: boolean;
+}>(({ value, onChange, placeholder, disabled, busy, referenceBusy, note, triggerValue, completions, onPickReferences, onSubmit, onCancel, modelControl, permissionControl, showReferences=true }, forwardedRef) => {
   const root = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState(() => ({ text: value, parsed: promptValue(value) }));
   let activeEditor = editor;
@@ -28,20 +28,20 @@ export const AgentComposer = forwardRef<ComposerHandle, {
     <Text slot="label">{item.label}</Text><Text slot="description">{item.description}</Text>
   </InsertTextMenuItem>);
   const submit = busy ? <PromptFieldSubmitButton /> : value.trim() && !disabled ? <PromptFieldSubmitButton /> : <Button variant="primary" size="S" isDisabled aria-label="发送"><ArrowUpSend /></Button>;
-  return <div ref={root} className="composer-field" aria-disabled={disabled} inert={disabled}>
+  return <div ref={root} className="composer-field" aria-disabled={disabled && !busy} inert={disabled && !busy}>
     <PromptField size="S" variant="subtle" value={activeEditor.parsed} onChange={update} onSubmit={item => onSubmit(item.toString())}
       isGenerating={busy} onStop={onCancel} aiDisclaimer={<></>}>
       <div role="group" aria-label="任务输入框"><PromptTokenField placeholder={placeholder} completionTrigger={/(?<=^|\s)[@/]/} renderCompletions={completionItems} menuWidth={320} /></div>
       <PromptFieldToolbar><div className="composer-toolbar">
-        <MenuTrigger align="start" direction="top">
+        {showReferences && <MenuTrigger align="start" direction="top">
           <ActionButton isQuiet size="S" aria-label="添加内容" isDisabled={disabled || referenceBusy}><Add /></ActionButton>
           <Menu aria-label="添加内容" size="M" onAction={key => key === 'reference-files' && onPickReferences()}>
             <MenuSection><Header>输入内容</Header><MenuItem id="reference-files" textValue="选择工作区引用" isDisabled={disabled || referenceBusy}>
               <Add /><Text slot="label">{referenceBusy ? '正在选择…' : '文件或文件夹'}</Text><Text slot="description">从当前授权工作区选择</Text>
             </MenuItem></MenuSection>
           </Menu>
-        </MenuTrigger>
-        <span className="readonly-badge" title="仅允许读取工作区内容；每次工具调用都需单独审批。">◈ 只读</span>
+        </MenuTrigger>}
+        {permissionControl}
         <span className="composer-note">{note}</span>
         {modelControl}{submit}
       </div></PromptFieldToolbar>

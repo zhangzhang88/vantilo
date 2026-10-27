@@ -1,8 +1,14 @@
-const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell, utilityProcess } = require('electron');
+const {createSoftwareUpdateService}=require('./software-update-service.cjs');
+const softwareUpdateSource=require('../resources/software-update-source.json');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess, session } = require('electron');
 const path = require('node:path');
+const { installReaderNavigation } = require('./magazine-reader-navigation.cjs');
 const { RuntimeSupervisor } = require('./runtime-supervisor.cjs');
+const { PortableReaderSupervisor } = require('./portable-reader-supervisor.cjs');
+const { readerSessionCookies } = require('./reader-session-cookie.cjs');
+const { createReaderOnboarding, MODEL_INFO_URL } = require('./reader-onboarding.cjs');
+const { createReaderModelService } = require('./reader-model-service.cjs');
 const { isTrustedSender, isTrustedPageUrl, PACKAGED_RENDERER_PATH } = require('./ipc-security.cjs');
-const { installIsolatedWebTabs } = require('./isolated-web-tabs.cjs');
 
 // Preserve the existing userData directory while branding the native app as Vantilo.
 const existingUserDataPath = app.getPath('userData');
@@ -11,6 +17,25 @@ app.setPath('userData', existingUserDataPath);
 
 let win;
 let runtime;
+const readerAssets = path.join(__dirname, app.isPackaged ? '../reader' : '../build/reader');
+// A missing build must fail startup; never fall back to the source project's independent auth/API.
+const usePortableReader = true;
+const readerOnboarding = createReaderOnboarding({ userData: app.getPath('userData'), assetsDir: readerAssets });
+// Experimental model controls are intentionally isolated to the separately branded preview.
+const modelSetupPreview = app.isPackaged && process.env.VANTILO_READER_PREVIEW === '1';
+const readerQwenIntegrated = modelSetupPreview && path.basename(app.getPath('userData')) === 'Vantilo Qwen Setup Preview';
+const intelModel = process.platform === 'darwin' && process.arch === 'x64';
+const readerModelService = modelSetupPreview ? (intelModel ? require('./reader-intel-service.cjs').createIntelModelService({ userData: app.getPath('userData'), assetsDir: readerAssets }) : createReaderModelService({ userData: app.getPath('userData'), assetsDir: readerAssets })) : null;
+function requireModelPreview(event, args) {
+  requireTrustedSender(event);
+  if (args.length || !readerModelService) throw new Error('本地模型安装功能尚未开放。');
+}
+const softwareUpdates=readerQwenIntegrated?createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:app.getVersion(),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),
+  onAvailable:async state=>{if(!win||win.isDestroyed())return;const result=await dialog.showMessageBox(win,{type:'info',title:'Vantilo 软件更新',message:'发现新版本 '+state.latestVersion,detail:'当前版本 '+state.currentVersion+'。可前往 GitHub 发布页下载安装，应用不会强制退出。',buttons:['稍后','前往发布页'],defaultId:0,cancelId:0});if(result.response===1)await softwareUpdates.openRelease();}
+}):null;
+const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableLocalQwen: readerQwenIntegrated, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
+  ...readerSessionCookies(()=>session.defaultSession),
+});
 let quitting = false;
 
 function trustedSender(event) { return isTrustedSender(event, { win, packaged: app.isPackaged, rendererPath: PACKAGED_RENDERER_PATH }); }
@@ -53,12 +78,14 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 800, minHeight: 600, title: 'Vantilo', backgroundColor: '#111214',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (event, target) => {
     if (!isTrustedPageUrl(target, { packaged: app.isPackaged, rendererPath: PACKAGED_RENDERER_PATH })) event.preventDefault();
   });
+  installReaderNavigation(win.webContents, { packaged: app.isPackaged, rendererPath: PACKAGED_RENDERER_PATH });
   if (app.isPackaged) win.loadFile(PACKAGED_RENDERER_PATH);
   else {
     const url = process.env.VANTILO_DEV_SERVER_URL;
@@ -68,6 +95,16 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => publish('agent:status', runtime.getStatus()));
 }
 
+ipcMain.handle('account:status', (event, ...args) => { requireTrustedSender(event); if (args.length || !runtime) throw new Error('Invalid account request'); return runtime.request('account:status', {}); });
+ipcMain.handle('account:login', async (event, ...args) => {
+  requireTrustedSender(event); if (args.length || !runtime) throw new Error('Invalid account request');
+  const result = await runtime.request('account:login', {});
+  const url = new URL(result.url);
+  if (url.protocol !== 'https:' || url.hostname !== 'auth.openai.com' || url.username || url.password) throw new Error('Invalid login URL');
+  await shell.openExternal(url.href);
+  return { pending: true };
+});
+ipcMain.handle('account:logout', (event, ...args) => { requireTrustedSender(event); if (args.length || !runtime) throw new Error('Invalid account request'); return runtime.request('account:logout', {}); });
 ipcMain.handle('runtime:status', event => { requireTrustedSender(event); return runtime?.getStatus() || { status: 'stopped', error: 'Runtime is not available.' }; });
 ipcMain.handle('sessions:list', event => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.listSessions(); });
 ipcMain.handle('sessions:create', event => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.createSession(); });
@@ -111,6 +148,7 @@ ipcMain.handle('sessions:delete', async (event, sessionId) => {
 });
 ipcMain.handle('models:list', event => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.listModels(); });
 ipcMain.handle('session:model-config', (event, sessionId, modelId, reasoningEffort) => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.setSessionModelConfig(sessionId, modelId, reasoningEffort); });
+ipcMain.handle('session:permission-mode', (event, sessionId, permissionMode) => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.setSessionPermissionMode(sessionId, permissionMode); });
 ipcMain.handle('workspace:state', event => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.getWorkspace(); });
 ipcMain.handle('workspace:choose', async event => {
   requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.');
@@ -161,25 +199,109 @@ ipcMain.handle('workspace:project-menu', async (event, requestedPath) => {
   return { shown: true };
 });
 ipcMain.handle('tool:approval', (event, request) => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.resolveToolApproval(request.approvalId, request.sessionId, request.taskId, request.decision); });
-ipcMain.handle('agent:submit', (event, sessionId, text) => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.submit(sessionId, text); });
+ipcMain.handle('agent:submit', (event, sessionId, text, permissionMode) => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.submit(sessionId, text, {permissionMode:permissionMode ?? 'supervised'}); });
 ipcMain.handle('agent:cancel', (event, taskId) => { requireTrustedSender(event); if (!runtime) throw new Error('Runtime is not available.'); return runtime.cancel(taskId); });
+ipcMain.handle('reader:setup-state', (event, ...args) => {
+  requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
+  return readerOnboarding.getState();
+});
+ipcMain.handle('reader:setup-check', (event, ...args) => {
+  requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
+  // Qwen Reader integration exists only in the explicitly isolated Qwen preview.
+  return readerOnboarding.check().then(state => ({ ...state, ...(modelSetupPreview ? { modelSetupPreview:true, readerQwenIntegrated } : {}) }));
+});
+ipcMain.handle('reader:setup-finish', (event, decision, ...args) => {
+  requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
+  return readerOnboarding.finish(decision);
+});
+ipcMain.handle('reader:setup-dictionary', async (event, ...args) => {
+  requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
+  if (process.platform !== 'darwin') return { opened: false, error: '该设置仅支持 macOS' };
+  const result = await shell.openPath('/System/Applications/Dictionary.app');
+  return { opened: !result, ...(result ? { error: '未能打开系统词典，请在应用程序中手动打开。' } : {}) };
+});
+ipcMain.handle('reader:setup-model-info', (event, ...args) => {
+  requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
+  return shell.openExternal(MODEL_INFO_URL);
+});
+ipcMain.handle('reader:model-inspect', (event, ...args) => {
+  requireModelPreview(event, args);
+  return readerModelService.inspect();
+});
+ipcMain.handle('reader:model-check', (event, ...args) => {
+  requireModelPreview(event, args);
+  return readerModelService.recheck();
+});
+ipcMain.handle('reader:model-choose', async (event, ...args) => {
+  requireModelPreview(event, args);
+  const selected = await dialog.showOpenDialog(win, {
+    title:intelModel?'选择已经下载好的 Qwen3.5 4B GGUF 模型文件':'选择已经下载好的 Qwen3.5 4B MLX 模型文件夹',
+    properties:[intelModel?'openFile':'openDirectory'],
+    ...(intelModel?{filters:[{name:'GGUF 模型',extensions:['gguf']}]}:{}),
+  });
+  if (selected.canceled || selected.filePaths.length !== 1) return { canceled:true };
+  const confirmation = await dialog.showMessageBox(win, {
+    type:'question', title:'验证并采用现有模型',
+    message:'使用你选择的本地模型？',
+    detail:'Vantilo 将逐个校验文件，不复制或改写模型。通过校验后会运行一次固定英文句子的本机推理健康检查。',
+    buttons:['取消','验证并使用'], defaultId:0,cancelId:0,noLink:true,
+  });
+  if (confirmation.response !== 1) return { canceled:true };
+  return { canceled:false, result:await readerModelService.chooseExisting(selected.filePaths[0]) };
+});
+ipcMain.handle('reader:model-install', async (event, ...args) => {
+  requireModelPreview(event, args);
+  if(intelModel)throw new Error('Intel 模型下载尚未开放，请选择已有 GGUF 模型');
+  const info = await readerModelService.inspect();
+  if (!info.hardware.supported) throw new Error('此 Mac 尚不支持该 MLX 模型');
+  if (info.disk.availableBytes < info.disk.freshInstallBytes) throw new Error('磁盘可用空间不足');
+  const confirmation = await dialog.showMessageBox(win, {
+    type:'warning', title:'下载 Qwen3.5 模型',
+    message:'确认从 Hugging Face 下载约 3.1GB 的 Qwen 模型？',
+    detail:'仅从固定版本下载并进行 SHA-256 校验，下载需要网络。此操作完全可选；取消后暂存部分可供继续下载，不会自动启动模型。',
+    buttons:['取消','确认下载'], defaultId:0,cancelId:0,noLink:true,
+  });
+  if (confirmation.response !== 1) return { canceled:true };
+  return readerModelService.startDownload(payload => publish('reader:model-progress',payload));
+});
+ipcMain.handle('reader:model-cancel', (event, ...args) => {
+  requireModelPreview(event, args);
+  return readerModelService.cancelDownload();
+});
+ipcMain.handle('magazine-reader:sync', (event, ...args) => {
+  requireTrustedSender(event);
+  if (args.length || quitting || !usePortableReader) throw new Error('请先构建安装版阅读模块。');
+  return magazineReaderSupervisor.synchronize();
+});
+ipcMain.handle('magazine-reader:status', event => {
+  requireTrustedSender(event);
+  return magazineReaderSupervisor.checkHealth();
+});
+ipcMain.handle('magazine-reader:start', (event, ...args) => {
+  requireTrustedSender(event);
+  if (args.length || quitting) throw new Error('Invalid Reader startup request.');
+  return magazineReaderSupervisor.start();
+});
 
 app.whenReady().then(() => {
   installApplicationMenu();
-  installIsolatedWebTabs({ ipcMain, BrowserWindow, WebContentsView, session, trustedSender });
-  runtime = new RuntimeSupervisor({ utilityProcess, entryPath: path.join(__dirname, 'runtime-entry.cjs'), args: [app.getPath('userData')], cwd: process.cwd() });
+  runtime = new RuntimeSupervisor({ utilityProcess, entryPath: path.join(__dirname, 'runtime-entry.cjs'), args: [app.getPath('userData'), ...(usePortableReader ? [path.join(readerAssets, 'codex')] : [])], cwd: usePortableReader ? app.getPath('userData') : process.cwd() });
   runtime.on('status', status => publish('agent:status', status));
   runtime.on('event', event => publish('agent:event', event));
+  runtime.on('reader-delta', payload => magazineReaderSupervisor.deliverDelta(payload));
   runtime.on('exit', () => {});
   createWindow();
   runtime.start().catch(() => { /* the structured status is shown by the renderer */ });
+  // This isolated preview checks new issues from app launch, even while Agent is visible.
+  if(readerQwenIntegrated){void softwareUpdates.start();void magazineReaderSupervisor.start().catch(()=>{});}
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
 app.on('before-quit', event => {
-  if (quitting || !runtime) return;
+  if (quitting || (!runtime && magazineReaderSupervisor.getStatus().status === 'idle')) return;
   event.preventDefault(); quitting = true;
-  runtime.stop().finally(() => app.quit());
+  readerModelService?.cancelDownload(); // Leave partial downloads resumable on shutdown.
+  Promise.allSettled([runtime?.stop(), magazineReaderSupervisor.stop(), softwareUpdates?.stop()]).finally(() => app.quit());
 });
 app.on('window-all-closed', () => app.quit());
 

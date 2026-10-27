@@ -1,0 +1,280 @@
+/* Qwen preview word details: one contextual meaning, dictionary on demand. */
+.word-detail-content .vantilo-detail-context {
+  padding-top: 14px;
+}
+.word-detail-content .vantilo-detail-context .vantilo-context-primary {
+  border: 0;
+  padding: 7px 0 3px;
+  margin: 0;
+  background: transparent;
+}
+.word-detail-content .vantilo-detail-context .vantilo-context-primary > .word-lookup-label { display: none; }
+.word-detail-content .vantilo-detail-context .vantilo-context-primary > strong {
+  font-size: 27px;
+}
+.word-detail-content .vantilo-detail-dictionary {
+  padding-top: 12px;
+}
+.word-detail-content .vantilo-detail-dictionary > .word-detail-section-title {
+  display: flex;
+  margin-bottom: 12px;
+}
+.word-detail-content .vantilo-detail-dictionary .vantilo-dictionary-full-body {
+  margin-top: 8px;
+}
+.word-detail-content .vantilo-detail-dictionary .vantilo-dict-article {
+  width: 100%;
+}
+
+/* Qwen is the primary contextual Chinese definition on word click. */
+.vantilo-context-primary {
+  display: grid;
+  gap: 9px;
+  padding: 15px 17px;
+  margin: 8px 0;
+  border-radius: 12px;
+  background: #f7f5ef;
+  border: 1px solid #eae3d5;
+}
+.vantilo-context-primary > strong {
+  color: #282621;
+  font-size: 24px;
+  font-weight: 690;
+  line-height: 1.5;
+}
+.vantilo-context-primary > p {
+  color: #786f62;
+  font-size: 12px;
+  margin: 0;
+}
+.vantilo-dictionary-secondary {
+  padding: 4px 8px;
+  margin-bottom: 5px;
+}
+.vantilo-dictionary-secondary > summary {
+  cursor: pointer;
+  color: #846829;
+  font-size: 12px;
+  font-weight: 620;
+  list-style: disclosure-closed;
+}
+.vantilo-dictionary-secondary[open] > summary { margin-bottom: 9px; }
+.theme-night .vantilo-context-primary {
+  background: #343840;
+  border-color: #4a4f58;
+}
+.theme-night .vantilo-context-primary > strong { color: #f1eee7; }
+.theme-night .vantilo-context-primary > p { color: #c8c4bd; }
+.theme-night .vantilo-dictionary-secondary > summary { color: #dec483; }
+
+/* Vantilo-only, compact Apple Dictionary word popover */
+.word-lookup-dictionary-summary .vantilo-dictionary-quick {
+  display: block;
+  max-width: 100%;
+  color: #37332d;
+  font-size: 15px;
+  line-height: 1.65;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-source {
+  color: #8a8275;
+  font-size: 10px;
+  font-weight: 500;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-full {
+  margin-top: 6px;
+  padding-top: 9px;
+  border-top: 1px solid #e6e1d8;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-full summary {
+  display: list-item;
+  width: fit-content;
+  color: #8e6d25;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-full summary:hover {
+  color: #614b1b;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-full-body {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+  color: #5d574f;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-full-body > p {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+.word-lookup-dictionary-summary .vantilo-dictionary-full-body > p + p {
+  padding-left: 10px;
+  border-left: 2px solid #e4d8bd;
+}
+.theme-night .word-lookup-dictionary-summary .vantilo-dictionary-quick {
+  color: #f1eee7;
+}
+.theme-night .word-lookup-dictionary-summary .vantilo-dictionary-source {
+  color: #b4ada0;
+}
+.theme-night .word-lookup-dictionary-summary .vantilo-dictionary-full {
+  border-top-color: #55504b;
+}
+.theme-night .word-lookup-dictionary-summary .vantilo-dictionary-full summary {
+  color: #e2c47e;
+}
+.theme-night .word-lookup-dictionary-summary .vantilo-dictionary-full-body {
+  color: #d0cbc2;
+}
+
+/* Structured Dictionary hierarchy in the Reader's parchment theme. */
+.word-lookup-dictionary-summary .vantilo-dictionary-full-body {
+  display: block;
+  margin-top: 12px;
+  padding: 0;
+}
+.word-lookup-dictionary-summary .vantilo-dict-article {
+  --vantilo-dict-surface: #f7f5f0;
+  --vantilo-dict-border: #e9e3d8;
+  --vantilo-dict-heading: #675f53;
+  --vantilo-dict-ink: #403a32;
+  --vantilo-dict-muted: #786f62;
+  --vantilo-dict-gold: #8a682e;
+  --vantilo-dict-han: #37312a;
+  --vantilo-dict-usage: #766247;
+  --vantilo-dict-english: #60594f;
+  --vantilo-dict-translation: #433c33;
+  margin: 0;
+  padding: 16px 18px 19px;
+  border: 1px solid var(--vantilo-dict-border);
+  border-radius: 11px;
+  background: var(--vantilo-dict-surface);
+  color: var(--vantilo-dict-ink);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.72;
+}
+.word-lookup-dictionary-summary .vantilo-dict-lemma-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 11px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.word-lookup-dictionary-summary .vantilo-dict-lemma-line strong {
+  color: var(--vantilo-dict-han);
+  font: 700 22px/1.3 Georgia, "Times New Roman", serif;
+}
+.word-lookup-dictionary-summary .vantilo-dict-phonetic {
+  color: var(--vantilo-dict-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.word-lookup-dictionary-summary .vantilo-dict-section {
+  margin-top: 17px;
+}
+.word-lookup-dictionary-summary .vantilo-dict-section-title {
+  margin: 0 0 9px;
+  color: var(--vantilo-dict-heading);
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 650;
+}
+.word-lookup-dictionary-summary .vantilo-dict-sense {
+  margin: 0 0 13px;
+}
+.word-lookup-dictionary-summary .vantilo-dict-sense-text {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--vantilo-dict-heading);
+  line-height: 1.7;
+  font-size: 13px;
+}
+.word-lookup-dictionary-summary .vantilo-dict-number {
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--vantilo-dict-gold);
+  font-size: 15px;
+  line-height: 1.25;
+}
+.word-lookup-dictionary-summary .vantilo-dict-text-han {
+  color: var(--vantilo-dict-han);
+  font-weight: 600;
+}
+.word-lookup-dictionary-summary .vantilo-dict-text-note {
+  color: var(--vantilo-dict-muted);
+}
+.word-lookup-dictionary-summary .vantilo-dict-text-usage {
+  color: var(--vantilo-dict-usage);
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 550;
+  font-style: italic;
+}
+.word-lookup-dictionary-summary .vantilo-dict-text-other {
+  color: var(--vantilo-dict-heading);
+}
+.word-lookup-dictionary-summary .vantilo-dict-example {
+  position: relative;
+  margin: 10px 0 0 16px;
+}
+.word-lookup-dictionary-summary .vantilo-dict-example-en {
+  position: relative;
+  padding-left: 16px;
+  color: var(--vantilo-dict-english);
+  font: 500 13px/1.75 Georgia, "Times New Roman", serif;
+}
+.word-lookup-dictionary-summary .vantilo-dict-bullet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--vantilo-dict-gold);
+  font-size: 12px;
+}
+.word-lookup-dictionary-summary .vantilo-dict-example-zh {
+  margin: 3px 0 0 16px;
+  color: var(--vantilo-dict-translation);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.75;
+}
+.word-lookup-dictionary-summary .vantilo-dict-example-zh .vantilo-dict-text-han {
+  color: var(--vantilo-dict-translation);
+  font-weight: 550;
+}
+.word-lookup-dictionary-summary .vantilo-dict-fallback {
+  color: var(--vantilo-dict-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .word-lookup-dictionary-summary .vantilo-dict-article {
+    padding: 14px 13px 17px;
+  }
+  .word-lookup-dictionary-summary .vantilo-dict-example {
+    margin-left: 8px;
+  }
+  .word-lookup-dictionary-summary .vantilo-dict-lemma-line strong {
+    font-size: 20px;
+  }
+}
+/* The actual Reader app-shell theme controls the palette, not OS appearance. */
+.theme-night .word-lookup-dictionary-summary .vantilo-dict-article {
+  --vantilo-dict-surface: #2e3238;
+  --vantilo-dict-border: #484c52;
+  --vantilo-dict-heading: #d0c8bd;
+  --vantilo-dict-ink: #ebe6dd;
+  --vantilo-dict-muted: #aaa398;
+  --vantilo-dict-gold: #dbbb78;
+  --vantilo-dict-han: #f0ece4;
+  --vantilo-dict-usage: #dac6a6;
+  --vantilo-dict-english: #cbc3b7;
+  --vantilo-dict-translation: #e4ddd2;
+}

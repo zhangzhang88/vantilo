@@ -1,0 +1,6 @@
+.reader-shared-composer .composer-field [role="textbox"] { color: var(--theme-ink); }
+
+.reader-shared-composer .codex-picker-trigger { color: var(--theme-ink); }
+.reader-shared-composer .codex-picker-trigger:hover:not(:disabled) { color: var(--theme-ink); }
+.reader-shared-composer .codex-picker-menu { color-scheme: dark; }
+.reader-shared-composer .codex-picker-trigger { max-width: min(260px, 55vw); }

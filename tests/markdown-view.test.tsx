@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { MarkdownView } from '../src/ui/markdown-view';
 
 describe('MarkdownView', () => {
@@ -19,12 +19,10 @@ describe('MarkdownView', () => {
     expect(html).toContain('<code>npm test</code>');
   });
 
-  it('routes safe web links through the isolated browser and does not render raw HTML', () => {
-    const onOpenLink = vi.fn();
-    const html = renderToStaticMarkup(<MarkdownView text={'[文档](https://example.com) <script>alert(1)</script>'} onOpenLink={onOpenLink} />);
-    expect(html).toContain('button');
+  it('renders external links inertly and does not render raw HTML', () => {
+    const html = renderToStaticMarkup(<MarkdownView text={'[文档](https://example.com) <script>alert(1)</script>'} />);
     expect(html).toContain('文档');
+    expect(html).not.toContain('href=');
     expect(html).not.toContain('<script>');
-    expect(onOpenLink).not.toHaveBeenCalled();
   });
 });

@@ -11,14 +11,14 @@ export type ConversationMessageData = {
   createdAt: string; finishedAt?: string; error?: string | null;
 };
 
-export function ConversationMessage({ message, onOpenLink }: { message: ConversationMessageData; onOpenLink?: (href: string) => void }) {
+export function ConversationMessage({ message }: { message: ConversationMessageData }) {
   if (message.role === 'user') return <div className="transcript-user-row">
     <UserMessage><div className="transcript-user-text">{message.text}</div></UserMessage>
     <div className="transcript-user-controls"><CopyText text={message.text} /></div>
   </div>;
   return <div className="transcript-agent-row">
     <span className="transcript-agent-mark" aria-hidden="true"><AIMark /></span>
-    <div className="transcript-agent-content"><div className="transcript-agent-text"><MarkdownView text={message.text} onOpenLink={onOpenLink} /></div>
+    <div className="transcript-agent-content"><div className="transcript-agent-text"><MarkdownView text={message.text} /></div>
       {message.error && <div className="message-error">{message.error}</div>}
       <div className="transcript-agent-meta"><WorkDuration message={message} /><span className="transcript-meta-spacer" />{message.text && <CopyText text={message.text} label="复制" withText />}</div>
     </div>

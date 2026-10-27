@@ -24,13 +24,13 @@
 - [x] Vantilo-owned composer wrapper uses the separately licensed Spectrum AI PromptField/PromptTokenField APIs with session-local drafts, workspace references, `/list`/`/read`, Codex settings, and send/cancel flow. The native chooser sends selected absolute paths only from main to Runtime for strict workspace validation; Renderer receives only relative references, content is not read during selection, and Codex still needs each one-time read/list approval.
 - [x] Keep access fixed to read-only and expose only the local Codex agent/model; do not reproduce BaoCut's write/full-access modes, other engines, or product-specific features unavailable in Vantilo.
 - [x] Independently implement Vantilo's page sidebar, pointer/keyboard resizer, and workspace-scoped session/project navigation using Spectrum APIs only as licensed dependencies.
-- [x] Independently implement Vantilo's desktop shell with a narrow app rail, top navigation, conversation/browser tabs, project/recent-session sidebar, and no task-inspector column; compact workspace controls and Runtime status fit the shell, while unavailable destinations remain labelled placeholders. Visible Vantilo UI copy is localized to Simplified Chinese.
-- [x] Add a Vantilo-owned isolated `WebContentsView` browser host: no Node/preload, no inherited system-browser cookies, explicit URL validation, request-level loopback-host-literal/app-origin blocking, disabled permissions/downloads/popups, and owner-window-scoped IPC. Unit tests cover sandbox options, sender ownership, URL rules, permissions, navigation, and bounds.
+- [x] Independently implement Vantilo's desktop shell with a narrow app rail, conversation header, project/recent-session sidebar, and no task-inspector column; compact workspace controls and Runtime status fit the shell, while unavailable destinations remain labelled placeholders. Visible Vantilo UI copy is localized to Simplified Chinese.
+- [x] Remove the embedded browser feature, including its UI, `WebContentsView` host, policy, IPC, and dedicated tests. Vantilo does not provide an embedded browser.
 - [x] Independently compose the licensed Spectrum AI PromptField/PromptTokenField APIs, completion items, reference menu, toolbar, and Codex model/reasoning picker around Vantilo session drafts and its live catalog.
 - [x] Independently implement role-label-free transcript messages, task status, copy actions, and safe Markdown rendering with licensed Spectrum primitives.
-- [x] Render Agent output as GFM Markdown with CJK-friendly emphasis; keep raw HTML and remote images inert, and route clicked HTTP(S) links into the isolated browser.
+- [x] Render Agent output as GFM Markdown with CJK-friendly emphasis; keep raw HTML, remote images, and external links inert.
 - [x] Bind sessions to their creation workspace, scope recent-session navigation on project switches, preserve unassigned legacy history, and support confirmed permanent Codex/local deletion with active-task protection.
-- [x] Replace the reviewed BaoCut-attributed UI, CSS, and browser-host implementation with Vantilo-owned modules while retaining Runtime boundaries and browser security policies; see [independent UI review](independent-ui-reimplementation.md).
+- [x] Replace the reviewed BaoCut-attributed UI and CSS implementation with Vantilo-owned modules while retaining Runtime boundaries; see [independent UI review](independent-ui-reimplementation.md).
 
 ## Verified protocol and environment (2026-10-24)
 
@@ -61,7 +61,7 @@
 ## Security follow-up
 
 - [x] Packaged Renderer trust now requires the exact canonical `dist/index.html` file URL; IPC sender checks and the main-window `will-navigate` guard use the same fail-closed rule. Regression tests cover forged local paths, encoding/path-normalization variants, query/fragment/protocol mismatches, and development-origin restrictions.
-- [ ] Browser DNS rebinding and actual connection-target restrictions are unresolved. Current filtering checks URL host literals and app origins; it does not validate DNS answers or prevent public hostnames from resolving to loopback, private, or link-local addresses. Do not claim browser network isolation is fully secure. Before making that claim, evaluate a controlled proxy or another network-layer design that constrains the actual destination IP for every connection and redirect, and test its bypass resistance and DNS-race behavior.
+- [x] Embedded-browser DNS rebinding and actual connection-target protection are not applicable: the embedded browser feature was removed. This does not indicate that DNS-rebinding defenses were implemented or verified.
 
 ## Phase 2 — Tool platform
 
@@ -106,3 +106,58 @@
 ## Non-negotiable boundaries
 
 Never modify protected projects, copy unlicensed code/assets or private data, bundle BaoCut engine assets without permission, or weaken tests/safety controls.
+
+
+## Phase 3 — Existing Magazine Reader module
+
+- [x] Add a home action and persistent app-rail entry to open the existing Magazine Reader in Vantilo's main workspace, with a one-click return to Agent.
+- [x] Start the original Reader's local frontend/API only on demand, use fixed loopback ports (5175 / 5174), suppress automatic source sync on Vantilo-triggered startup, and stop only child processes owned by Vantilo.
+- [x] Keep the module URL fixed, sandbox its iframe, constrain frame navigation to the Reader loopback origin, and expose only a trusted-renderer IPC method to request startup. No generic browser, address bar, or arbitrary URL API is restored.
+- [x] Add mocked lifecycle, constrained IPC/navigation, frontend-adapter and module UI tests; document source-project, external-API and localStorage boundaries in [the integration review](magazine-reader-integration.md).
+- [x] Use non-watch API startup, Reader-owned Vite dependencies with an external cache, bounded process-group cleanup and cancellation; detect visible-module service failures and offer retry.
+- [ ] Electron GUI manual acceptance is not performed in this task; no real Codex E2E, Reader sync or AI provider calls are run.
+- [ ] Future packaging work: vendor or package the Reader frontend/backend and its runtime dependencies for portable Vantilo distribution. Current integration expects the original local project path and its existing npm dependencies.
+
+
+## Current development — Reader and Agent unification (2026-10-25)
+
+- [x] Compile the original Reader through a read-only adaptation layer; keep private records and credentials out of build output. Explicitly requested EPUB seed content is tracked by a separate manifest.
+- [x] Remove science-article functionality and independent Reader AI-service configuration/engine from the Vantilo variant.
+- [x] Reuse native ChatGPT account, AgentComposer and AgentRuntime task code; keep original Reader scoped conversations and model preferences separate from project sessions. Runtime IPC is v10 and session storage v6.
+- [x] Add isolated per-user library and first-use/default workspace; retain source-project data untouched.
+- [x] Four-publication scheduled/manual checks with fixed source, bounded downloads, retry and deduplication, verified with synthetic issues.
+- [x] Source/build/unit and isolated Electron frontend/layout verification; no real model calls or upstream downloads.
+- [ ] Real ChatGPT sign-in and completed inference acceptance with the user, then review any remaining product adjustments.
+- [ ] Mac application packaging is **paused by user request**; only resume after explicit instruction. Prior ignored out/ artifacts are not current deliverables.
+
+## Offline starter library
+
+- [x] User explicitly authorized local reuse of the existing EPUB inventory: 19 issues and 11 ebooks. Source remains read-only; ignored build assets hold only EPUBs and an integrity manifest.
+- [x] Initialize both Reader shelves offline before opening the API; preserve existing files, deduplicate content, resume per-entry imports and respect subsequent user deletion.
+- [x] Populate the current local Vantilo library; read-only running API checks identify 19 issues and 11 books.
+- [x] Synthetic tests cover first launch, duplicate/filename conflicts, interruption, upgrades, corrupt content/ledger, symlink/traversal rejection and release-content guards. Full suite: 197 tests pass.
+- [ ] Confirm the distributable content catalog and its individual rights/evidence before creating an installer. Current seed is for personal development. Packaging remains paused.
+
+## Reader conversation correction (2026-10-26)
+
+- [x] Restore original scoped assistant, quick prompts and book preparation/candidate confirmation; Reader never uses the selected Agent project conversation.
+- [x] Share source components, native login/catalog and Runtime/Driver code with independent Reader history, drafts, model preferences and private zero-tool task context.
+- [x] Hide internal task records/events from project navigation; cancel only the correlated Reader request; preserve old project histories on missing rollout.
+- [x] Replace Reader's external TTS/font loading with device facilities. Voice quality and real-account inference remain unverified.
+- [ ] User acceptance after a full development-app restart; packaging remains paused.
+
+## Parallel execution (2026-10-26)
+
+- [x] Agent and Reader use separate Runtime/Driver instances with the same native credential home; one active turn per lane, bounded serial queue within Reader.
+- [x] Lazy Reader startup, correlated cancellation, independent stores, account-change guard and supervision of both native child processes.
+- [x] Runtime IPC v12 restores authoritative task occupancy; duplicate sends and terminal native errors no longer leave a stale send state.
+- [ ] Real-account simultaneous inference acceptance remains unverified; packaging remains paused.
+
+## Permission modes (2026-10-26)
+
+- [x] Add the Agent composer permission-mode entry point and make the current supervised/read-only mode explicit.
+- [x] Show and wire the four permission modes in the Agent composer; higher modes are constrained to the currently published workspace tools.
+- [ ] Add command execution with explicit risk classes before expanding “automatic” or “full access” beyond workspace tools.
+- [ ] Persist the selected mode per Agent session and enforce it in Runtime; Reader remains independently read-only.
+- [x] Add the first scoped `write_workspace_file` tool for the supervised Agent lane; it requires explicit approval and is disabled in Reader.
+- [x] Enable “automatic edit approval” only for that bounded text-file tool; automatic/full-access currently cover only the published workspace tools.

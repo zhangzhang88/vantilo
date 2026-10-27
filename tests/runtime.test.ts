@@ -301,3 +301,156 @@ describe('AgentRuntime sessions and tasks',()=>{
     await runtime.stop();expect(driver.closed).toBe(true);expect(runtime.getStatus().status).toBe('stopped');
   });
 });
+
+
+describe('Reader jobs reuse AgentRuntime', () => {
+  it('reuses the engine but isolates Reader tasks, history, model settings and workspace from Agent projects', async () => {
+    const {runtime,driver,store} = await runtimeWith();
+    (driver as any).accountStatus = vi.fn(async()=>({connected:true,email:'fixture@example.com'}));
+    const source = await runtime.createSession();
+    await runtime.setSessionModelConfig(source.session.id,'gpt-6-luna','high');
+    const output = runtime.runReaderAi({instructions:'Return a translation only',input:'Untrusted source text',modelId:null,reasoningEffort:null});
+    await waitFor(()=>driver.startTurn.mock.calls.length===1);
+    expect(driver.threadStartDefinitions).toEqual([]);
+    expect(driver.executedSettings[0]).toMatchObject({model:'gpt-6.1-sol',effort:'low'});
+    expect(driver.startTurn.mock.calls[0]?.[2].workspaceRoot).not.toBe(source.session.workspaceRoot);
+    driver.emit('delta',{delta:'中文结果'});
+    driver.emit('turn',{status:'completed',turnId:driver.turnId});
+    await expect(output).resolves.toBe('中文结果');
+    const session = store.list().find((item:any)=>item.title==='Reader · 阅读任务');
+    expect(store.get(session!.id).messages.at(-1)?.text).toBe('中文结果');
+    expect(store.get(source.session.id).messages).toEqual([]);
+    expect(runtime.listSessions().sessions.map((s:any)=>s.id)).toEqual([source.session.id]);
+    await expect(runtime.submit(session!.id,'cross-domain')).rejects.toThrow(/交叉/);
+    const second=runtime.runReaderAi({instructions:'Translate another paragraph',input:'Second source paragraph',modelId:'gpt-6-luna',reasoningEffort:'high'});
+    await waitFor(()=>driver.startTurn.mock.calls.length===2);
+    driver.emit('delta',{delta:'第二段译文'});driver.emit('turn',{status:'completed',turnId:driver.turnId});
+    await expect(second).resolves.toBe('第二段译文');
+    expect(store.list().filter((item:any)=>item.title==='Reader · 阅读任务')).toHaveLength(2);
+    expect(driver.startTurn.mock.calls[1]?.[1]).toBeNull();
+    expect(driver.executedSettings[1]).toMatchObject({model:'gpt-6-luna',effort:'high'});
+    await runtime.stop();
+  });
+  it('requires the same ChatGPT account and never invokes the driver when logged out', async () => {
+    const {runtime,driver} = await runtimeWith();
+    (driver as any).accountStatus = vi.fn(async()=>({connected:false,email:null}));
+    await expect(runtime.runReaderAi({instructions:'x',input:'y',modelSourceSessionId:null})).rejects.toThrow(/登录/);
+    expect(driver.startTurn).not.toHaveBeenCalled();
+    await runtime.stop();
+  });
+});
+
+it('cancels only the matching Reader request and never an unrelated project task', async () => {
+  const {runtime,driver,store}=await runtimeWith();
+  (driver as any).accountStatus=vi.fn(async()=>({connected:true,email:null}));
+  const requestId='20000000-0000-4000-8000-000000000041';
+  const pending=runtime.runReaderAi({requestId,instructions:'Translate',input:'Synthetic paragraph'});
+  const rejected=expect(pending).rejects.toThrow(/未完成/);
+  await waitFor(()=>driver.startTurn.mock.calls.length===1);
+  expect(runtime.cancelReaderRequest('20000000-0000-4000-8000-000000000099')).toEqual({cancelled:false});
+  expect(driver.cancelTurn).not.toHaveBeenCalled();
+  expect(runtime.cancelReaderRequest(requestId)).toEqual({cancelled:true});
+  await waitFor(()=>driver.cancelTurn.mock.calls.length===1);
+  driver.emit('turn',{status:'cancelled',turnId:driver.turnId});await rejected;
+  const project=await runtime.createSession();await runtime.submit(project.session.id,'Project task');
+  expect(runtime.cancelReaderRequest(requestId)).toEqual({cancelled:false});
+  expect(driver.cancelTurn).toHaveBeenCalledOnce();
+  driver.emit('turn',{status:'completed',turnId:driver.turnId});
+  await waitFor(()=>!runtime.activeTask);
+  expect(store.get(project.session.id).messages[0].text).toBe('Project task');
+  await runtime.stop();
+});
+
+it('keeps local project history intact when the old Codex rollout is missing',async()=>{
+  const {runtime,driver,store}=await runtimeWith();const created=await runtime.createSession();
+  await store.addTurn(created.session.id,'20000000-0000-4000-8000-000000000042','Previous local project question');
+  await store.setCodexThread(created.session.id,'missing-thread');
+  driver.resumeThread.mockRejectedValueOnce(new Error('no rollout found for thread id missing-thread'));
+  const opened=await runtime.openSession(created.session.id);
+  expect(opened.threadState).toBe('history');expect(opened.connectionError).toContain('本地历史已保留');
+  expect(store.get(created.session.id).messages[0].text).toBe('Previous local project question');
+  expect(store.get(created.session.id).codexThreadId).toBe('missing-thread');
+  expect(driver.startTurn).not.toHaveBeenCalled();await runtime.stop();
+});
+
+it('completes confirmed local deletion when the exact Codex rollout is already absent',async()=>{
+  const {runtime,driver,store}=await runtimeWith();
+  const removed=await runtime.createSession(),retained=await runtime.createSession();
+  await store.setCodexThread(removed.session.id,'missing-delete-thread');
+  await store.addTurn(removed.session.id,'20000000-0000-4000-8000-000000000092','Delete this local history');
+  runtime.connectedThreads.add('missing-delete-thread');
+  driver.deleteThread.mockRejectedValueOnce(new Error('no rollout found for thread id missing-delete-thread'));
+  await expect(runtime.deleteSession(removed.session.id)).resolves.toEqual({sessionId:removed.session.id});
+  expect(()=>store.get(removed.session.id)).toThrow(/not found/);
+  expect(store.get(retained.session.id)).toMatchObject({id:retained.session.id});
+  expect(runtime.connectedThreads.has('missing-delete-thread')).toBe(false);
+  const reloaded=new SessionStore({filePath:store.filePath});await reloaded.load();
+  expect(reloaded.list().map((s:any)=>s.id)).toEqual([retained.session.id]);await runtime.stop();
+});
+
+it.each(['Connection timed out','Permission denied','no rollout found for thread id a-different-thread','thread not found while checking permission'])(
+  'keeps local history for any other Codex deletion failure: %s',async(message)=>{
+    const {runtime,driver,store}=await runtimeWith();const {session}=await runtime.createSession();
+    await store.setCodexThread(session.id,'target-thread');
+    await store.addTurn(session.id,'20000000-0000-4000-8000-000000000093','Keep this local history');
+    driver.deleteThread.mockRejectedValueOnce(new Error(message));
+    await expect(runtime.deleteSession(session.id)).rejects.toThrow(message);
+    expect(store.get(session.id).messages[0].text).toBe('Keep this local history');await runtime.stop();
+  }
+);
+
+it('publishes a content-free busy snapshot before acceptance, restores it on query, and releases it on all preparation failures',async()=>{
+  const {runtime,driver}=await runtimeWith();const {session}=await runtime.createSession();
+  let finish!:(value:any)=>void;driver.listModels.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+  const pending=runtime.submit(session.id,'Synthetic pending question');
+  await waitFor(()=>Boolean(finish));
+  expect(runtime.getStatus().activeTask).toMatchObject({sessionId:session.id,owner:'agent',phase:'starting'});
+  expect(JSON.stringify(runtime.getStatus())).not.toContain('Synthetic pending question');
+  const taskId=runtime.getStatus().activeTask.taskId;await runtime.cancel(taskId);
+  expect(driver.cancelTurn).not.toHaveBeenCalled();
+  finish(await new FakeDriver().listModels());await expect(pending).rejects.toThrow(/取消/);
+  expect(runtime.getStatus().activeTask).toBeNull();expect(driver.startTurn).not.toHaveBeenCalled();await runtime.stop();
+});
+
+it('runs project work and Reader work simultaneously with separate drivers and cancels only Reader',async()=>{
+  const {ReaderEngine}=require('../electron/reader-engine.cjs');
+  const project=await runtimeWith(),reader=await runtimeWith();
+  (project.driver as any).accountStatus=vi.fn(async()=>({connected:true,email:null}));
+  (reader.driver as any).accountStatus=vi.fn(async()=>({connected:true,email:null}));
+  const engine=new ReaderEngine({accountStatus:()=> (project.driver as any).accountStatus(),createRuntime:async()=>reader.runtime});
+  const session=await project.runtime.createSession();await project.runtime.submit(session.session.id,'Project task');
+  const requestId='20000000-0000-4000-8000-000000000101';const reading=engine.run({requestId,instructions:'Translate',input:'Reader source'});
+  const rejected=expect(reading).rejects.toThrow(/未完成/);
+  await waitFor(()=>reader.driver.startTurn.mock.calls.length===1);
+  expect(project.runtime.getStatus().activeTask).toMatchObject({owner:'agent',sessionId:session.session.id});
+  expect(reader.runtime.getStatus().activeTask).toMatchObject({owner:'reader'});
+  expect(reader.driver.threadStartDefinitions).toEqual([]);expect(project.driver.threadStartDefinitions).toHaveLength(3);
+  const deltas=vi.fn();engine.on('delta',deltas);
+  reader.driver.emit('delta',{delta:'Reader chunk'});project.driver.emit('delta',{delta:'Project chunk'});
+  await waitFor(()=>deltas.mock.calls.length===1);
+  expect(deltas).toHaveBeenCalledWith({requestId,delta:'Reader chunk'});
+  expect(project.store.get(session.session.id).messages.at(-1).text).toBe('Project chunk');
+  engine.cancel(requestId);await waitFor(()=>reader.driver.cancelTurn.mock.calls.length===1);
+  expect(project.driver.cancelTurn).not.toHaveBeenCalled();
+  reader.driver.emit('turn',{status:'cancelled',turnId:reader.driver.turnId});await rejected;
+  expect(project.runtime.activeTask).toBeTruthy();project.driver.emit('turn',{status:'completed',turnId:project.driver.turnId});
+  await waitFor(()=>!project.runtime.activeTask);await engine.stop();await project.runtime.stop();
+});
+
+it('reads subsequent files with session approval while still rejecting sensitive and outside paths',async()=>{
+  const {runtime,store,driver,workspace}=await runtimeWith();
+  await writeFile(path.join(workspace.state().root,'actual.txt'),'authorized text');
+  const {session}=await runtime.createSession();const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));
+  const {taskId}=await runtime.submit(session.id,'Read project files');
+  await waitFor(()=>store.get(session.id).codexThreadId==='thread-1'&&runtime.activeTask.turnId==='turn-1');
+  let id=900;const invoke=(file:string)=>driver.invokeTool({requestId:++id,callId:`call-${id}`,threadId:'thread-1',turnId:'turn-1',namespace:null,tool:'read_workspace_file',arguments:{path:file,reason:'Read requested project text'}});
+  const first=invoke('actual.txt');await waitFor(()=>events.some(event=>event.type==='tool-approval-requested'));
+  const request=events.find(event=>event.type==='tool-approval-requested');
+  runtime.resolveToolApproval({approvalId:request.approvalId,sessionId:session.id,taskId,decision:'approved-for-session'});
+  expect((await first).success).toBe(true);expect((await invoke('actual.txt')).success).toBe(true);
+  expect(events.filter(event=>event.type==='tool-approval-requested')).toHaveLength(1);
+  expect((await invoke('../outside.txt')).success).toBe(false);expect((await invoke('.env')).success).toBe(false);
+  driver.emit('turn',{status:'completed',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
+  await runtime.setWorkspace(workspace.state().root);
+  expect(runtime.approvals.sessionReadGrants.size).toBe(0);await runtime.stop();
+});

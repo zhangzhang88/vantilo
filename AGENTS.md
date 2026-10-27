@@ -3,9 +3,9 @@
 ## Scope and protected projects
 
 - Work only inside this repository unless the user explicitly requests a separate read-only inspection.
-- The original projects `/Users/world/Downloads/code/magazine-reader` and the upstream BaoCut repository are protected. Never edit, format, install dependencies in, commit in, or otherwise mutate them during Vantilo tasks.
+- The original Magazine Reader project (normally the `magazine-reader` directory beside this repository, or the path explicitly configured by the user) and the upstream BaoCut repository are protected. Never edit, format, install dependencies in, commit in, or otherwise mutate them during Vantilo tasks.
 - `pke-course-studio/worm_28-experiment` is a potential upstream source for the typing-game behavior and sound assets. Treat it as read-only and do not reuse code or assets until licensing is verified.
-- Do not copy private user data, EPUBs, local provider configs, API keys, tokens, cookies, or authentication files into Vantilo.
+- Do not copy private user data, local provider configs, API keys, tokens, cookies, or authentication files into Vantilo. Exception for EPUBs: the user explicitly authorized existing magazines and ebooks from the protected Magazine Reader project's top-level `issues/` and `books/` as Vantilo's initial reading library. The existing `prepare:reader-library` pipeline may copy only those EPUBs into Vantilo's ignored local seed/library for personal use; the source project stays read-only. Never commit or push user/source-library EPUB content, and do not treat this permission as public redistribution rights. A tiny, original, entirely synthetic EPUB created only as a reproducible automated-test fixture is permitted under `tests/fixtures/` after inspecting its contents and provenance; this narrow testing exception never applies to real magazines or books.
 
 ## Development rules
 

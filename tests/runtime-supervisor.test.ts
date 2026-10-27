@@ -139,3 +139,19 @@ describe('supervised Runtime IPC', () => {
     expect(supervisor.getStatus().status).toBe('stopped');
   });
 });
+
+it('routes Reader deltas separately from project events',async()=>{
+  const {child,supervisor,starting}=setup();await starting;const reader=vi.fn(),project=vi.fn();
+  supervisor.on('reader-delta',reader);supervisor.on('event',project);
+  const requestId='20000000-0000-4000-8000-000000000081';
+  child.send({version:PROTOCOL_VERSION,type:'reader-delta',requestId,delta:'Reader-only text'});
+  expect(reader).toHaveBeenCalledWith({requestId,delta:'Reader-only text'});
+  expect(project).not.toHaveBeenCalled();await supervisor.stop();
+});
+
+it('tracks and terminates both owned engine processes after a Runtime crash',async()=>{
+  const {child,supervisor,starting}=setup();await starting;const kill=vi.spyOn(process,'kill').mockImplementation(()=>true);
+  child.send({version:PROTOCOL_VERSION,type:'child-process',pid:456781});
+  child.send({version:PROTOCOL_VERSION,type:'child-process',owner:'reader',pid:456782});
+  child.emit('exit',1);expect(kill).toHaveBeenCalledWith(456781,'SIGTERM');expect(kill).toHaveBeenCalledWith(456782,'SIGTERM');kill.mockRestore();
+});

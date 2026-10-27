@@ -117,3 +117,26 @@ describe('Codex app-server JSONL driver',()=>{
   it('times out individual requests and fails pending requests on disconnect',async()=>{const {child,driver,starting}=setup();await starting;const pending=driver.request('never/responds',{});const rejected=expect(pending).rejects.toThrow(/timed out/i);await new Promise(resolve=>setTimeout(resolve,60));await rejected;const next=driver.request('also/never',{});const disconnected=expect(next).rejects.toThrow(/exited/);child.emit('exit',1,null);await disconnected;});
   it('cleans the child on close and exposes executable resolution',async()=>{const {child,driver,starting}=setup();await starting;await driver.close();expect(child.killed).toBe(true);expect(resolveCodexPath({PATH:'/nonexistent'})).toContain('/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex');});
 });
+
+it('ends only a matching non-retryable error and ignores retryable, unrelated and late terminal notifications',async()=>{
+  const {driver,child,starting}=setup();await starting;driver.threadId='thread-active';driver.activeTurnId='turn-active';driver.turnActive=true;
+  const turns=vi.fn();driver.on('turn',turns);
+  child.notify('error',{threadId:'thread-active',turnId:'turn-active',willRetry:true,error:{message:'Retrying'}});
+  child.notify('error',{threadId:'thread-other',turnId:'turn-active',willRetry:false,error:{message:'Unrelated'}});
+  expect(turns).not.toHaveBeenCalled();expect(driver.turnActive).toBe(true);
+  child.notify('error',{threadId:'thread-active',turnId:'turn-active',willRetry:false,error:{message:'Terminal failure'}});
+  expect(turns).toHaveBeenCalledExactlyOnceWith({status:'failed',turnId:'turn-active',error:'Terminal failure'});
+  driver.activeTurnId='new-turn';driver.turnActive=true;
+  child.notify('turn/completed',{turn:{id:'turn-active',status:'failed'}});
+  expect(driver.activeTurnId).toBe('new-turn');expect(driver.turnActive).toBe(true);await driver.close();
+});
+
+it('reconciles a non-retryable error delivered before the turn-start RPC reply',async()=>{
+  const {driver,child,starting}=setup();await starting;driver.threadId='thread-loaded';const turns=vi.fn();driver.on('turn',turns);
+  const pending=driver.startTurn('Synthetic task','thread-loaded');await new Promise(resolve=>setImmediate(resolve));
+  const request=child.messages.find(m=>m.method==='turn/start');
+  child.notify('error',{threadId:'thread-loaded',turnId:'early-failed-turn',willRetry:false,error:{message:'Early failure'}});
+  expect(turns).not.toHaveBeenCalled();child.reply(request.id,{turn:{id:'early-failed-turn'}});await pending;
+  expect(turns).toHaveBeenCalledExactlyOnceWith({status:'failed',turnId:'early-failed-turn',error:'Early failure'});
+  expect(driver.turnActive).toBe(false);child.notify('turn/started',{turn:{id:'early-failed-turn'}});expect(driver.turnActive).toBe(false);await driver.close();
+});

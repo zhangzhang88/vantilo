@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -14,7 +14,7 @@ afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>rm(root,{recursi
 describe('Vantilo read-only Tool Catalog',()=>{
   it('publishes versioned manifests and maps stable IDs to compatible Codex names and schemas',async()=>{
     const {catalog}=await fixture();
-    expect(TOOL_IDS).toEqual({list_workspace_files:'vantilo.workspace.list-files',read_workspace_file:'vantilo.workspace.read-file',read_workspace_passage:'vantilo.reading.read-passage'});
+    expect(TOOL_IDS).toEqual({list_workspace_files:'vantilo.workspace.list-files',read_workspace_file:'vantilo.workspace.read-file',read_workspace_passage:'vantilo.reading.read-passage',write_workspace_file:'vantilo.workspace.write-file'});
     expect(catalog.list()).toMatchObject([{id:TOOL_IDS.list_workspace_files,version:1,codexName:'list_workspace_files',effect:'read-only',resourceScope:'authorized-workspace-relative-directory',minimumApproval:'every-call'},{id:TOOL_IDS.read_workspace_file,version:1,codexName:'read_workspace_file',effect:'read-only',resourceScope:'authorized-workspace-relative-file',minimumApproval:'every-call'},{id:TOOL_IDS.read_workspace_passage,version:1,codexName:'read_workspace_passage',effect:'read-only',resourceScope:'authorized-workspace-relative-text-range',minimumApproval:'every-call'}]);
     const snapshot=catalog.snapshot();expect(catalog.dynamicTools(snapshot).map((tool:any)=>tool.name)).toEqual(['list_workspace_files','read_workspace_file','read_workspace_passage']);
     for(const [name,validator] of [['list_workspace_files',ListInput],['read_workspace_file',ReadInput]] as const){const schema=jsonSchemaFor(name);expect(schema).toMatchObject({type:'object',additionalProperties:false});expect(validator.safeParse({reason:'Need this source',path:'file.txt'}).success).toBe(true);expect(validator.safeParse({reason:'Need this source',path:'file.txt',extra:true}).success).toBe(false);expect(schema.required).toEqual(name==='list_workspace_files'?['reason']:['reason','path']);expect(schema.properties.reason).toMatchObject({type:'string',minLength:3,maxLength:500});expect(schema.properties.path).toMatchObject(name==='list_workspace_files'?{type:'string',maxLength:1024}:{type:'string',minLength:1,maxLength:1024});if(name==='list_workspace_files')expect(schema.properties.limit).toMatchObject({type:'integer',minimum:1,maximum:200});}
@@ -81,4 +81,22 @@ describe('Vantilo read-only Tool Catalog',()=>{
     const {catalog}=await fixture({timeoutMs:1000});const controller=new AbortController();const operation=vi.fn((_input:any,{signal}:any)=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')))));catalog.get(TOOL_IDS.list_workspace_files).execute=operation;
     const pending=catalog.execute('list_workspace_files',{reason:'List the project'},{signal:controller.signal,snapshot:catalog.snapshot()});await new Promise(resolve=>setImmediate(resolve));controller.abort();await expect(pending).rejects.toMatchObject({code:'cancelled'});
   });
+});
+
+it('enables the supervised write tool only when explicitly configured and keeps scope checks', async()=>{
+  const {catalog,workspace}=await fixture({enableWriteTools:true});
+  expect(catalog.snapshot().some((entry:any)=>entry.id===TOOL_IDS.write_workspace_file)).toBe(true);
+  const snapshot=catalog.snapshot();
+  const result=await catalog.execute('write_workspace_file',{path:'notes.txt',content:'approved text',reason:'Update the requested project note'},{snapshot});
+  expect(result).toMatchObject({ok:true,data:{path:'notes.txt',created:true}});
+  await expect(catalog.execute('write_workspace_file',{path:'.env',content:'bad',reason:'Write secret'},{snapshot})).rejects.toThrow();
+  expect((await workspace.openReadOnly('notes.txt')).content).toBe('approved text');
+});
+it('keeps the native Runtime write tool unpublished until directory-race-safe writes exist', async()=>{
+  const entry=await readFile('electron/runtime-entry.cjs','utf8');
+  expect(entry).toMatch(/enableWriteTools:\s*false/);
+  const {catalog}=await fixture();
+  const snapshot=catalog.snapshot();
+  expect(catalog.dynamicTools(snapshot).map((tool:any)=>tool.name)).not.toContain('write_workspace_file');
+  expect(()=>catalog.validateCall('write_workspace_file',{reason:'Edit source',path:'source.txt',content:'x'},snapshot)).toThrow(/not available/);
 });

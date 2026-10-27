@@ -10,11 +10,11 @@ function safeWebAddress(value?: string) {
   catch { return null; }
 }
 
-export function MarkdownView({ text, onOpenLink }: { text: string; onOpenLink?: (href: string) => void }) {
+export function MarkdownView({ text }: { text: string }) {
   const renderers: Components = {
     a: ({ href, title, children }) => {
       const address = safeWebAddress(href);
-      return address ? <button type="button" className="markdown-external-link" title={title || address} disabled={!onOpenLink} onClick={() => onOpenLink?.(address)}>{children}</button> : <span>{children}</span>;
+      return address ? <span className="markdown-external-link" title={title || address}>{children}</span> : <span>{children}</span>;
     },
     img: ({ alt }) => alt ? <span className="markdown-image-caption">[图片：{alt}]</span> : null,
     table: ({ children }) => <div className="markdown-table-scroll"><table>{children}</table></div>,

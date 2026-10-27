@@ -33,3 +33,42 @@ describe('one-shot request-bound tool approvals',()=>{
     const stopped=service.request(details({serverRequestId:9,callId:'codex-call-3',taskId:'30000000-0000-4000-8000-000000000003'}));service.rejectAll();await expect(stopped).resolves.toMatchObject({status:'cancelled'});expect(service.listPending()).toEqual([]);
   });
 });
+
+it('reuses an explicit read-only grant only in the same session, root and revision, with replay checks',async()=>{
+  const service=new ApprovalService();const requested:any[]=[];service.on('requested',(r:any)=>requested.push(r));
+  const first=service.request(details());service.decide({...requested[0],decision:'approved-for-session'});
+  await expect(first).resolves.toMatchObject({status:'approved'});
+  await expect(service.request(details({serverRequestId:8,taskId:'later-task',toolName:'list_workspace_files',operation:'list'}))).resolves.toMatchObject({status:'approved'});
+  expect(requested).toHaveLength(1);
+  expect(()=>service.request(details({serverRequestId:8}))).toThrow(/replayed/);
+  for(const overrides of [{sessionId:'other-session'},{workspaceRoot:'/other'},{workspaceRevision:2},{toolName:'write_file'}]){
+    const pending=service.request(details({serverRequestId:20+requested.length,...overrides}));
+    const request=requested.at(-1);service.decide({...request,decision:'rejected'});await expect(pending).resolves.toMatchObject({status:'rejected'});
+  }
+  expect(requested).toHaveLength(5);service.rejectAll();
+});
+it('clears session grants on workspace reset or shutdown and never persists them across instances',async()=>{
+  for(const clear of ['clearSessionReadGrants','rejectAll']){
+    const service=new ApprovalService();const events:any[]=[];service.on('requested',(r:any)=>events.push(r));
+    const first=service.request(details());service.decide({...events[0],decision:'approved-for-session'});await first;
+    service[clear]();const next=service.request(details({serverRequestId:9}));expect(events).toHaveLength(2);
+    service.rejectAll();await expect(next).resolves.toMatchObject({status:'cancelled'});
+  }
+  const service=new ApprovalService();const pending=service.request(details());expect(service.listPending()).toHaveLength(1);service.rejectAll();await pending;
+});
+it('cannot create a session grant from an expired or mismatched request',async()=>{
+  let now=1000;const service=new ApprovalService({now:()=>now,timeoutMs:20});const events:any[]=[];service.on('requested',(r:any)=>events.push(r));
+  const first=service.request(details());expect(()=>service.decide({...events[0],sessionId:'foreign',decision:'approved-for-session'})).toThrow();
+  now+=21;expect(()=>service.decide({...events[0],decision:'approved-for-session'})).toThrow(/expired/);await first;
+  const next=service.request(details({serverRequestId:8}));expect(events).toHaveLength(2);service.rejectAll();await next;
+});
+
+it('supports task-scoped automatic approval for the selected permission mode', async()=>{
+  const service=new ApprovalService(); const requested:any[]=[]; service.on('requested',(request:any)=>requested.push(request));
+  const write=service.request(details({serverRequestId:31,operation:'write',toolName:'write_workspace_file',readOnly:false,autoApprove:true}));
+  await expect(write).resolves.toMatchObject({status:'approved'}); expect(requested).toHaveLength(0);
+  const read=service.request(details({serverRequestId:32,autoApprove:false})); expect(requested).toHaveLength(1);
+  service.decide({approvalId:requested[0].approvalId,sessionId:details().sessionId,taskId:details().taskId,decision:'rejected'}); await read;
+  const automaticRead=service.request(details({serverRequestId:33,autoApprove:true}));
+  await expect(automaticRead).resolves.toMatchObject({status:'approved'});
+});

@@ -1,35 +1,96 @@
 # Vantilo
 
-An independent Electron + React + TypeScript macOS Agent workspace.
+Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、杂志阅读、翻译、词汇学习和 Codex 工作台放在一个界面中，帮助你阅读英文内容，并在需要时使用本地模型或 ChatGPT。
 
-## Phase 1/2 status
+> **项目状态：开发测试中。** 当前仓库尚无公开的正式安装版本。同一批 Apple 芯片和 Intel 候选包已由用户进行基本实机测试；全新电脑上的安装、本地模型获取、更新与公开分发仍需验收。下面的说明不代表所有功能已经完成正式发布验收。
 
-The desktop workspace connects to the locally installed Codex CLI through its `codex app-server --stdio` JSONL protocol. It initializes or resumes a Codex thread, submits user turns, streams actual agent-message deltas, displays activity and terminal task states, and supports cancelling the active turn. A dedicated Electron `utilityProcess` hosts Runtime/session orchestration and owns the Codex child process; the Electron main process supervises that Runtime and brokers validated requests over a versioned message protocol. The renderer only receives a narrow preload IPC API.
+## 功能介绍
 
-The composer now exposes a per-conversation Codex model and reasoning-effort picker. Its catalog is queried from the installed app-server `model/list` protocol; Runtime validates selections and persists them per session. A stored `modelId: null` / `reasoningEffort: null` means “use the live model catalog defaults”: Runtime resolves the unique `isDefault` model and that model's `defaultReasoningEffort` from `model/list`, then explicitly sends those concrete values on `thread/start` or `thread/resume` and `turn/start`. In particular, null reasoning effort resolves to the model catalog's declared default, not necessarily a reasoning preference from the user's Codex configuration; Vantilo does not read or promise to follow that configuration. The driver checks the server-reported effective model on thread start/resume; if catalog resolution or verification fails, the task does not run. A reasoning-only setting is validated against that same effective model. Session storage migrates v1–v3 history on read and writes the v5 schema on its next mutation; v4 records each conversation's workspace root and pin state, while v5 adds a thread-scoped tool-catalog fingerprint. The composer has an adaptive prompt field, session-local drafts, a `+` menu for selecting workspace file/folder references, `@` completion for selected references, `/list`, `/read`, and `/passage` prompt shortcuts, and send/cancel controls. The native picker returns only workspace-relative references after Runtime scope checks; selecting a path does not read it or bypass the usual per-call tool approval. Access stays read-only. Vantilo independently implements the app rail, resizable sidebar, project/recent-session navigation, top conversation/browser tabs, Composer PromptField wrapper and picker, and conversation presentation; React Spectrum S2 and Spectrum AI remain separately licensed dependencies, not BaoCut source code. The extra Vantilo task-inspector column is removed; workspace selection and Runtime status are integrated compactly into the sidebar, while unfinished destinations remain visual placeholders. Visible Vantilo interface copy is in Simplified Chinese (model names and underlying Runtime error details may retain their original wording). A new browser tab uses a separate sandboxed Electron `WebContentsView` with no preload or Node access, isolated cookies, HTTP(S)-only top-level navigation, and request filtering that rejects loopback host literals and Vantilo app origins. This filtering does not validate DNS answers: a public hostname resolving to loopback, private, or link-local addresses may still reach those endpoints, so DNS-rebinding and actual-connection-target protection remain unresolved. Do not treat browser network isolation as fully secure until a network-layer design and its tests address this limitation. The browser host and address policy are Vantilo-owned modules. Messages use licensed Spectrum primitives with Vantilo-owned transcript structure, omit role-name labels, and provide local copy actions. Codex replies render CommonMark/GFM with CJK-friendly emphasis parsing (so Chinese bold text does not expose raw `**` markers); raw HTML and remote images are not rendered, and clicked HTTP(S) links open in Vantilo's isolated browser. The Codex mark is a separately licensed third-party asset with attribution retained in the notices. Recent conversations are scoped to the selected workspace; history with no recoverable workspace association remains visible in a separate unassigned section. Switching workspaces opens that project's latest session or creates one, and mismatched sessions remain history-only until the matching workspace is selected. Permanent session deletion requires confirmation and removes both the Codex thread and Vantilo local record; if Codex deletion fails, the local record remains. Deletion is blocked while that session has an active task. Project removal does not delete project files or session history. Workspace references and Agent tool calls still pass through Vantilo's scope checks and per-call approvals. Third-party license notices are preserved under `licenses/`; retained BaoCut license/reference files do not grant commercial distribution permission.
+- **阅读电子书和杂志**：导入 EPUB，在书架中打开文章、章节和目录；支持阅读进度、收藏、笔记等阅读工具。
+- **段落与全文翻译**：在阅读器中选择本地千问或 Codex / ChatGPT。译文按所选引擎和模型分别保存；本地模型不可用时，应用不会悄悄切换到 GPT。
+- **逐句阅读和点词释义**：逐句查看译文，点击英文单词查看词典和当前语境中的中文释义。实际支持范围以所用测试版本为准。
+- **中文目录**：可手动选择目录翻译模型并生成目录；导入书籍或检查新刊不会自动翻译整本内容。
+- **听书**：在支持的阅读页面播放中文朗读。听书功能依赖 Ciallo TTS 网络服务，所播放的文本会发送至该服务；不需要用户单独安装 Python。服务可用性取决于网络和第三方服务状态。部分其他朗读功能使用系统语音。
+- **Codex 工作台**：登录 ChatGPT 后，可以在独立工作台与 Codex 对话、选择可用模型，并在应用的权限边界内处理所选工作区内容。
 
-The app-server connection is experimental and depends on a locally installed, logged-in Codex CLI. Turns run in Codex's read-only sandbox with network access disabled and native approval policy `never`; Vantilo's dynamic workspace and reading tools are independently gated by a one-time Vantilo approval for every call. They list regular files, read a bounded UTF-8 text file, or return an explicitly selected Markdown/plain-text line range from the user-selected workspace; passage output is marked untrusted and is capped at 40 lines, 12,000 characters, and a 1 MiB scan. Runtime revalidates workspace-relative paths, excludes sensitive names and common build/dependency directories, rejects symlinks and hard-linked files, bounds listings and file size, and never exposes shell or write operations. The four MCP servers observed in the inspected local app-server environment are disabled through process-local Codex config overrides; unexpected MCP startup or unsupported privileged activity fails closed. The user's Codex configuration/authentication files are not modified.
+## 选择 macOS 版本
 
-## Development
+计划提供两个安装包，界面与主要功能保持一致，底层本地模型运行方式不同：
 
-```sh
+| 电脑 | 安装包 | 本地千问运行方式 |
+| --- | --- | --- |
+| Apple 芯片，如 M1、M2、M3、M4 | Apple Silicon / arm64 | MLX 和 Qwen3.5 4B MLX 量化模型 |
+| Intel 芯片 | Intel / x64 | llama.cpp 和 Qwen3.5 4B GGUF Q4_K_M 模型 |
+
+在 macOS 菜单栏选择 **苹果菜单 → 关于本机**，即可查看电脑使用的芯片或处理器。
+
+Intel 测试版目前通过“阅读环境设置”选择**已有** GGUF 文件，尚未提供应用内一键下载。模型文件约 2.78 GB，需要先另行取得并经过完整性校验；安装包不包含模型权重，也不会在首次启动时自动下载。Apple 芯片的模型设置与安装流程仍需在全新设备上完成验收。
+
+2019 年 Intel MacBook Pro、16GB 内存的单机测试中，模型首次加载约 6.6 秒；常驻进程下，普通合成段落翻译约 8.5 秒。这只是一次测试的结果，速度、内存、发热和翻译质量会因设备、文字长度和系统负载而变化。长时间连续使用尚需更多验证。
+
+## 安装和首次打开
+
+正式测试版准备好后，将在 [GitHub Releases](https://github.com/zhangzhang88/vantilo/releases) 提供对应芯片的下载文件与版本说明。**目前没有公开 Release，不要把本地开发测试包当作正式发行版。**
+
+当前候选包使用临时签名，尚未获得 Apple Developer ID 签名或 Apple 公证。将来公开提供测试包时，macOS 可能阻止首次打开，用户需要按系统提示在“隐私与安全性”中确认。正式对外分发前还需要验证干净安装、升级与数据保留。
+
+打开应用后，可以从左下角的**设置**进入阅读环境设置。使用本地千问时，先选择并验证对应芯片格式的模型；使用 GPT 时，在应用中登录 ChatGPT，并在阅读页面手动选择 GPT 模型。GPT 功能需要网络、可用账号和相应服务权限。
+
+本地千问按需启动，首次使用通常较慢，因为模型需要载入内存。使用期间模型进程会暂时保留；闲置一段时间后会释放，下次使用时重新加载。模型无法运行、网络不可用或翻译超时，应用应显示错误并允许用户重试。
+
+## 杂志与更新
+
+测试版设计为提供四种杂志的初始期刊，并在应用运行期间定期检查新刊。阅读服务启动后会按状态检查，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。
+
+应用内的**软件更新检查**与杂志新刊检查是两件事。软件更新检查用于发现 GitHub Releases 上的新稳定版本并打开发布页面；当前不会自动下载安装。预发布版本与正式稳定版本的提示行为可能不同。
+
+项目所有者已确认本人拥有或已取得四种默认杂志随应用分发及获取新刊的权利；目前未提供书面依据，也未经独立核验。发布准备仍需核对第三方资源的使用范围。用户导入的个人电子书和期刊不应被提交到公开仓库。
+
+## 隐私与数据
+
+- 导入的书籍、阅读记录、设置和对话记录保存在本机应用数据目录。测试版使用独立的 `Vantilo Beta` 数据目录。
+- 选择本地千问时，模型在本机执行；选择 Codex / ChatGPT 时，请求内容会发送给对应的在线服务，使用前需要登录和联网。
+- 中文听书使用 Ciallo TTS 时，朗读文本会发送到 `tts.ztr8.uk`；请根据内容敏感程度决定是否使用。
+- Codex 工作台使用应用独立的登录目录。阅读任务和工作台使用独立执行通道，不共用项目会话；权限、工作区边界及用户批准仍然适用。
+- 本地阅读服务绑定回环地址并使用会话验证；这并不等于可以忽略系统安全设置或向不可信程序开放本机数据。
+
+## 开发与测试
+
+项目使用 Electron、React 和 TypeScript。以下命令面向开发者，不能替代下载正式安装包：
+
+```bash
 npm install
 npm run typecheck
-npm run build
 npm test
-npm run desktop:dev
-# Optional: real local Codex app-server approved/rejected workspace-tool integration check
-npm run test:e2e:codex
-# Optional: passage-tool check (one remote thread, two turns; remote record remains)
-npm run test:e2e:codex:passage
+npm run build
 ```
 
-The passage E2E checks the real app-server tool request/response and persisted assistant reply. It does **not** validate real streamed message deltas, Electron UI approval interaction, or Runtime restart/thread recovery.
+阅读器的开发构建目前还依赖单独维护的 Magazine Reader 源码及其已安装依赖；该上游仓库当前为私有仓库。构建适配器默认查找 Vantilo 同级目录中的 `magazine-reader`，也可通过 `VANTILO_MAGAZINE_READER_ROOT` 指定位置；构建时只读取和编译，不应修改上游项目。仓库目前**不是无需额外源码即可完整构建阅读器的自包含发行工程**。
 
-`npm run desktop:dev` starts Vite on `127.0.0.1:5173` with strict port handling, then starts Electron. The Electron window loads packaged `dist/index.html` in production. Packaging, code signing, and notarization are not configured.
+`npm run desktop:dev` 会先构建阅读器再启动开发应用；运行前需要准备上述源码和依赖。普通构建和测试不应包含用户的个人 EPUB、登录资料或模型权重。真实 Codex 推理、真实账号操作和大模型下载不属于默认测试流程。
 
-## Security boundaries and remaining work
+GitHub Actions 基础检查已在本地准备，但尚未发布到仓库；完整阅读器构建和双架构安装包还不能由公开仓库独立自动验收。
 
-Renderer Node integration is disabled; IPC validates that requests come from the main Vantilo frame, and Runtime request/response/event messages use strict schemas and request IDs. Renderer requests can only manage conversations, select/clear a workspace through the native directory picker, submit/cancel tasks, and decide a pending one-time approval by opaque approval/session/task IDs; they cannot provide a file path to a privileged read API. Runtime resolves tools against the persisted authorization and rechecks it before execution. The main process tracks the Runtime-owned Codex PID so an unexpected Runtime exit can terminate that child. Codex server-initiated requests other than the verified dynamic-tool call are rejected.
+```bash
+npm run desktop:dev
+npm run test:reader:host
+npm run test:reader:auth
+```
 
-Runtime stores local conversation history and per-session Codex model settings in a versioned `sessions.json` under Electron `userData`, with serialized atomic writes and restrictive directory/file permissions. Messages are saved in order, recognized credential patterns are redacted, damaged JSON is preserved to a sidecar with a UI warning, and unfinished assistant turns are marked interrupted on restart. Codex thread IDs and the Tool Catalog version are stored per Vantilo conversation and resumed with `thread/resume`; the local transcript remains available independently of Codex availability. Workspace authorization is stored separately in `workspace.json`; the renderer displays each request's tool, reason, operation, workspace, relative path, and expiry, with explicit “仅本次允许” and “拒绝” actions. Approvals are task/session/request-bound, expire, and are never persisted. See the implementation roadmap for remaining work.
+本地双架构候选包的构建前提和限制见 [Mac 测试包说明](docs/mac-beta-candidates.md)。阅读器集成边界见 [Reader 集成说明](docs/magazine-reader-integration.md)。
+
+## 当前限制与发布计划
+
+在公开发布前，仍需完成以下工作：
+
+1. 以同一份经审查的源码重新构建 Apple 芯片和 Intel 两个版本，并分别在真实设备上完成安装、登录、阅读、翻译及更新验收。
+2. 完成 Intel 千问连续使用、取消、长文本、内存和异常恢复测试；完善新用户取得模型的流程。
+3. 核对默认杂志及后续新刊的授权范围，检查安装包中所有第三方组件、许可证和来源。
+4. 审查大量尚未提交的源码和新增文件，排除私人内容、凭据和模型权重，建立可回滚的 Git 发布基线。
+5. 在公开发布页面明确说明系统要求、两个架构的区别、临时签名状态、已知限制和更新方法。
+
+## 第三方组件与许可
+
+项目使用 Electron、React Spectrum、Codex 等第三方组件，相关声明保存在 [`licenses/`](licenses/)。本地千问使用的模型、MLX 或 llama.cpp 等运行组件有各自的许可证与来源要求；发布前应随安装包保留对应许可及声明。杂志和电子书的版权不因应用开源而自动转移。
+
+本仓库是否具备完整、自包含的源码许可和构建条件，需要在公开发布前进一步核对；请勿仅凭此 README 推定所有第三方内容都可自由再分发。

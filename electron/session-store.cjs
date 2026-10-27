@@ -4,7 +4,7 @@ const path = require('node:path');
 const { z } = require('zod');
 const { LEGACY_TOOL_CATALOG_FINGERPRINTS } = require('./tool-catalog-fingerprint.cjs');
 
-const VERSION = 5;
+const VERSION = 6;
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_TITLE = 'New conversation';
 const MessageSchema = z.object({
@@ -18,8 +18,10 @@ const LegacySessionSchema = z.object({
 const Version2SessionSchema = LegacySessionSchema.extend({ modelId: z.string().min(1).max(256).nullable(), reasoningEffort: z.string().min(1).max(64).nullable() }).strict();
 const Version3SessionSchema = Version2SessionSchema.extend({ workspaceRoot: z.string().min(1).max(4096).nullable() }).strict();
 const Version4SessionSchema = Version3SessionSchema.extend({ pinned: z.boolean() }).strict();
-const SessionSchema = Version4SessionSchema.omit({ toolCatalogVersion: true }).extend({ toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable() }).strict();
+const PermissionMode = z.enum(['supervised', 'accept-edits', 'automatic', 'full-access']);
+const SessionSchema = Version4SessionSchema.omit({ toolCatalogVersion: true }).extend({ toolCatalogFingerprint: z.string().regex(/^[a-f0-9]{64}$/).nullable(), permissionMode: PermissionMode.optional(), readerScopeKey: z.string().min(1).max(512).optional() }).strict();
 const DocumentSchema = z.object({ version: z.literal(VERSION), sessions: z.array(SessionSchema) }).strict();
+const Version5DocumentSchema = z.object({version:z.literal(5),sessions:z.array(SessionSchema.omit({readerScopeKey:true}))}).strict();
 const Version4DocumentSchema = z.object({ version: z.literal(4), sessions: z.array(Version4SessionSchema) }).strict();
 const Version3DocumentSchema = z.object({ version: z.literal(3), sessions: z.array(Version3SessionSchema) }).strict();
 const Version2DocumentSchema = z.object({ version: z.literal(2), sessions: z.array(Version2SessionSchema) }).strict();
@@ -105,6 +107,7 @@ class SessionStore {
       const candidate = JSON.parse(raw);
       const current = DocumentSchema.safeParse(candidate);
       if (current.success) parsed = current.data;
+      else if (Version5DocumentSchema.safeParse(candidate).success) parsed = {...Version5DocumentSchema.parse(candidate),version:VERSION};
       else {
         const version4 = Version4DocumentSchema.safeParse(candidate);
         if (version4.success) parsed = { version: VERSION, sessions: version4.data.sessions.map(session => ({ ...migrateToolCatalogMetadata(session), pinned: session.pinned })) };
@@ -147,8 +150,8 @@ class SessionStore {
   list() {
     this.#assertLoaded();
     return clone(this.data.sessions).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(session => ({
-      id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt,
-      codexThreadId: session.codexThreadId, toolCatalogFingerprint: session.toolCatalogFingerprint ?? null, modelId: session.modelId ?? null, reasoningEffort: session.reasoningEffort ?? null, workspaceRoot: session.workspaceRoot ?? null, pinned: session.pinned ?? false, messageCount: session.messages.length, preview: preview(session)
+      id: session.id, ...(session.readerScopeKey ? {readerScopeKey:session.readerScopeKey} : {}), title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt,
+      codexThreadId: session.codexThreadId, toolCatalogFingerprint: session.toolCatalogFingerprint ?? null, modelId: session.modelId ?? null, reasoningEffort: session.reasoningEffort ?? null, permissionMode: session.permissionMode ?? 'supervised', workspaceRoot: session.workspaceRoot ?? null, pinned: session.pinned ?? false, messageCount: session.messages.length, preview: preview(session)
     }));
   }
 
@@ -159,11 +162,11 @@ class SessionStore {
     return clone(session);
   }
 
-  create(workspaceRoot = null) {
+  create(workspaceRoot = null, readerScopeKey) {
     if (workspaceRoot !== null && (typeof workspaceRoot !== 'string' || !path.isAbsolute(workspaceRoot) || workspaceRoot.length > 4096)) throw new Error('A canonical absolute workspace path is required.');
     return this.#mutate(data => {
       const now = new Date().toISOString();
-      const session = { id: randomUUID(), title: DEFAULT_TITLE, createdAt: now, updatedAt: now, codexThreadId: null, toolCatalogFingerprint: null, modelId: null, reasoningEffort: null, workspaceRoot, pinned: false, messages: [] };
+      const session = { id: randomUUID(), title: DEFAULT_TITLE, createdAt: now, updatedAt: now, codexThreadId: null, toolCatalogFingerprint: null, modelId: null, reasoningEffort: null, permissionMode: 'supervised', workspaceRoot, ...(readerScopeKey ? {readerScopeKey} : {}), pinned: false, messages: [] };
       data.sessions.push(session);
       return session;
     });
@@ -190,6 +193,12 @@ class SessionStore {
     return this.#mutate(data => { const session = this.#find(data, sessionId); session.pinned = pinned; return session; });
   }
 
+  pruneReaderTaskRecords(limit = 20) {
+    const candidates=this.data.sessions.filter(session=>session.readerScopeKey?.startsWith('reader-task:') && !session.messages.some(message=>message.role==='assistant' && message.status==='pending')).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+    const remove=new Set(candidates.slice(limit).map(session=>session.id));
+    if(!remove.size)return Promise.resolve(0);
+    return this.#mutate(data=>{data.sessions=data.sessions.filter(session=>!remove.has(session.id));return remove.size;});
+  }
   delete(sessionId) {
     return this.#mutate(data => {
       const index = data.sessions.findIndex(item => item.id === sessionId);
@@ -233,6 +242,17 @@ class SessionStore {
       const session = this.#find(data, sessionId);
       session.modelId = modelId;
       session.reasoningEffort = reasoningEffort;
+      session.updatedAt = new Date().toISOString();
+      return session;
+    });
+  }
+
+  setPermissionMode(sessionId, permissionMode) {
+    const parsed = PermissionMode.safeParse(permissionMode);
+    if (!parsed.success) throw new Error('Invalid permission mode.');
+    return this.#mutate(data => {
+      const session = this.#find(data, sessionId);
+      session.permissionMode = parsed.data;
       session.updatedAt = new Date().toISOString();
       return session;
     });
@@ -315,4 +335,4 @@ class SessionStore {
   }
 }
 
-module.exports = { SessionStore, redactSecrets, DEFAULT_TITLE, VERSION, MAX_SESSION_FILE_BYTES, DocumentSchema, LegacyDocumentSchema };
+module.exports = { SessionStore, redactSecrets, DEFAULT_TITLE, VERSION, MAX_SESSION_FILE_BYTES, DocumentSchema, LegacyDocumentSchema, PermissionMode };

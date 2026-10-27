@@ -25,7 +25,7 @@ describe('versioned local conversation storage',()=>{
     expect(restored.messages.map((m:any)=>[m.role,m.text,m.status])).toEqual([['user','first prompt',undefined],['assistant','first answer','completed']]);
     expect(restored.messages[1].finishedAt).toMatch(/^\d{4}-\d\d-\d\dT/);
     expect(reloaded.get(second.id).messages).toEqual([]);
-    const document=JSON.parse(await readFile(filePath,'utf8'));expect(document.version).toBe(5);expect(document.sessions[0]).toMatchObject({modelId:null,reasoningEffort:null,workspaceRoot:null,pinned:false});
+    const document=JSON.parse(await readFile(filePath,'utf8'));expect(document.version).toBe(6);expect(document.sessions[0]).toMatchObject({modelId:null,reasoningEffort:null,workspaceRoot:null,pinned:false});
   });
   it('migrates version-1 history in place while preserving thread IDs and messages',async()=>{
     const {filePath}=await makeStore();
@@ -34,20 +34,20 @@ describe('versioned local conversation storage',()=>{
     const migrated=new SessionStore({filePath});await migrated.load();
     expect(migrated.get(legacy.id)).toMatchObject({codexThreadId:'thread-legacy',toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],modelId:null,reasoningEffort:null,messages:legacy.messages});
     await migrated.setModelConfig(legacy.id,'gpt-6.1-sol','high');
-    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:legacy.id,modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:null,codexThreadId:'thread-legacy',toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1]}]});
+    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:6,sessions:[{id:legacy.id,modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:null,codexThreadId:'thread-legacy',toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1]}]});
   });
   it('migrates version-4 catalog version evidence to the proven legacy fingerprint',async()=>{
     const {filePath}=await makeStore();const messages=[{id:'10000000-0000-4000-8000-000000000032',role:'user',text:'preserve article context',createdAt:'2026-10-24T00:00:00.000Z'},{id:'10000000-0000-4000-8000-000000000033',role:'assistant',text:'preserve explanation',createdAt:'2026-10-24T00:01:00.000Z',taskId:'10000000-0000-4000-8000-000000000034',status:'completed',finishedAt:'2026-10-24T00:02:00.000Z',error:null}];
     const session={id:'10000000-0000-4000-8000-000000000031',title:'V4',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-v4',toolCatalogVersion:1,modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages};
     await writeFile(filePath,JSON.stringify({version:4,sessions:[session]}));const migrated=new SessionStore({filePath});await migrated.load();
     expect(migrated.get(session.id)).toMatchObject({toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],codexThreadId:'thread-v4',modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages});
-    await migrated.rename(session.id,'migrated');expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:session.id,toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],codexThreadId:'thread-v4',modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages}]});
+    await migrated.rename(session.id,'migrated');expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:6,sessions:[{id:session.id,toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1],codexThreadId:'thread-v4',modelId:'gpt-6.1-sol',reasoningEffort:'high',workspaceRoot:'/authorized/workspace',pinned:true,messages}]});
   });
   it('does not guess a catalog fingerprint for legacy threads with absent version evidence',async()=>{
     const {filePath}=await makeStore();const old={id:'10000000-0000-4000-8000-000000000030',title:'Unversioned',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-unknown',messages:[]};
     await writeFile(filePath,JSON.stringify({version:1,sessions:[old]}));const migrated=new SessionStore({filePath});await migrated.load();
     expect(migrated.get(old.id)).toMatchObject({codexThreadId:'thread-unknown',toolCatalogFingerprint:null});
-    await migrated.setModelConfig(old.id,null,null);expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:old.id,toolCatalogFingerprint:null}]});
+    await migrated.setModelConfig(old.id,null,null);expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:6,sessions:[{id:old.id,toolCatalogFingerprint:null}]});
   });
   it('serializes concurrent writes without duplicating turns and redacts common credentials',async()=>{
     const {store,filePath}=await makeStore();const session=await store.create();const task='10000000-0000-4000-8000-000000000002';
@@ -67,14 +67,14 @@ describe('versioned local conversation storage',()=>{
     const restarted=new SessionStore({filePath});await restarted.load();await restarted.recoverPending();
     expect(restarted.get(session.id).messages[1]).toMatchObject({status:'failed',finishedAt:expect.stringMatching(/^\d{4}-\d\d-\d\dT/),error:expect.stringContaining('Interrupted')});
   });
-  it('migrates version-2 history with an unknown project to version 5',async()=>{
+  it('migrates version-2 history with an unknown project to version 6',async()=>{
     const {filePath}=await makeStore();
     const legacy={version:2,sessions:[{id:'10000000-0000-4000-8000-000000000020',title:'V2',createdAt:'2026-10-24T00:00:00.000Z',updatedAt:'2026-10-24T00:00:00.000Z',codexThreadId:'thread-v2',toolCatalogVersion:1,modelId:'gpt-6.1-sol',reasoningEffort:'high',messages:[]}]};
     await writeFile(filePath,JSON.stringify(legacy));
     const migrated=new SessionStore({filePath});await migrated.load();
     expect(migrated.get(legacy.sessions[0].id)).toMatchObject({codexThreadId:'thread-v2',workspaceRoot:null,modelId:'gpt-6.1-sol'});
     await migrated.setModelConfig(legacy.sessions[0].id,'gpt-6.1-sol','high');
-    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:5,sessions:[{id:legacy.sessions[0].id,workspaceRoot:null,toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1]}]});
+    expect(JSON.parse(await readFile(filePath,'utf8'))).toMatchObject({version:6,sessions:[{id:legacy.sessions[0].id,workspaceRoot:null,toolCatalogFingerprint:LEGACY_TOOL_CATALOG_FINGERPRINTS[1]}]});
   });
   it('backfills a recovered Codex project path only when the local session has none',async()=>{
     const {store,filePath}=await makeStore();const session=await store.create();await store.setCodexThread(session.id,'thread-old');
@@ -103,7 +103,7 @@ describe('versioned local conversation storage',()=>{
     const recovered=new SessionStore({filePath});const health=await recovered.load();
     expect(health.available).toBe(true);expect(health.warning).toMatch(/damaged/);expect(recovered.list()).toEqual([]);
     const files=await import('node:fs/promises').then(fs=>fs.readdir(dir));expect(files.some((name:string)=>name.startsWith('sessions.json.corrupt-'))).toBe(true);
-    expect(JSON.parse(await readFile(filePath,'utf8'))).toEqual({version:5,sessions:[]});
+    expect(JSON.parse(await readFile(filePath,'utf8'))).toEqual({version:6,sessions:[]});
   });
   it('leaves oversized and symlinked history files untouched',async()=>{
     const {filePath,dir}=await makeStore();await writeFile(filePath,'');await truncate(filePath,MAX_SESSION_FILE_BYTES+1);
@@ -119,4 +119,27 @@ describe('versioned local conversation storage',()=>{
     expect(store.health()).toMatchObject({available:false,error:expect.stringContaining('Cannot save')});
     expect(store.list()).toEqual([]);
   });
+});
+
+it('migrates version-5 project history without adding Reader scope, and persists scoped internal tasks in version 6',async()=>{
+  const {store,filePath}=await makeStore();const project=await store.create('/fixture/project');
+  const value=JSON.parse(await readFile(filePath,'utf8'));value.version=5;await writeFile(filePath,JSON.stringify(value));
+  const migrated=new SessionStore({filePath});expect((await migrated.load()).warning).toBeNull();
+  expect(migrated.get(project.id)).toEqual(project);
+  const task=await migrated.create('/fixture/reader-workspace','reader-task:fixture');
+  const reloaded=new SessionStore({filePath});await reloaded.load();
+  expect(reloaded.get(task.id).readerScopeKey).toBe('reader-task:fixture');
+  expect(reloaded.get(project.id).readerScopeKey).toBeUndefined();
+  expect(JSON.parse(await readFile(filePath,'utf8')).version).toBe(6);
+});
+
+it('bounds only completed internal Reader task records and preserves project and pending history',async()=>{
+  const {store}=await makeStore();const project=await store.create('/fixture/project');
+  for(let i=0;i<4;i++)await store.create('/fixture/reader','reader-task:'+i);
+  const pending=await store.create('/fixture/reader','reader-task:pending');
+  await store.addTurn(pending.id,'20000000-0000-4000-8000-000000000091','in progress');
+  expect(await store.pruneReaderTaskRecords(2)).toBe(2);
+  expect(store.get(project.id)).toMatchObject({id:project.id});
+  expect(store.get(pending.id).messages[0].text).toBe('in progress');
+  expect(store.list()).toHaveLength(4);
 });

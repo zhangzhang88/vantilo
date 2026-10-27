@@ -13,6 +13,7 @@ class ApprovalService extends EventEmitter {
     Object.assign(this, { timeoutMs, maxPending, now });
     this.pending = new Map();
     this.seenRequests = new Map();
+    this.sessionReadGrants = new Map();
   }
 
   listPending() { return [...this.pending.values()].map(({ resolve, timer, ...request }) => ({ ...request })); }
@@ -31,7 +32,7 @@ class ApprovalService extends EventEmitter {
       approvalId, serverRequestId: details.serverRequestId, callId: details.callId,
       sessionId: details.sessionId, taskId: details.taskId, threadId: details.threadId, turnId: details.turnId,
       toolName: details.toolName, reason: details.reason, relativePath: details.relativePath,
-      operation: details.operation, ...(details.lineRange ? {lineRange:{startLine:details.lineRange.startLine,endLine:details.lineRange.endLine}} : {}), readOnly: true, workspaceRoot: details.workspaceRoot,
+      operation: details.operation, ...(details.lineRange ? {lineRange:{startLine:details.lineRange.startLine,endLine:details.lineRange.endLine}} : {}), readOnly: details.readOnly !== false && details.operation !== 'write', workspaceRoot: details.workspaceRoot,
       workspaceRevision: details.workspaceRevision, createdAt: new Date(createdAt).toISOString(),
       expiresAt: new Date(createdAt + this.timeoutMs).toISOString()
     };
@@ -40,16 +41,23 @@ class ApprovalService extends EventEmitter {
     request.resolve = resolve;
     request.timer = setTimeout(() => this.#settle(request, 'expired'), this.timeoutMs);
     this.pending.set(approvalId, request);
-    this.emit('requested', this.#public(request));
+    if (details.autoApprove || this.#hasSessionReadGrant(request)) this.#settle(request, 'approved');
+    else this.emit('requested', this.#public(request));
     return result;
   }
 
   decide({ approvalId, sessionId, taskId, decision }) {
     const request = this.pending.get(approvalId);
     if (!request || request.sessionId !== sessionId || request.taskId !== taskId) throw new Error('Approval request is no longer pending or does not match this task.');
-    if (decision !== 'approved' && decision !== 'rejected') throw new Error('Invalid approval decision.');
-    this.#settle(request, decision);
-    return { approvalId, sessionId, taskId, status: decision };
+    if (!['approved', 'rejected', 'approved-for-session'].includes(decision)) throw new Error('Invalid approval decision.');
+    if (this.now() >= Date.parse(request.expiresAt)) { this.#settle(request, 'expired'); throw new Error('Approval request has expired.'); }
+    if (decision === 'approved-for-session') {
+      if (!this.#isSessionRead(request)) throw new Error('Only scoped read-only workspace tools support session approval.');
+      this.sessionReadGrants.set(sessionId, {root:request.workspaceRoot, revision:request.workspaceRevision});
+    }
+    const status = decision === 'approved-for-session' ? 'approved' : decision;
+    this.#settle(request, status);
+    return { approvalId, sessionId, taskId, status };
   }
 
   rejectTask(taskId, status = 'cancelled') {
@@ -58,7 +66,19 @@ class ApprovalService extends EventEmitter {
     return count;
   }
 
+  clearSessionReadGrants() { this.sessionReadGrants.clear(); }
+
+  #isSessionRead(request) {
+    return request.readOnly === true && ['list_workspace_files','read_workspace_file','read_workspace_passage'].includes(request.toolName);
+  }
+
+  #hasSessionReadGrant(request) {
+    const grant = this.sessionReadGrants.get(request.sessionId);
+    return this.#isSessionRead(request) && grant?.root === request.workspaceRoot && grant?.revision === request.workspaceRevision;
+  }
+
   rejectAll(status = 'cancelled') {
+    this.clearSessionReadGrants();
     for (const request of [...this.pending.values()]) this.#settle(request, status);
   }
 
