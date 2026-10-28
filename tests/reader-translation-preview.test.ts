@@ -5,21 +5,27 @@ const {registerTranslationPreview}=require('../electron/reader-translation-previ
 const {MODEL_MANIFEST}=require('../electron/reader-model-manifest.cjs');
 const localId='qwen:'+MODEL_MANIFEST.id+'@'+MODEL_MANIFEST.revision;
 const {EventEmitter}=require('node:events');
-function setup() {
+function setup({customApi}:any={}) {
  const handlers:any={};
  const api={get:(p:string,h:any)=>handlers[p]=h,post:(p:string,h:any)=>handlers[p]=h};
  const model={inspect:vi.fn(async()=>({selected:true,helperAvailable:true,health:{ready:true}})),recheck:vi.fn(async()=>({ready:true})),translate:vi.fn(async(_input:any)=>({translation:'树皮粗糙。',model:'Qwen3.5 4B',provider:'qwen-mlx'}))};
  const runAi=vi.fn(async()=> '树皮粗糙。');
  const listModels=vi.fn(async()=>({models:[{id:'gpt-test',displayName:'Test',defaultEffort:'low'}]}));
  const getAccountStatus=vi.fn(async()=>({connected:true}));
- registerTranslationPreview(api,{model,runAi,listModels,getAccountStatus,lifetime:new AbortController()});
+ registerTranslationPreview(api,{model,runAi,listModels,getAccountStatus,customApi,lifetime:new AbortController()});
  async function post(body:any,raw=new EventEmitter()) {
   const reply:any={raw,header:vi.fn(),code(n:number){this.status=n;return this;},send(value:any){this.value=value;return value;},status:200};
   const req:any={body,raw:new EventEmitter()};
   const result=await handlers['/api/vantilo-translation/translate'](req,reply);
   return {result,status:reply.status};
  }
- return {handlers,model,runAi,listModels,post,getAccountStatus};
+ async function postSentence(body:any) {
+  const reply:any={raw:new EventEmitter(),header:vi.fn(),code(n:number){this.status=n;return this;},send(value:any){this.value=value;return value;},status:200};
+  const req:any={body,raw:new EventEmitter()};
+  const result=await handlers['/api/vantilo-translation/sentence'](req,reply);
+  return {result,status:reply.status};
+ }
+ return {handlers,model,runAi,listModels,post,postSentence,getAccountStatus};
 }
 describe('explicit preview translation engines',()=>{
  it('keeps offline Qwen translation local while loading choices for the model selector',async()=>{
@@ -98,6 +104,18 @@ describe('explicit preview translation engines',()=>{
   expect(r.result).toMatchObject({provider:'vantilo-agent',model:'gpt-test',engineId:'codex:gpt-test'});
   expect(c.runAi).toHaveBeenCalledWith(expect.objectContaining({modelId:'gpt-test',reasoningEffort:'low'}),expect.objectContaining({signal:expect.any(AbortSignal)}));
   expect(c.model.translate).not.toHaveBeenCalled();
+ });
+ it('accepts plain Chinese from a translation focused custom model when optional expressions are omitted',async()=>{
+  const customApi={get:vi.fn(async()=>({configured:true,id:'local-index',name:'Local-Index',model:'index-translate-2b'})),complete:vi.fn(async()=> '埃迪·拉马表示，他不会辞去总理职务，并警告称，抗议者正在危及阿尔巴尼亚加入欧盟的进程。')};
+  const c=setup({customApi});const text='Edi Rama said he would not resign as prime minister.';
+  const r=await c.postSentence({engineId:'custom-api:'+require('node:crypto').createHash('sha256').update('local-index').digest('hex').slice(0,12),task:'both',text,paragraphContext:text});
+  expect(r.status).toBe(200);expect(r.result.translation).toContain('不会辞去总理职务');expect(r.result.expressions).toEqual([]);expect(r.result.provider).toBe('custom-api');
+ });
+ it('extracts JSON sentence results wrapped in a short model preface',async()=>{
+  const customApi={get:vi.fn(async()=>({configured:true,id:'local-index',name:'Local-Index',model:'index-translate-2b'})),complete:vi.fn(async()=> 'Here is the result:\n```json\n{"translation":"他不会辞去总理职务。","expressions":[]}\n```')};
+  const c=setup({customApi});const text='He would not resign.';
+  const r=await c.postSentence({engineId:'custom-api:'+require('node:crypto').createHash('sha256').update('local-index').digest('hex').slice(0,12),task:'both',text,paragraphContext:text});
+  expect(r.status).toBe(200);expect(r.result.translation).toBe('他不会辞去总理职务。');
  });
  it('rejects concurrent translations and cancels disconnected work',async()=>{
   const c=setup();let began:()=>void;const started=new Promise<void>(r=>began=r);

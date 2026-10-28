@@ -2,6 +2,21 @@
 const {normalizeTranslation}=require('./reader-translation-format.cjs');
 const MODEL_MANIFEST=require('./reader-model-manifest.cjs').MODEL_MANIFEST;
 const {createHash}=require('node:crypto');
+function parseSentenceJson(output) {
+  if(typeof output!=='string')return null;
+  let raw=output.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  try {const value=JSON.parse(raw);if(value&&typeof value==='object'&&!Array.isArray(value))return value;} catch {}
+  // Some instruction-following APIs wrap otherwise valid JSON in a short preface.
+  const start=raw.indexOf('{'),end=raw.lastIndexOf('}');
+  if(start>=0&&end>start){try {const value=JSON.parse(raw.slice(start,end+1));if(value&&typeof value==='object'&&!Array.isArray(value))return value;} catch {}}
+  return null;
+}
+function plainSentenceTranslation(output,source) {
+  let translation=normalizeTranslation(output,source);
+  if(!translation||/^[{[]/.test(translation))return null;
+  translation=translation.replace(/^(?:translation|译文)\s*[:：]\s*/i,'').trim();
+  return translation||null;
+}
 // Registered solely by the isolated Qwen preview. Explicit engines, no fallback.
 function registerTranslationPreview(api,{model,listModels,runAi,customApi,lifetime,getAccountStatus=async()=>({connected:false})}) {
   let busy=false;
@@ -193,10 +208,16 @@ function registerTranslationPreview(api,{model,listModels,runAi,customApi,lifeti
       let value;
       if(b.task==='translation')value={translation:normalizeTranslation(output,b.text),expressions:[]};
       else {
-        let raw=output.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
-        try {value=JSON.parse(raw);} catch {throw new Error('GPT 返回的逐句结果格式无效，请重试');}
+        value=parseSentenceJson(output);
+        if(!value&&b.task==='both') {
+          // Translation focused models often return the requested Chinese sentence
+          // but omit the optional expression JSON. Keep the translation usable.
+          const translation=plainSentenceTranslation(output,b.text);
+          if(translation)value={translation,expressions:[]};
+        }
+        if(!value)throw new Error('所选模型返回的逐句结果格式无效，请重试');
       }
-      if(!value || (b.task!=='expressions' && (typeof value.translation!=='string'||!value.translation.trim()||value.translation.length>12000)))throw new Error('GPT 返回的逐句译文不完整，请重试');
+      if(!value || (b.task!=='expressions' && (typeof value.translation!=='string'||!value.translation.trim()||value.translation.length>12000)))throw new Error('所选模型返回的逐句译文不完整，请重试');
       const source=b.text.trim(), seen=new Set();let keywordCount=0;
       const expressions=Array.isArray(value.expressions)?value.expressions.flatMap(item=>{
         if(!item||typeof item.text!=='string'||!item.text.trim()||item.text.length>200||!source.includes(item.text.trim())||typeof item.explanationZh!=='string'||!item.explanationZh.trim()||item.explanationZh.length>600)return[];
@@ -206,7 +227,7 @@ function registerTranslationPreview(api,{model,listModels,runAi,customApi,lifeti
         if(['collocation','pattern','contextual'].includes(kind)&&!/\s/.test(text))return[];
         seen.add(key);return[{text,...(kind?{kind}:{}),...(typeof item.meaningZh==='string'&&item.meaningZh.trim()&&item.meaningZh.length<=120?{meaningZh:item.meaningZh.trim(),meaningVersion:2}:{}),explanationZh:item.explanationZh.trim()}];
       }).slice(0,4):[];
-      if(b.task!=='translation' && !Array.isArray(value.expressions))throw new Error('GPT 返回的关键表达格式无效，请重试');
+      if(b.task!=='translation' && !Array.isArray(value.expressions))throw new Error('所选模型返回的关键表达格式无效，请重试');
       return {translation:typeof value.translation==='string'?value.translation.trim():'',expressions,model:option.modelId,provider:option.engine==='custom-api'?'custom-api':'vantilo-agent',profileId:option.id,engineId:option.id};
     } catch(error) {
       return reply.code(ctl.signal.aborted?408:502).send({error:ctl.signal.aborted?ctl.signal.reason.message:(error.message||'逐句翻译失败')});
