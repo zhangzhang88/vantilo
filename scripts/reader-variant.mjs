@@ -70,6 +70,22 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
       });
       root.append(dictionaryStyles);
     }
+    if (filename.endsWith('/frontend/styles.css') && source.includes('.reader-page-shell.is-sentence-mode .sentence-reading-block > p')) {
+      let sentenceTextRuleFound = false;
+      root.walkRules(rule => {
+        if (rule.selector === '.reader-page-shell.is-sentence-mode .sentence-reading-block > p') sentenceTextRuleFound = true;
+      });
+      if (!sentenceTextRuleFound) throw new Error('Sentence reading text CSS seam changed');
+      // `anywhere` can split English words at the line edge (for example Major
+      // into “Majo” and “r”). Sentence copy should wrap at word boundaries.
+      root.append(postcss.parse(`
+.reader-page-shell.is-sentence-mode .sentence-reading-block > p {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+`));
+    }
     return root.toString();
   }
   if (filename.endsWith('/frontend/global-reading-list.tsx')) {

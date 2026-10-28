@@ -17,6 +17,14 @@ describe('Reader build adaptation', () => {
     expect(result).toContain('fetchBookLessons'); expect(result).toContain('电子书');
     expect(adaptReaderSource('.science-article {color:red}.book {color:blue}@media(max-width:600px){.discovery-list{display:grid}}', '/source/src/frontend/styles.css')).toBe('.book {color:blue}');
   });
+  it('keeps English words intact in sentence reading mode', () => {
+    const source = '.reader-page-shell.is-sentence-mode .sentence-reading-block > p{overflow-wrap:anywhere}';
+    const result = postcss.parse(adaptReaderSource(source, '/source/src/frontend/styles.css'));
+    const wrapRules = result.nodes.filter(node => node.type === 'rule' && node.selector === '.reader-page-shell.is-sentence-mode .sentence-reading-block > p');
+    expect(wrapRules.at(-1)?.nodes?.map(node => node.toString())).toEqual([
+      'overflow-wrap: normal', 'word-break: normal', 'hyphens: none',
+    ]);
+  });
   it('keeps Reader toolbar labels horizontal on wide windows and applies the compact layout only on narrow windows', () => {
     const selectors = [
       '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar',
