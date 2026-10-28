@@ -1,5 +1,6 @@
 import React from 'react';
 import './magazine-reader-module.css';
+import { BookDiscovery } from '../reader/book-discovery';
 
 export type MagazineSyncState = { enabled: boolean; status: 'idle' | 'checking' | 'error'; message: string; importedCount: number; failedCount: number; lastAttemptAt?: string | null; lastSuccessAt?: string | null };
 
@@ -29,6 +30,7 @@ export function MagazineReaderModule({
   visible?: boolean;
 }) {
   const frameRef=React.useRef<HTMLIFrameElement>(null);
+  const [discoveryOpen,setDiscoveryOpen]=React.useState(false);
   const origin=new URL(MAGAZINE_READER_URL).origin;
   const navigate=React.useCallback(()=>{
     if(navigationRequest)frameRef.current?.contentWindow?.postMessage({type:'vantilo:navigate',target:navigationRequest.target},origin);
@@ -38,14 +40,14 @@ export function MagazineReaderModule({
       if(event.source!==frameRef.current?.contentWindow||event.origin!==origin)return;
       if(event.data?.type==='vantilo:reader-ready')navigate();
       if(event.data?.type==='vantilo:open-environment-settings')onSetup?.();
+      if(event.data?.type==='vantilo:open-discovery')setDiscoveryOpen(true);
     };
     window.addEventListener('message',receive);return ()=>window.removeEventListener('message',receive);
   },[origin,navigate,onSetup]);
   React.useEffect(()=>{if(status==='ready')navigate();},[status,navigate]);
   return (
     <section className="magazine-reader-module" aria-label="Magazine Reader" hidden={!visible}>
-      {status === 'ready' ? (
-        <iframe
+      {discoveryOpen ? <BookDiscovery onBack={()=>setDiscoveryOpen(false)} onOpenShelf={()=>{setDiscoveryOpen(false);frameRef.current?.contentWindow?.postMessage({type:'vantilo:navigate',target:'library'},origin);}}/> : status === 'ready' ? <iframe
           ref={frameRef}
           onLoad={navigate}
           className="magazine-reader-frame"
@@ -53,8 +55,7 @@ export function MagazineReaderModule({
           src={MAGAZINE_READER_URL}
           sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
           referrerPolicy="no-referrer"
-        />
-      ) : status === 'error' ? (
+        /> : status === 'error' ? (
         <div className="magazine-reader-state" role="alert">
           <h2>无法打开 Magazine Reader</h2>
           <p className="magazine-reader-error">{error || '阅读模块启动失败。'}</p>

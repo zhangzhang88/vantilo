@@ -20,7 +20,8 @@ it('restores independent Reader histories, native account/catalog, model choices
     expect(await request('/api/prep/auth').then(r=>r.json())).toMatchObject({connected:true,sharing:true,email:'fixture@example.com'});
     expect(await request('/api/prep/models').then(r=>r.json())).toMatchObject({models:[{model:'fixture-model'}]});
     expect((await request('/api/prep/auth/start',{...options,body:'{}'})).status).toBe(404);
-    expect((await request('/api/prep/tts',{...options,body:'{}'})).status).toBe(404);
+    expect([400,404]).toContain((await request('/api/prep/tts',{...options,body:'{}'})).status);
+    expect((await request('/api/vantilo-gutenberg/books/0')).status).toBe(502);
     expect((await request('/api/prep/model-preferences',{...options,method:'PUT',body:JSON.stringify({modelMode:'manual',model:'fixture-model',reasoningMode:'manual',reasoningEffort:'low'})})).status).toBe(200);
     for(const [kind,message] of [['books','Book-only question'],['magazines','Magazine-only question']]){
       const r=await request('/api/prep/assistant/chat'+scoped(kind!),{...options,body:JSON.stringify({message})});

@@ -6,7 +6,7 @@ The ordinary app and preview builds require a fresh per-start session token for 
 
 ## Current user decisions
 
-Keep developing. Mac packaging is paused until a new explicit user instruction. Existing ignored `out/` artifacts predate the current changes and are not deliverables. Do not run real Codex E2E, real model calls or live magazine sync during verification. Do not change, format, install in, commit or push the original Magazine Reader repository.
+Keep developing Vantilo. The user has since authorized a local Universal macOS test package and pushing Vantilo source to GitHub; this does not authorize changes to the protected original Magazine Reader repository. Do not run real Codex E2E, real model calls or live magazine sync during automated verification. Never change, format, install in, commit or push the original Magazine Reader repository.
 
 The four-magazine updater remains part of development. Remove science articles and independent provider configuration. The corrected requirement is **shared code and login, separate conversations**: project conversations belong to Agent; reading conversations belong to the Reader scope. Never append Reader context to the selected project conversation.
 

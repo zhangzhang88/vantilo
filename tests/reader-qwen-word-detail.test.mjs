@@ -15,7 +15,7 @@ describe('Vantilo Qwen Word Detail isolated preview',()=>{
   it('renders per-occurrence Qwen meaning first, then an always-expanded, nonduplicated full dictionary article',()=>{
     const adapted=adaptReaderSource(original,filename,{qwenPreview:true});
     const card=detail(adapted);
-    expect(card).toContain('当前语境 · 本地 Qwen');
+    expect(card).toContain('当前语境释义');
     expect(card).toContain('<VantiloLocalGloss key={lookup.key}');
     expect(card).toContain('sentence={sentenceForOccurrence(lookup.paragraph, lookup.startOffset, lookup.text.length)}');
     // The original sentence is still supplied to Qwen, but no longer duplicated visually.
@@ -23,7 +23,7 @@ describe('Vantilo Qwen Word Detail isolated preview',()=>{
     expect(primary).not.toContain('word-detail-source-sentence');
     expect(primary).not.toContain('<blockquote');
     // Older Agent details may retain hidden legacy JSX, but Qwen's visible section must not show the source sentence.
-    expect(card).toContain('onQwenMeaningResolved?.(lookup, meaningZh)');
+    expect(card).toContain('onQwenMeaningResolved?.(lookup, meaningZh, provider, model)');
     expect(card).toContain('const personalMeaning = vocabularyMeaningSource === "user"');
     expect(card).toContain('{(personalMeaning || editingVocabulary) && <section className="word-detail-section word-detail-user-section">');
     expect(card).toContain('<section className="word-detail-section vantilo-detail-dictionary">');
@@ -48,7 +48,7 @@ describe('Vantilo Qwen Word Detail isolated preview',()=>{
     expect(card).toContain('{false && <section className="word-detail-section word-detail-context-section">');
     expect(card).toContain('修改语境释义');
     expect(card).toContain('setContextDraft(event.target.value)');
-    expect(card).toContain('onQwenMeaningResolved?.(lookup, meaningZh)');
+    expect(card).toContain('onQwenMeaningResolved?.(lookup, meaningZh, provider, model)');
     expect(card).toContain('添加个人释义');
     expect(card).toContain('onContextMeaningChange(next)');
     expect(adapted).toContain('onWordDetailQwenMeaningResolved={saveVantiloQwenWordContext}');

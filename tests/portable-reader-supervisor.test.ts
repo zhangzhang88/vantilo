@@ -82,6 +82,24 @@ describe('portable Reader process ownership',()=>{
     children[0].emit('message',{type:'ai',requestId:id,instructions:'x',input:'x'.repeat(18001)});
     expect(runAi).toHaveBeenCalledOnce();await supervisor.stop();
   });
+  it('routes custom API requests through the main process and propagates cancellation',async()=>{
+    let rejectCall!:(error:Error)=>void;let observedSignal:AbortSignal|undefined;
+    const customApi=vi.fn(async(operation:string,payload:any,signal?:AbortSignal)=>{
+      if(operation==='get')return {configured:true,hasApiKey:true};
+      observedSignal=signal;
+      return await new Promise((_resolve,reject)=>{rejectCall=reject;signal?.addEventListener('abort',()=>reject(signal.reason),{once:true});});
+    });
+    const {supervisor,children}=fixture(undefined,{customApi});const pending=supervisor.start();children[0].emit('message',{type:'ready'});await pending;
+    const child=children[0],getId='30000000-0000-4000-8000-000000000001';
+    child.emit('message',{type:'custom-api',requestId:getId,operation:'get'});await new Promise(resolve=>setImmediate(resolve));
+    expect(customApi).toHaveBeenCalledWith('get',{},undefined);
+    expect(child.postMessage).toHaveBeenCalledWith({type:'custom-api-result',requestId:getId,ok:true,result:{configured:true,hasApiKey:true}});
+    const completeId='30000000-0000-4000-8000-000000000002';
+    child.emit('message',{type:'custom-api',requestId:completeId,operation:'complete',instruction:'Translate',input:'source'});
+    await new Promise(resolve=>setImmediate(resolve));expect(observedSignal?.aborted).toBe(false);
+    child.emit('message',{type:'custom-api-cancel',requestId:completeId});await new Promise(resolve=>setImmediate(resolve));
+    expect(observedSignal?.aborted).toBe(true);expect(rejectCall).toBeTypeOf('function');await supervisor.stop();
+  });
   it('forwards a safe error category without exposing backend details',async()=>{
     const {supervisor,children}=fixture(vi.fn(async()=>{throw new Error('request timed out; secret-token');}));
     const pending=supervisor.start();children[0].emit('message',{type:'ready'});await pending;

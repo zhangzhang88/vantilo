@@ -22,17 +22,17 @@ function setup() {
  return {handlers,model,runAi,listModels,post,getAccountStatus};
 }
 describe('explicit preview translation engines',()=>{
- it('defaults to offline Qwen without querying or running Codex',async()=>{
+ it('keeps offline Qwen translation local while loading choices for the model selector',async()=>{
   const c=setup();const r=await c.post({engineId:localId,text:'The bark is rough.'});
   expect(r.status).toBe(200);expect(r.result).toMatchObject({engineId:localId,provider:'qwen-mlx'});
-  expect(c.listModels).not.toHaveBeenCalled();expect(c.runAi).not.toHaveBeenCalled();
+  expect(c.listModels).toHaveBeenCalledOnce();expect(c.runAi).not.toHaveBeenCalled();
  });
  it('clearly reports unsupported Intel Qwen without silently using GPT',async()=>{
   const c=setup();c.model.inspect.mockResolvedValue({selected:false,helperAvailable:false,health:{ready:false},hardware:{appleSilicon:false}} as any);
   const engines=await c.handlers['/api/vantilo-translation/engines']({}, {header:vi.fn()});
-  expect(engines.engines[0].label).toContain('Intel Mac 暂不支持');
+  expect(engines.engines[0].label).toContain('当前设备不支持');
   const r=await c.post({engineId:localId,text:'A short sentence.'});
-  expect(r.status).toBe(503);expect(r.result.error).toContain('手动选择 GPT');
+  expect(r.status).toBe(503);expect(r.result.error).toContain('手动切换引擎');
   expect(c.model.translate).not.toHaveBeenCalled();expect(c.runAi).not.toHaveBeenCalled();
  });
  it('fails closed on missing or unhealthy Qwen and rejects oversized requests or extra inputs',async()=>{

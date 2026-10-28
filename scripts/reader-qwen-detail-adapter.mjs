@@ -23,7 +23,7 @@ export function adaptQwenWordDetail(source) {
     '  vocabularyMeaning,\n  vocabularyMeaningSource,\n  onQwenMeaningResolved,\n  familiarity,');
   detail=exact(detail,
     '  vocabularyMeaning?: string;\n  familiarity: FamiliarityLevel | null;',
-    '  vocabularyMeaning?: string;\n  vocabularyMeaningSource?: SavedSelection["translationSource"];\n  onQwenMeaningResolved?: (lookup: ActiveWordLookup, meaningZh: string) => void;\n  familiarity: FamiliarityLevel | null;');
+    '  vocabularyMeaning?: string;\n  vocabularyMeaningSource?: SavedSelection["translationSource"];\n  onQwenMeaningResolved?: (lookup: ActiveWordLookup, meaningZh: string, provider?: string, model?: string) => void;\n  familiarity: FamiliarityLevel | null;');
 
   // A dictionary-derived auto-translation is NOT the user's edited meaning.
   detail=exact(detail,
@@ -33,15 +33,17 @@ export function adaptQwenWordDetail(source) {
   const userSection='      <section className="word-detail-section word-detail-user-section">';
   detail=exact(detail,userSection,`      <section className="word-detail-section vantilo-detail-context">
         <div className="word-detail-section-title">
-          <span>当前语境 · 本地 Qwen</span>
+          <span>当前语境释义</span>
           {familiarity !== null && !editingVocabulary && !personalMeaning &&
             <button type="button" onClick={() => setEditingVocabulary(true)}>添加个人释义</button>}
           {context && !editingContext && <button type="button" onClick={() => setEditingContext(true)}>修改语境释义</button>}
         </div>
         <VantiloLocalGloss key={lookup.key} word={lookup.text}
           sentence={sentenceForOccurrence(lookup.paragraph,lookup.startOffset,lookup.text.length)}
-          cachedMeaning={(context?.meaningSource === "user" || context?.provider === "qwen-mlx") ? context.meaningZh : undefined}
-          onResolved={meaningZh => onQwenMeaningResolved?.(lookup,meaningZh)} />
+          cachedMeaning={context?.meaningSource === "user" ? context.meaningZh : undefined}
+          preserveCached={context?.meaningSource === "user"}
+          cachedProvider={context?.provider} cachedModel={context?.model}
+          onResolved={(meaningZh,provider,model) => onQwenMeaningResolved?.(lookup,meaningZh,provider,model)} />
         {editingContext && context && <div className="word-detail-edit-row">
           <input aria-label={'编辑“' + lookup.text + '”详情当前语境释义'} value={contextDraft} autoFocus
             onChange={event => setContextDraft(event.target.value)}

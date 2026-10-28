@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('vantilo', Object.freeze({
   syncMagazineReader: () => ipcRenderer.invoke('magazine-reader:sync'),
   getMagazineReaderStatus: () => ipcRenderer.invoke('magazine-reader:status'),
   startMagazineReader: () => ipcRenderer.invoke('magazine-reader:start'),
+  requestGutenberg: request => ipcRenderer.invoke('gutenberg:request', request),
   onRuntimeStatus: callback => subscribe('agent:status', callback),
   onAgentEvent: callback => subscribe('agent:event', callback)
 }));

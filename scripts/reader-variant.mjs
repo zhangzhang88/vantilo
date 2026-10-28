@@ -1,5 +1,6 @@
 import {adaptCatalogPreview} from './reader-catalog-adapter.mjs';
 import {adaptTranslationPreview} from './reader-translation-adapter.mjs';
+import {adaptChineseAudioPlayer} from './reader-chinese-audio-adapter.mjs';
 import {adaptScopedAssistant} from './reader-assistant-adapter.mjs';
 import {adaptNativeDictionaryWordDetail} from './reader-word-detail-adapter.mjs';
 import {adaptQwenWordDetail} from './reader-qwen-detail-adapter.mjs';
@@ -14,6 +15,7 @@ const scienceVariables = new Set(['sourceProxyUrl','sourceProxyEnv','sourceHttpT
 export function adaptReaderSource(source, filename, {qwenPreview = true, translationPreview = false, catalogPreview = false} = {}) {
   if (catalogPreview) source=adaptCatalogPreview(source,filename);
   if (translationPreview) source=adaptTranslationPreview(source,filename);
+  source=adaptChineseAudioPlayer(source,filename);
   if (filename.endsWith('/frontend/codex-prep-panel.tsx')) return adaptScopedAssistant(source, filename);
   if (filename.endsWith('/frontend/word-context-state.ts')) {
     // The original reader persists contextual glosses, but only accepts the
@@ -21,7 +23,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
     // Keep old reader records readable during a migration and allow native records.
     const seam = '&& item.provider === "easycliproxy"';
     if (!source.includes(seam)) throw new Error('Word-context storage seam changed; review Vantilo cache compatibility');
-    return source.replace(seam, '&& (item.provider === "easycliproxy" || (item.provider as string) === "vantilo-agent" || (item.provider as string) === "qwen-mlx")');
+    return source.replace(seam, '&& (item.provider === "easycliproxy" || (item.provider as string) === "vantilo-agent" || (item.provider as string) === "qwen-mlx" || (item.provider as string) === "custom-api")');
   }
 
   if (filename.endsWith('.css')) {
@@ -30,6 +32,32 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
       const selectors = rule.selectors.filter(selector => !/(?:science|discovery|ai-settings|ai-provider-settings)/i.test(selector));
       if (!selectors.length) rule.remove(); else rule.selectors = selectors;
     });
+    if (filename.endsWith('/frontend/global-navigation.css')) {
+      // These reader-workspace toolbar rules are responsive, but upstream has
+      // them at the stylesheet root. On wide release-sized windows that hides
+      // every action label and squeezes the remaining icons into narrow columns.
+      const selectors = new Set([
+        '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar',
+        '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar-actions',
+        '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar-actions > *',
+        '.is-reader-workspace:not(.book-prep-layout--single) .toolbar-button span',
+        '.is-reader-workspace:not(.book-prep-layout--single) :is(.reader-toolbar-left,.reader-breadcrumb)',
+        '.is-reader-workspace:not(.book-prep-layout--single) .reader-breadcrumb :is(strong,span)',
+      ]);
+      const toolbarRules = root.nodes.filter(node => node.type === 'rule' && selectors.has(node.selector));
+      if (toolbarRules.length !== selectors.size) throw new Error('Reader toolbar responsive CSS seam changed');
+      const responsive = postcss.atRule({ name: 'media', params: '(max-width: 1150px)' });
+      for (const rule of toolbarRules) { responsive.append(rule.clone()); rule.remove(); }
+      root.append(responsive);
+      root.append(postcss.parse(`
+.reader-page-shell .reader-toolbar-actions{min-width:0;max-width:100%;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none}
+.reader-page-shell .reader-toolbar-actions::-webkit-scrollbar{display:none}
+.reader-page-shell .reader-toolbar-actions>*{flex:0 0 auto}
+.reader-page-shell .reader-toolbar-actions .toolbar-button{white-space:nowrap}
+.reader-page-shell .reader-toolbar-actions .toolbar-button span{display:inline;white-space:nowrap}
+.reader-page-shell .reader-toolbar-actions .vantilo-discovery-entry{color:var(--theme-accent)}
+`));
+    }
     root.walkAtRules(rule => { if (rule.nodes && !rule.nodes.length) rule.remove(); });
     if (filename.endsWith('/frontend/styles.css') && source.includes('.word-lookup-dictionary-summary')) {
       const dictionaryStyles = postcss.parse(readFileSync(new URL('./reader-dictionary-card.css', import.meta.url), 'utf8'));
@@ -62,7 +90,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
   if (/\/server\/services\/(?:active-ai-providers|translation-service|reader-guide-service|section-translation-service|selection-assist-service|reading-assistant-service|word-context-service|book-toc-chinese-service)\.ts$/.test(filename)) {
     return source.replaceAll('"easycliproxy"', '"vantilo-agent"').replaceAll('EasyCLIProxyAPI', 'Agent').replaceAll('AI 服务尚未配置', '请先登录 ChatGPT');
   }
-  if (!/src\/(frontend\/(?:App\.tsx|api\.ts)|server\/app\.ts|server\/services\/codex-auth-service\.ts)$/.test(filename.replaceAll('\\','/'))) return source;
+  if (!/src\/(frontend\/(?:App\.tsx|global-navigation\.tsx|api\.ts)|server\/app\.ts|server\/services\/codex-auth-service\.ts)$/.test(filename.replaceAll('\\','/'))) return source;
   // Exact upstream seams fail at build time if a future Reader version changes them.
   if (filename.endsWith('/server/app.ts')) {
     const original = 'const codexAuth = new CodexAuthService(paths.dataDir, options.aiFetchImpl);';
@@ -105,7 +133,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
     const contextStart = '      <div className="word-lookup-context">\n';
     if (source.split(contextStart).length !== 2) throw new Error('Reader contextual popup seam changed');
     source = source.replace(contextStart,
-      '      {context && context.provider !== "qwen-mlx" && <div className="word-lookup-context">\n');
+      '      {context?.meaningSource === "user" && <div className="word-lookup-context">\n');
     // Keep existing successful and user-edited contextual information; omit the
     // old empty/loading/error block, already redundant with the explicit Qwen action.
     const contextEnd = '      </div>\n\n      <div className="word-lookup-familiarity">';
@@ -114,12 +142,12 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
     const mainMeaningSeam = '      {hasCustomVocabularyMeaning ? (';
     if (source.split(mainMeaningSeam).length !== 2) throw new Error('Word popup dictionary placement changed');
     source = source.replace(mainMeaningSeam,
-      '      <VantiloLocalGloss key={lookup.key} word={lookup.text} sentence={sentenceForOccurrence(lookup.paragraph,lookup.startOffset,lookup.text.length)} cachedMeaning={(context?.meaningSource === "user" || context?.provider === "qwen-mlx") ? context.meaningZh : undefined} onResolved={(meaningZh) => onQwenMeaningResolved(lookup,meaningZh)} />\n' +
+      '      <VantiloLocalGloss key={lookup.key} word={lookup.text} sentence={sentenceForOccurrence(lookup.paragraph,lookup.startOffset,lookup.text.length)} cachedMeaning={context?.meaningSource === "user" ? context.meaningZh : undefined} preserveCached={context?.meaningSource === "user"} cachedProvider={context?.provider} cachedModel={context?.model} onResolved={(meaningZh,provider,model) => onQwenMeaningResolved(lookup,meaningZh,provider,model)} />\n' +
       '      <details className="vantilo-dictionary-secondary"><summary>查看词典释义与例句</summary>\n' +
       mainMeaningSeam);
-    const dictionaryEnd = '      ) : null}\n\n      {context && context.provider !== "qwen-mlx" && <div className="word-lookup-context">';
+    const dictionaryEnd = '      ) : null}\n\n      {context?.meaningSource === "user" && <div className="word-lookup-context">';
     if(source.split(dictionaryEnd).length !== 2)throw new Error('Word popup secondary dictionary end changed');
-    source=source.replace(dictionaryEnd, '      ) : null}\n      </details>\n\n      {context && context.provider !== "qwen-mlx" && <div className="word-lookup-context">');
+    source=source.replace(dictionaryEnd, '      ) : null}\n      </details>\n\n      {context?.meaningSource === "user" && <div className="word-lookup-context">');
     // Only local Qwen should launch automatically on preview word-clicks.
     // Full detail retains the existing on-demand Agent explanation.
     const oldAutostart = '    if (!cachedContext || !hasEnglishWordContext(cachedContext)) {';
@@ -130,7 +158,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
     source=source.replace(callbackArg,'  onVocabularyMeaningChange,\n  onQwenMeaningResolved,\n}: {');
     const callbackType='  onVocabularyMeaningChange: (meaningZh: string) => void;\n}) {';
     if(source.split(callbackType).length !== 2)throw new Error('WordLookupCard callback type seam changed');
-    source=source.replace(callbackType,'  onVocabularyMeaningChange: (meaningZh: string) => void;\n  onQwenMeaningResolved: (lookup: ActiveWordLookup, meaningZh: string) => void;\n}) {');
+    source=source.replace(callbackType,'  onVocabularyMeaningChange: (meaningZh: string) => void;\n  onQwenMeaningResolved: (lookup: ActiveWordLookup, meaningZh: string, provider?: string, model?: string) => void;\n}) {');
     const parentCall='              onVocabularyMeaningChange={(meaningZh) => updateWordLookupVocabularyMeaning(activeWordLookup, meaningZh)}';
     if(source.split(parentCall).length !== 2)throw new Error('WordLookupCard parent call seam changed');
     source=source.replace(parentCall,parentCall+'\n              onQwenMeaningResolved={saveVantiloQwenWordContext}');
@@ -139,7 +167,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
     source=source.replace(parentLocation,`
   // Qwen meanings belong to this word occurrence, not a global dictionary item.
   // Keep any explicit user-edited meaning, and persist for the small inline Chinese.
-  function saveVantiloQwenWordContext(lookup: ActiveWordLookup, meaningZh: string) {
+  function saveVantiloQwenWordContext(lookup: ActiveWordLookup, meaningZh: string, provider = 'qwen-mlx', modelName = 'Qwen3.5 4B MLX') {
     const latest=wordContextMeaningsRef.current.find(item=>item.key===lookup.key);
     if(latest?.meaningSource==='user')return;
     const record:WordContextMeaningRecord={
@@ -151,7 +179,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
       sentence:sentenceForOccurrence(lookup.paragraph,lookup.startOffset,lookup.text.length),
       meaningZh,explanationZh:'',meaningEn:'',explanationEn:'',examplesEn:[],
       partOfSpeech:latest?.partOfSpeech ?? '',
-      model:'Qwen3.5 4B MLX',provider:'qwen-mlx' as WordContextMeaningRecord['provider'],
+      model:modelName,provider:provider as WordContextMeaningRecord['provider'],
       generatedAt:new Date().toISOString(),meaningSource:'ai',
     };
     const next=upsertWordContextMeaning(wordContextMeaningsRef.current,record);
@@ -172,6 +200,16 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
   }
 
   source = source.replaceAll('\"Dictionary\"','\"Agent 释义\"').replaceAll('\"AI fallback\"','\"Agent 语境释义\"').replaceAll('Dictionary · base form','Agent · 词形').replaceAll('请配置 AI 服务', '请登录 ChatGPT').replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。', '阅读辅助与工作台共用 ChatGPT 登录；Reader 独立保存对话与模型选择。这里管理外观、阅读偏好和本机数据备份。').replaceAll('阅读偏好在浏览器 · AI 配置在本机', '阅读偏好保存在本机 · AI 使用统一 Agent').replaceAll('词典：有道 / Free Dictionary API · 语境：EasyCLIProxy', '释义与语境：统一 Agent · AI 生成，请结合原文核对');
+  if (filename.endsWith('/frontend/App.tsx') && source.includes('reader-toolbar-actions')) {
+    const toolbar = '        <div className="reader-toolbar-actions">';
+    if (source.split(toolbar).length !== 2) throw new Error('Reader toolbar discovery insertion seam changed');
+    source = source.replace(toolbar, toolbar + `\n          <button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery"}, "*")}>▧ <span>发现好书</span></button>`);
+  }
+  if (filename.endsWith('/frontend/global-navigation.tsx')) {
+    const nav = '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}</div>';
+    if (source.split(nav).length !== 2) throw new Error('Global navigation discovery insertion seam changed');
+    source = source.replace(nav, '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}<button className="global-nav-link vantilo-discovery-link" type="button" aria-label="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery"}, "*")}><span>发现好书</span></button></div>');
+  }
   if (filename.endsWith('/frontend/App.tsx') && qwenPreview) {
     source = source.replaceAll('释义与语境：统一 Agent · AI 生成，请结合原文核对',
       '当前语境：本地 Qwen · 词典为补充，请结合原文核对');
@@ -248,6 +286,6 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
 
 export function readerVariantPlugin() {
   return { name: 'vantilo-reader-without-science', enforce: 'pre', transform(source, id) {
-    if (id.includes('/src/')) { const code = adaptReaderSource(source, id.split('?')[0], {qwenPreview:process.env.VANTILO_QWEN_READER_PREVIEW==='1',translationPreview:process.env.VANTILO_QWEN_READER_PREVIEW==='1',catalogPreview:process.env.VANTILO_QWEN_READER_PREVIEW==='1'}); return code === source ? null : { code, map: null }; }
+    if (id.includes('/src/')) { const qwenPreview=process.env.VANTILO_QWEN_READER_PREVIEW==='1'; const catalogPreview=qwenPreview||process.env.VANTILO_CATALOG_READER_PREVIEW==='1'; const code = adaptReaderSource(source, id.split('?')[0], {qwenPreview,translationPreview:qwenPreview||process.env.VANTILO_TRANSLATION_READER==='1',catalogPreview}); return code === source ? null : { code, map: null }; }
   } };
 }

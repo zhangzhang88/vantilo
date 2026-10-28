@@ -48,6 +48,7 @@ type RuntimeApi = {
   startMagazineReader:()=>Promise<{ready:boolean}>;
   getMagazineReaderStatus:()=>Promise<{status:string;error:string|null;sync?:MagazineSyncState}>;
   syncMagazineReader:()=>Promise<{accepted:boolean}>;
+  requestGutenberg:(request:{operation:'search';query?:string;topic?:string;page?:number}|{operation:'detail';id:number}|{operation:'acquire';id:number;filename:string;categoryId:string})=>Promise<any>;
   getReaderSetupState:()=>Promise<{show:boolean}>;
   checkReaderSetup:()=>Promise<ReaderSetupCheck>;
   finishReaderSetup:(decision:'finished'|'skipped')=>Promise<{show:boolean}>;

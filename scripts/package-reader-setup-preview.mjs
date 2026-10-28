@@ -10,6 +10,7 @@ import { build } from 'esbuild';
 import { packager } from '@electron/packager';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+await import('./build-app-icon.mjs');
 const require = createRequire(import.meta.url);
 const isQwenPreview = process.env.VANTILO_QWEN_PREVIEW_BUILD === '1';
 const previewName = isQwenPreview ? 'Vantilo Qwen Setup Preview' : 'Vantilo Reader Setup Preview';
@@ -46,6 +47,8 @@ if(isQwenPreview){
 await fs.rm(stage, {recursive:true,force:true});
 await fs.mkdir(path.join(stage,'electron'),{recursive:true});
 for (const folder of ['dist','licenses']) await fs.cp(path.join(repo,folder),path.join(stage,folder),{recursive:true});
+await fs.mkdir(path.join(stage,'resources'),{recursive:true});
+await fs.copyFile(path.join(repo,'resources/vantilo-icon.png'),path.join(stage,'resources/vantilo-icon.png'));
 const readerRoot = path.join(stage,'reader');
 await fs.mkdir(readerRoot,{recursive:true});
 const originalReader = path.join(repo,'build/reader');
@@ -148,7 +151,7 @@ if(isQwenPreview && process.env.VANTILO_QWEN_STAGE_ONLY==='1') {
 const electron=require('electron/package.json');
 const result=await packager({dir:stage,out,name:previewName,platform:'darwin',arch:process.arch,
   electronVersion:electron.version,electronDist:path.join(repo,'node_modules/electron/dist'),
-  appBundleId:previewBundleId,overwrite:true,prune:false,asar:false});
+  appBundleId:previewBundleId,icon:path.join(repo,'resources/vantilo.icns'),overwrite:true,prune:false,asar:false});
 const appDir=path.join(result[0],previewName+'.app');
 if(!(await fs.stat(appDir)).isDirectory())throw new Error('Packager did not output preview .app');
 // Prove the product's actual preexisting development seed is NOT in the distribution.

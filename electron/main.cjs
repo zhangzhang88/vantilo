@@ -1,6 +1,6 @@
 const {createSoftwareUpdateService}=require('./software-update-service.cjs');
 const softwareUpdateSource=require('../resources/software-update-source.json');
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess, session, nativeImage, safeStorage } = require('electron');
 const path = require('node:path');
 const { installReaderNavigation } = require('./magazine-reader-navigation.cjs');
 const { RuntimeSupervisor } = require('./runtime-supervisor.cjs');
@@ -8,6 +8,7 @@ const { PortableReaderSupervisor } = require('./portable-reader-supervisor.cjs')
 const { readerSessionCookies } = require('./reader-session-cookie.cjs');
 const { createReaderOnboarding, MODEL_INFO_URL } = require('./reader-onboarding.cjs');
 const { createReaderModelService } = require('./reader-model-service.cjs');
+const { createReaderCustomApi } = require('./reader-custom-api.cjs');
 const { isTrustedSender, isTrustedPageUrl, PACKAGED_RENDERER_PATH } = require('./ipc-security.cjs');
 
 // Preserve the existing userData directory while branding the native app as Vantilo.
@@ -17,23 +18,29 @@ app.setPath('userData', existingUserDataPath);
 
 let win;
 let runtime;
+let readerCustomApiService;
+function getReaderCustomApiService() {
+  if(!readerCustomApiService)readerCustomApiService=createReaderCustomApi({filePath:path.join(app.getPath('userData'),'reader-custom-api-v1.json'),safeStorage});
+  return readerCustomApiService;
+}
 const readerAssets = path.join(__dirname, app.isPackaged ? '../reader' : '../build/reader');
 // A missing build must fail startup; never fall back to the source project's independent auth/API.
 const usePortableReader = true;
 const readerOnboarding = createReaderOnboarding({ userData: app.getPath('userData'), assetsDir: readerAssets });
 // Experimental model controls are intentionally isolated to the separately branded preview.
 const modelSetupPreview = app.isPackaged && process.env.VANTILO_READER_PREVIEW === '1';
-const readerQwenIntegrated = modelSetupPreview && path.basename(app.getPath('userData')) === 'Vantilo Qwen Setup Preview';
-const intelModel = process.platform === 'darwin' && process.arch === 'x64';
-const readerModelService = modelSetupPreview ? (intelModel ? require('./reader-intel-service.cjs').createIntelModelService({ userData: app.getPath('userData'), assetsDir: readerAssets }) : createReaderModelService({ userData: app.getPath('userData'), assetsDir: readerAssets })) : null;
+const readerQwenIntegrated = modelSetupPreview && process.arch === 'arm64' && path.basename(app.getPath('userData')) === 'Vantilo Qwen Setup Preview';
+// Local Qwen is supported only by the existing Apple Silicon MLX path.
+// Intel devices use configured cloud/LAN APIs instead of a second local runtime.
+const readerModelService = modelSetupPreview && process.platform === 'darwin' && process.arch === 'arm64' ? createReaderModelService({ userData: app.getPath('userData'), assetsDir: readerAssets }) : null;
 function requireModelPreview(event, args) {
   requireTrustedSender(event);
   if (args.length || !readerModelService) throw new Error('本地模型安装功能尚未开放。');
 }
-const softwareUpdates=readerQwenIntegrated?createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:app.getVersion(),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),
+const softwareUpdates=createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:app.getVersion(),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),
   onAvailable:async state=>{if(!win||win.isDestroyed())return;const result=await dialog.showMessageBox(win,{type:'info',title:'Vantilo 软件更新',message:'发现新版本 '+state.latestVersion,detail:'当前版本 '+state.currentVersion+'。可前往 GitHub 发布页下载安装，应用不会强制退出。',buttons:['稍后','前往发布页'],defaultId:0,cancelId:0});if(result.response===1)await softwareUpdates.openRelease();}
-}):null;
-const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableLocalQwen: readerQwenIntegrated, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
+});
+const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableLocalQwen: readerQwenIntegrated && process.arch === 'arm64', enableTranslation: true, enableReaderPreviews: true, customApi: async (operation,payload,signal) => {const service=getReaderCustomApiService();const result=operation==='activate'||operation==='remove'?await service[operation](payload.id):await service[operation](operation==='complete'?{...payload,signal}:payload);return operation==='complete'?{output:result}:result;}, edgeTtsExecutable: process.env.VANTILO_EDGE_TTS_EXECUTABLE || null, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
   ...readerSessionCookies(()=>session.defaultSession),
 });
 let quitting = false;
@@ -208,7 +215,7 @@ ipcMain.handle('reader:setup-state', (event, ...args) => {
 ipcMain.handle('reader:setup-check', (event, ...args) => {
   requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
   // Qwen Reader integration exists only in the explicitly isolated Qwen preview.
-  return readerOnboarding.check().then(state => ({ ...state, ...(modelSetupPreview ? { modelSetupPreview:true, readerQwenIntegrated } : {}) }));
+  return readerOnboarding.check().then(state => ({ ...state, ...(modelSetupPreview ? { modelSetupPreview:Boolean(readerModelService), readerQwenIntegrated } : {}) }));
 });
 ipcMain.handle('reader:setup-finish', (event, decision, ...args) => {
   requireTrustedSender(event); if (args.length) throw new Error('Invalid setup request');
@@ -235,9 +242,8 @@ ipcMain.handle('reader:model-check', (event, ...args) => {
 ipcMain.handle('reader:model-choose', async (event, ...args) => {
   requireModelPreview(event, args);
   const selected = await dialog.showOpenDialog(win, {
-    title:intelModel?'选择已经下载好的 Qwen3.5 4B GGUF 模型文件':'选择已经下载好的 Qwen3.5 4B MLX 模型文件夹',
-    properties:[intelModel?'openFile':'openDirectory'],
-    ...(intelModel?{filters:[{name:'GGUF 模型',extensions:['gguf']}]}:{}),
+    title:'选择已经下载好的 Qwen3.5 4B MLX 模型文件夹',
+    properties:['openDirectory'],
   });
   if (selected.canceled || selected.filePaths.length !== 1) return { canceled:true };
   const confirmation = await dialog.showMessageBox(win, {
@@ -251,7 +257,6 @@ ipcMain.handle('reader:model-choose', async (event, ...args) => {
 });
 ipcMain.handle('reader:model-install', async (event, ...args) => {
   requireModelPreview(event, args);
-  if(intelModel)throw new Error('Intel 模型下载尚未开放，请选择已有 GGUF 模型');
   const info = await readerModelService.inspect();
   if (!info.hardware.supported) throw new Error('此 Mac 尚不支持该 MLX 模型');
   if (info.disk.availableBytes < info.disk.freshInstallBytes) throw new Error('磁盘可用空间不足');
@@ -282,8 +287,27 @@ ipcMain.handle('magazine-reader:start', (event, ...args) => {
   if (args.length || quitting) throw new Error('Invalid Reader startup request.');
   return magazineReaderSupervisor.start();
 });
+ipcMain.handle('gutenberg:request', async (event, request) => {
+  requireTrustedSender(event);
+  if (!usePortableReader || quitting || magazineReaderSupervisor.status !== 'ready') throw new Error('请先打开阅读空间');
+  if (!request || typeof request !== 'object' || Array.isArray(request) || !['search','detail','acquire'].includes(request.operation)) throw new Error('Invalid Gutenberg request');
+  const allowed=request.operation==='search'?['operation','query','topic','page']:request.operation==='detail'?['operation','id']:['operation','id','filename','categoryId'];
+  if(Object.keys(request).some(key=>!allowed.includes(key)))throw new Error('Invalid Gutenberg request');
+  const path = request.operation==='search' ? '/api/vantilo-gutenberg/search' : request.operation==='detail' ? '/api/vantilo-gutenberg/books/'+encodeURIComponent(String(request.id)) : '/api/vantilo-gutenberg/acquire';
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),30000);
+  try {
+    const url=new URL(path,magazineReaderSupervisor.apiOrigin);
+    if(request.operation==='search')for(const key of ['query','topic','page'])if(request[key]!==undefined&&request[key]!=='' )url.searchParams.set(key,String(request[key]));
+    const token=magazineReaderSupervisor.sessionToken;
+    const response=await fetch(url,{method:request.operation==='acquire'?'POST':'GET',redirect:'error',signal:controller.signal,headers:{host:new URL(magazineReaderSupervisor.apiOrigin).host,origin:magazineReaderSupervisor.webOrigin,'sec-fetch-site':'same-origin',cookie:'__Host-vantilo-reader='+token,...(request.operation==='acquire'?{'content-type':'application/json'}:{})},...(request.operation==='acquire'?{body:JSON.stringify({id:request.id,filename:request.filename,categoryId:request.categoryId})}:{})});
+    const body=await response.json();if(!response.ok)throw new Error(body.error||'Project Gutenberg 服务暂不可用');return body;
+  } finally {clearTimeout(timer);}
+});
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(nativeImage.createFromPath(path.join(__dirname, '../resources/vantilo-icon.png')));
+  }
   installApplicationMenu();
   runtime = new RuntimeSupervisor({ utilityProcess, entryPath: path.join(__dirname, 'runtime-entry.cjs'), args: [app.getPath('userData'), ...(usePortableReader ? [path.join(readerAssets, 'codex')] : [])], cwd: usePortableReader ? app.getPath('userData') : process.cwd() });
   runtime.on('status', status => publish('agent:status', status));
@@ -293,7 +317,8 @@ app.whenReady().then(() => {
   createWindow();
   runtime.start().catch(() => { /* the structured status is shown by the renderer */ });
   // This isolated preview checks new issues from app launch, even while Agent is visible.
-  if(readerQwenIntegrated){void softwareUpdates.start();void magazineReaderSupervisor.start().catch(()=>{});}
+  void softwareUpdates.start();
+  if(readerQwenIntegrated)void magazineReaderSupervisor.start().catch(()=>{});
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 

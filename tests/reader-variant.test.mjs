@@ -17,6 +17,34 @@ describe('Reader build adaptation', () => {
     expect(result).toContain('fetchBookLessons'); expect(result).toContain('电子书');
     expect(adaptReaderSource('.science-article {color:red}.book {color:blue}@media(max-width:600px){.discovery-list{display:grid}}', '/source/src/frontend/styles.css')).toBe('.book {color:blue}');
   });
+  it('keeps Reader toolbar labels horizontal on wide windows and applies the compact layout only on narrow windows', () => {
+    const selectors = [
+      '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar',
+      '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar-actions',
+      '.is-reader-workspace:not(.book-prep-layout--single) .reader-toolbar-actions > *',
+      '.is-reader-workspace:not(.book-prep-layout--single) .toolbar-button span',
+      '.is-reader-workspace:not(.book-prep-layout--single) :is(.reader-toolbar-left,.reader-breadcrumb)',
+      '.is-reader-workspace:not(.book-prep-layout--single) .reader-breadcrumb :is(strong,span)',
+    ];
+    const source = selectors.map(selector => `${selector}{display:flex}`).join('');
+    const result = postcss.parse(adaptReaderSource(source, '/source/src/frontend/global-navigation.css'));
+    expect(result.nodes.filter(node => node.type === 'rule' && selectors.includes(node.selector))).toHaveLength(0);
+    const media = result.nodes.find(node => node.type === 'atrule' && node.params === '(max-width: 1150px)');
+    expect(media?.nodes?.filter(node => node.type === 'rule')).toHaveLength(selectors.length);
+    expect(result.toString()).toContain('.reader-page-shell .reader-toolbar-actions .toolbar-button span{display:inline;white-space:nowrap}');
+    expect(result.toString()).toContain('.reader-page-shell .reader-toolbar-actions>*{flex:0 0 auto}');
+  });
+  it('places Discover a Good Book in the Reader toolbar and routes it to the host discovery page', () => {
+    const source = `function Reader(){
+      return <div>
+        <div className="reader-toolbar-actions"></div>
+      </div>;
+    }`;
+    const result = adaptReaderSource(source, '/source/src/frontend/App.tsx');
+    expect(result).toContain('className="toolbar-button vantilo-discovery-entry"');
+    expect(result).toContain('window.parent.postMessage({ type: "vantilo:open-discovery" }, "*")');
+    expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  });
   it('removes crawlers, science routes and the second assistant login and rejects upstream seam changes', () => {
     const source = `const codexAuth = new CodexAuthService(paths.dataDir, options.aiFetchImpl);
       const scienceArticleService = new ScienceArticleService();
@@ -170,7 +198,7 @@ it('simplifies the word popup without removing real keyboard or dictionary funct
   expect(adapted).toContain('onQwenMeaningResolved={saveVantiloQwenWordContext}');
   expect(adapted).toContain('wordContextMeaningsRef.current = next');
   expect(adapted).toContain('false && (!cachedContext || !hasEnglishWordContext(cachedContext))');
-  expect(adapted).toContain('context.provider !== "qwen-mlx"');
+  expect(adapted).toContain('context?.meaningSource === "user"');
   expect(adapted).toContain('word-detail-context-section');
   expect(ts.createSourceFile('result.tsx', adapted, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
 });
@@ -184,6 +212,17 @@ it('keeps automatic Qwen and collapsed dictionary exclusive to the separate prev
   expect(adapted).toContain('className="word-lookup-dictionary-summary"');
   expect(adapted).toContain('if (!cachedContext || !hasEnglishWordContext(cachedContext))');
   expect(ts.createSourceFile('result.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+});
+
+it('includes the release translation adapter in translation-enabled builds without Qwen word-popup changes',()=>{
+  const filename=`${readerSourceRoot}/src/frontend/App.tsx`;
+  const original=readFileSync(filename,'utf8');
+  const adapted=adaptReaderSource(original,filename,{qwenPreview:false,translationPreview:true});
+  expect(adapted).toContain('/api/vantilo-translation/engines');
+  expect(adapted).toContain('/api/vantilo-translation/translate');
+  expect(adapted).toContain('vantilo-translation-bar');
+  expect(adapted).not.toContain('<VantiloLocalGloss');
+  expect(ts.createSourceFile('translation-enabled.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
 });
 
 it('keeps native full dictionary text out of both word-detail meaning lists while preserving ordinary entries', () => {

@@ -64,7 +64,7 @@ describe('Reader onboarding dialog',()=>{
       inspectLocalModel,chooseLocalModel,recheckLocalModel:vi.fn(async()=>({ready:true,status:'verified-native'})),
       installLocalModel:vi.fn(async()=>({canceled:true})),cancelLocalModel:vi.fn(async()=>({canceled:true}))};
     render(<ReaderOnboarding api={api} onDismiss={onDismiss} onStartReader={onStartReader}/>);
-    await waitFor(()=>expect(screen.getByText('独立预览 · 已接入 Reader')).toBeTruthy());
+    await waitFor(()=>expect(screen.getByText('本地模型已接入 Reader')).toBeTruthy());
     expect(screen.getByText(/已接入本地 Qwen 点词语境释义/)).toBeTruthy();
     expect(screen.getByRole('button',{name:'开始阅读'})).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'选择已有 Qwen 模型'}));
@@ -90,31 +90,21 @@ describe('Reader onboarding dialog',()=>{
     expect(screen.getByRole<HTMLButtonElement>('button',{name:'确认后下载约 3GB'}).disabled).toBe(true);
     expect(screen.getByRole('button',{name:'开始阅读'})).toBeTruthy();
   });
-  it('never displays a fake model-install button and uses the information action honestly',async()=>{
+  it('does not offer local model actions on Intel',async()=>{
     const api={checkReaderSetup:vi.fn(async()=>({dictionary:'unavailable' as const,hardware:{appleSilicon:false,memoryGiB:8},localAi:'not-integrated' as const})),
       openDictionaryApp:vi.fn(async()=>({opened:false})),viewLocalModelInfo:vi.fn(async()=>{})};
     render(<ReaderOnboarding api={api} onDismiss={vi.fn(async()=>{})}/>);
-    await waitFor(()=>expect(screen.getByText(/当前设备不是 Apple Silicon/)).toBeTruthy());
+    await waitFor(()=>expect(screen.getByText(/Intel 版本通过自定义云端或局域网 API 使用模型/)).toBeTruthy());
     expect(screen.queryByRole('button',{name:/下载并安装/})).toBeNull();
-    fireEvent.click(screen.getByRole('button',{name:'查看 Qwen 模型详情（非安装）'}));
-    expect(api.viewLocalModelInfo).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button',{name:/Qwen 模型/})).toBeNull();
   });
-  it('explains that Intel Macs cannot use the local Qwen backend',async()=>{
+  it('routes Intel readers to the configured API instead of local Qwen',async()=>{
     const api={checkReaderSetup:vi.fn(async()=>({dictionary:'bilingual' as const,hardware:{appleSilicon:false,memoryGiB:16},localAi:'not-integrated' as const,modelSetupPreview:true,readerQwenIntegrated:true})),
       openDictionaryApp:vi.fn(async()=>({opened:true})),viewLocalModelInfo:vi.fn(async()=>{}),
       inspectLocalModel:vi.fn(async()=>({selected:false,modelName:'Qwen3.5 4B',modelPath:null,active:false,helperAvailable:false,health:{ready:false,status:'not-checked'},hardware:{supported:false,memoryGiB:16,warning:'只支持 Apple Silicon Mac'},disk:{availableBytes:10e9,freshInstallBytes:5e9},model:{bytes:3e9,license:'Apache-2.0'}}))};
     render(<ReaderOnboarding api={api} onDismiss={vi.fn(async()=>{})}/>);
-    await waitFor(()=>expect(screen.getAllByText(/Intel Mac 暂不支持本地 Qwen/).length).toBeGreaterThan(0));
-    expect(screen.getByRole<HTMLButtonElement>('button',{name:'选择已有 Qwen 模型'}).disabled).toBe(true);
-    expect(screen.getByRole<HTMLButtonElement>('button',{name:'确认后下载约 3GB'}).disabled).toBe(true);
-  });
-  it('offers a verified Intel GGUF model without starting a download',async()=>{
-    const api={checkReaderSetup:vi.fn(async()=>({dictionary:'bilingual' as const,hardware:{appleSilicon:false,memoryGiB:16},localAi:'not-integrated' as const,modelSetupPreview:true,readerQwenIntegrated:true})),
-      openDictionaryApp:vi.fn(async()=>({opened:true})),viewLocalModelInfo:vi.fn(async()=>{}),
-      inspectLocalModel:vi.fn(async()=>({selected:false,modelName:'Qwen3.5 4B GGUF',modelPath:null,active:false,helperAvailable:true,health:{ready:false,status:'not-checked'},hardware:{supported:true,memoryGiB:16,warning:null},disk:{availableBytes:10e9,freshInstallBytes:5e9},model:{id:'qwen3.5-4b-gguf-q4-k-m',bytes:2783446880,license:'Apache-2.0'}}))};
-    render(<ReaderOnboarding api={api} onDismiss={vi.fn(async()=>{})}/>);
-    await waitFor(()=>expect(screen.getByText(/Intel 测试版可选择已有的/)).toBeTruthy());
-    expect(screen.getByRole<HTMLButtonElement>('button',{name:'选择已有 Qwen 模型'}).disabled).toBe(false);
+    await waitFor(()=>expect(screen.getAllByText(/Intel 版本通过自定义云端或局域网 API 使用模型/).length).toBeGreaterThan(0));
+    expect(screen.queryByRole('button',{name:'选择已有 Qwen 模型'})).toBeNull();
     expect(screen.queryByRole('button',{name:'确认后下载约 3GB'})).toBeNull();
   });
 });

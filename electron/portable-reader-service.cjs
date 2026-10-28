@@ -17,11 +17,13 @@ function hasReaderSession(cookieHeader, sessionToken) {
   const expected=Buffer.from(sessionToken,'hex'), received=Buffer.from(value,'hex');
   return expected.length===received.length && timingSafeEqual(expected,received);
 }
-async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, localQwenService, softwareUpdates, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
+async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, edgeTtsExecutable = null, localQwenService, softwareUpdates, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
   if(!/^[a-f0-9]{64}$/.test(sessionToken))throw new Error('Reader session token is invalid');
+  if(typeof edgeTtsExecutable==='string'&&edgeTtsExecutable)process.env.VANTILO_EDGE_TTS_EXECUTABLE=edgeTtsExecutable;
   for (const folder of ['issues', 'books', 'data', 'config']) await fs.mkdir(path.join(libraryRoot, folder), { recursive: true, mode: 0o700 });
   if (seedDir) await initializeReaderLibrary({ seedDir, libraryRoot });
   const { buildServer, GitHubMagazineSyncService } = apiModule || require(path.join(assetsDir, 'api.cjs'));
+  const { createGutenbergService } = require('./gutenberg-service.cjs');
   const lifetime = new AbortController();
   let readerPreferences = null;
   const aiFetch = runAi ? createReaderAiFetch(payload => runAi({...payload,
@@ -45,24 +47,35 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
     // Basic dictionary uses the local macOS index; contextual meaning alone uses Reader AI.
     dictionaryProvider: createDictionaryCache({ dataDir: path.join(libraryRoot, 'data'), lookup: createMacDictionaryLookup({ assetsDir }) }),
   });
-  // Independent, opt-in local gloss. Only present in the separately branded
-  // Qwen preview; the original Reader and normal Vantilo never expose it.
-  let ownedQwen = null;
-  if (enableLocalQwen) {
-    const {createReaderModelService}=require('./reader-model-service.cjs');
-    ownedQwen = localQwenService ? null : (process.platform==='darwin' && process.arch==='x64' ? require('./reader-intel-service.cjs').createIntelModelService({userData:path.dirname(libraryRoot),assetsDir,persistentGloss:true}) : createReaderModelService({userData:path.dirname(libraryRoot),assetsDir,persistentGloss:true}));
+  const gutenberg=createGutenbergService({fetchImpl:fetchImpl||fetch,fetchBookList:()=>api.inject({method:'GET',url:'/api/books',headers:{host:'127.0.0.1:'+apiPort,cookie:READER_SESSION_COOKIE+'='+sessionToken}}).then(response=>{if(response.statusCode!==200)throw new Error('无法检查现有书架');return response.json();}),importEpub:async({filename,categoryId,data})=>{
+    const imported=await api.inject({method:'POST',url:'/api/books/import?filename='+encodeURIComponent(filename)+'&categoryId='+encodeURIComponent(categoryId),headers:{host:'127.0.0.1:'+apiPort,cookie:READER_SESSION_COOKIE+'='+sessionToken,'content-type':'application/epub+zip'},payload:data});
+    if(imported.statusCode<200||imported.statusCode>=300)throw new Error(imported.body||'现有书架导入失败');return imported.json();
+  }});
+  api.get('/api/vantilo-gutenberg/search',async(request,reply)=>{
+    reply.header('Cache-Control','no-store');
+    try{return await gutenberg.search({query:typeof request.query?.query==='string'?request.query.query:'',topic:typeof request.query?.topic==='string'?request.query.topic:undefined,page:Number(request.query?.page)||1});}
+    catch(error){reply.code(502);return {error:error instanceof Error?error.message:'在线书目暂不可用'};}
+  });
+  api.get('/api/vantilo-gutenberg/books/:id',async(request,reply)=>{
+    reply.header('Cache-Control','no-store');const id=Number(request.params?.id);
+    try{return await gutenberg.detail({id});}catch(error){reply.code(502);return {error:error instanceof Error?error.message:'书目详情暂不可用'};}
+  });
+  api.post('/api/vantilo-gutenberg/acquire',async(request,reply)=>{
+    reply.header('Cache-Control','no-store');
+    try{return await gutenberg.acquire(request.body);}catch(error){reply.code(502);return {error:error instanceof Error?error.message:'EPUB 获取失败'};}
+  });
+  // The release translation API can run without enabling its unrelated
+  // catalogue generation and magazine-sync features.
+  let ownedQwen = null, catalogLocalModel = null;
+  if (enableLocalQwen || enableTranslation) {
+    ownedQwen = localQwenService !== undefined ? null : (process.platform==='darwin' && process.arch==='arm64' ? require('./reader-model-service.cjs').createReaderModelService({userData:path.dirname(libraryRoot),assetsDir,persistentGloss:true}) : null);
     const model=localQwenService || ownedQwen;
-    require('./reader-translation-preview.cjs').registerTranslationPreview(api,{model,listModels,runAi,lifetime,getAccountStatus});
-    async function internalRead(url) {
-      const response=await api.inject({method:'GET',url,headers:{host:'127.0.0.1:'+apiPort,cookie:READER_SESSION_COOKIE+'='+sessionToken}});
-      if(response.statusCode!==200)throw new Error('原书或期刊不可用，请返回书库检查');
-      return response.json();
+    catalogLocalModel=model;
+    if(enableTranslation){
+      require('./reader-translation-preview.cjs').registerTranslationPreview(api,{model,listModels,runAi,customApi,lifetime,getAccountStatus});
+      require('./reader-contextual-gloss.cjs').registerContextualGloss(api,{model,customApi,lifetime,listModels,runAi,getAccountStatus});
     }
-    require('./reader-catalog-preview.cjs').registerCatalogPreview(api,{
-      localModel:model,dataDir:path.join(libraryRoot,'data'),listModels,getAccountStatus,runAi,lifetime,
-      getDocument:(kind,id)=>internalRead('/api/'+(kind==='book'?'books':'issues')+'/'+encodeURIComponent(id)),
-      getLegacyBookStatus:id=>internalRead('/api/books/'+encodeURIComponent(id)+'/toc-chinese'),
-    });
+    if(enableLocalQwen) {
     api.get('/api/vantilo-qwen/status',async (_request,reply)=>{
       reply.header('Cache-Control','no-store');
       const info=await model.inspect();
@@ -112,6 +125,7 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
         finished();
       }
     });
+    }
   }
   api.addHook('onRequest', async (request, reply) => {
     // Reader inference is a privileged local action. Reject cross-origin web pages and DNS-rebound hosts.
@@ -131,7 +145,26 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
   const syncService = new GitHubMagazineSyncService({ issuesDir: path.join(libraryRoot, 'issues'), incomingDir: path.join(libraryRoot, 'data/source-sync/incoming'), token: '', fetchImpl: createMagazineFetch({ fetchImpl, signal: lifetime.signal, onProgress: message => sync.reportProgress(message) }) });
   const sync = new MagazineSyncController({ checkOnStart:enableLocalQwen, syncImpl: () => syncService.sync(), stateFile: path.join(libraryRoot, 'data/vantilo-magazine-sync.json'), onState: onSync });
   await sync.initialize();
-  if(enableLocalQwen)require('./reader-update-settings.cjs').registerUpdateSettings(api,{sync,softwareUpdates});
+  if(enableLocalQwen||enableReaderPreviews) {
+    async function internalRead(url) {
+      const response=await api.inject({method:'GET',url,headers:{host:'127.0.0.1:'+apiPort,cookie:READER_SESSION_COOKIE+'='+sessionToken}});
+      if(response.statusCode!==200)throw new Error('原书或期刊不可用，请返回书库检查');
+      return response.json();
+    }
+    require('./reader-catalog-preview.cjs').registerCatalogPreview(api,{
+      localModel:catalogLocalModel,customApi,dataDir:path.join(libraryRoot,'data'),listModels,getAccountStatus,runAi,lifetime,
+      getDocument:(kind,id)=>internalRead('/api/'+(kind==='book'?'books':'issues')+'/'+encodeURIComponent(id)),
+      getLegacyBookStatus:id=>internalRead('/api/books/'+encodeURIComponent(id)+'/toc-chinese'),
+    });
+    require('./reader-update-settings.cjs').registerUpdateSettings(api,{sync,softwareUpdates});
+  }
+  if(customApi&&enableReaderPreviews) {
+    api.get('/api/vantilo-custom-api/settings',async(_request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.get();}catch(error){reply.code(503);return {error:error.message||'无法读取自定义 API 设置'};}});
+    api.put('/api/vantilo-custom-api/settings',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.save(request.body);}catch(error){reply.code(400);return {error:error.message||'自定义 API 设置保存失败'};}});
+    api.post('/api/vantilo-custom-api/profiles/:id/activate',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.activate(request.params.id);}catch(error){reply.code(404);return {error:error.message||'无法切换 API 服务'};}});
+    api.delete('/api/vantilo-custom-api/profiles/:id',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.remove(request.params.id);}catch(error){reply.code(404);return {error:error.message||'无法删除 API 服务'};}});
+    api.post('/api/vantilo-custom-api/test',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.test(request.body);}catch(error){reply.code(502);return {error:error.message||'自定义 API 连接失败'};}});
+  }
   const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
   const webRoot = path.resolve(assetsDir, 'web');
   const web = http.createServer(async (request, response) => {

@@ -21,7 +21,7 @@ describe('Reader main-process IPC', () => {
       }
       loadURL() {}
     }
-    const app = { getPath: () => '/tmp/vantilo', setName() {}, setPath() {},
+    const app = { getPath: () => '/tmp/vantilo', getVersion: () => '0.1.1', setName() {}, setPath() {},
       isPackaged: false, on() {}, whenReady: () => ({ then: (fn: Function) => fn() }) };
     const runtime = { on() {}, start: () => Promise.resolve() };
     runInNewContext(readFileSync('electron/main.cjs', 'utf8'), {

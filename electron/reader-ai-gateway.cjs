@@ -16,7 +16,14 @@ function createReaderAiFetch(runAi) {
 }
 function createReaderAiClient(parent) {
   const pending = new Map();
+  const customPending = new Map();
   parent.on('message', ({data}) => {
+    if(data?.type==='custom-api-result'&&typeof data.requestId==='string'){
+      const task=customPending.get(data.requestId);if(!task)return;customPending.delete(data.requestId);clearTimeout(task.timer);
+      if(data.ok===true&&data.result&&typeof data.result==='object')task.resolve(data.result);
+      else task.reject(new Error(typeof data.error==='string'?data.error:'自定义 API 请求失败'));
+      return;
+    }
     if(data?.type === 'ai-delta' && typeof data.requestId === 'string' && typeof data.delta === 'string' && data.delta.length <= 20000) { pending.get(data.requestId)?.onDelta?.(data.delta); return; }
     if (data?.type !== 'ai-result' || typeof data.requestId !== 'string') return;
     const task = pending.get(data.requestId);
@@ -47,7 +54,21 @@ function createReaderAiClient(parent) {
         catch { pending.delete(requestId);clearTimeout(timer);reject(new Error('Agent 暂时不可用')); }
       });
     },
-    close() { for (const task of pending.values()) { clearTimeout(task.timer);task.reject(new Error('阅读空间已停止')); } pending.clear(); },
+    customApi(operation, payload = {}, signal) {
+      if(signal?.aborted)return Promise.reject(new Error('自定义 API 请求已取消'));
+      if (customPending.size >= 8) return Promise.reject(new Error('自定义 API 请求较多，请稍后重试'));
+      const requestId=randomUUID();
+      return new Promise((resolve,reject)=>{
+        const cleanup=()=>signal?.removeEventListener('abort',abort);
+        const abort=()=>{try{parent.postMessage({type:'custom-api-cancel',requestId});}catch{}customPending.delete(requestId);clearTimeout(timer);cleanup();reject(new Error('自定义 API 请求已取消'));};
+        const timer=setTimeout(()=>{customPending.delete(requestId);cleanup();try{parent.postMessage({type:'custom-api-cancel',requestId});}catch{}reject(new Error('自定义 API 请求超时'));},70000);
+        customPending.set(requestId,{resolve:value=>{cleanup();resolve(value);},reject:error=>{cleanup();reject(error);},timer});
+        signal?.addEventListener('abort',abort,{once:true});
+        try {parent.postMessage({type:'custom-api',requestId,operation,...payload});}
+        catch {customPending.delete(requestId);clearTimeout(timer);cleanup();reject(new Error('自定义 API 暂时不可用'));}
+      });
+    },
+    close() { for (const task of pending.values()) { clearTimeout(task.timer);task.reject(new Error('阅读空间已停止')); } pending.clear(); for(const task of customPending.values()){clearTimeout(task.timer);task.reject(new Error('阅读空间已停止'));}customPending.clear(); },
   };
 }
 module.exports = { createReaderAiFetch, createReaderAiClient };

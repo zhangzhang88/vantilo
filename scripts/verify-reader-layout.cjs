@@ -17,7 +17,7 @@ const compiled = ts.transpileModule(readFileSync(sourcePath, 'utf8'), {
 }).outputText;
 const exported = {};
 vm.runInNewContext(compiled, {
-  exports: exported, URL, require: name => name.endsWith('.css') ? {} : requireRepo(name),
+  exports: exported, URL, require: name => name.endsWith('.css') ? {} : name === '../reader/book-discovery' ? {BookDiscovery:()=>null} : requireRepo(name),
 });
 const localProfile = mkdtempSync(path.join(os.tmpdir(), 'vantilo-layout-'));
 app.setPath('userData', localProfile);

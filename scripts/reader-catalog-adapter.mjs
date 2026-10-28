@@ -40,6 +40,13 @@ export function adaptCatalogPreview(source,filename) {
 .vantilo-catalog-control p {font-size:13px;line-height:1.6;margin:8px 0;color:var(--ui-muted,#666);}
 .vantilo-catalog-picker label {display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-size:14px;}
 .vantilo-catalog-picker select {font:inherit;color:inherit;background:var(--ui-surface,#fff);border:1px solid var(--ui-line,#ccc);border-radius:7px;padding:6px 9px;max-width:100%;}
+.vantilo-custom-api-settings>label {display:grid;gap:6px;margin:12px 0;font-size:13px;}
+.vantilo-custom-api-settings input,.vantilo-custom-api-settings select {font:inherit;color:inherit;background:var(--ui-surface,#fff);border:1px solid var(--ui-line,#ccc);border-radius:7px;padding:9px 11px;max-width:720px;}
+.vantilo-custom-api-settings .settings-help {max-width:850px;line-height:1.65;}
+.vantilo-custom-api-actions {display:flex;gap:9px;flex-wrap:wrap;margin:14px 0;}
+.vantilo-custom-api-actions button {border:1px solid var(--ui-line,#ccc);border-radius:8px;padding:9px 14px;background:var(--ui-surface,#fff);color:inherit;cursor:pointer;font:inherit;}
+.vantilo-custom-api-actions button:disabled {opacity:.55;cursor:wait;}
+.vantilo-custom-api-error {color:#b22;}
 
 
 .reader-toolbar-menu {position:relative;flex:0 0 auto;}
@@ -114,6 +121,7 @@ export function adaptCatalogPreview(source,filename) {
   if(settings.split(grid).length!==2)throw new Error('Settings grid seam changed');
   settings=settings.replace(grid,'      <VantiloUpdateSettings/>\n'+grid);
   source=source.slice(0,settingsStart)+settings+source.slice(settingsEnd);
+  exact('        <DataManagementPanel />','        <VantiloCustomApiSettings/>\n\n        <DataManagementPanel />');
   exact('export default function App() {',`export default function App() {
   useEffect(()=>{
     const receive=(event:MessageEvent)=>{
@@ -220,6 +228,7 @@ export function adaptCatalogPreview(source,filename) {
   issue=issue.replace('        <div className="issue-toc-search">','        <VantiloCatalogControl key={issue.id} kind="issue" id={issue.id} onResolved={setVantiloIssueCatalog}/>\n        <div className="issue-toc-search">');
   issue=issue.replace('中文标题准备中…','保留英文标题；可在上方生成中文目录');
   source=source.slice(0,issueStart)+issue+source.slice(issueEnd);
+  source+='\n'+readFileSync(new URL('../src/reader/custom-api-settings.tsx',import.meta.url),'utf8');
   source+='\n'+readFileSync(new URL('./reader-catalog-controls.tsx',import.meta.url),'utf8');
   source+='\n'+readFileSync(new URL('./reader-update-settings.tsx',import.meta.url),'utf8');
   return source;

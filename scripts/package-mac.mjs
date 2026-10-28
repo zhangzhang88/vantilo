@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 import { packager } from '@electron/packager';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+await import('./build-app-icon.mjs');
 const require = createRequire(import.meta.url);
 if (process.platform !== 'darwin') throw new Error('This build targets macOS; run it on a Mac.');
 const { validateManifest } = require('../electron/reader-library-seed.cjs');
@@ -13,7 +14,7 @@ await readDefaultMagazines(); // Default release content is the four authorized 
 const stage = path.join(repo, 'build/package-app');
 await fs.rm(stage, { recursive: true, force: true });
 await fs.mkdir(path.join(stage, 'electron'), { recursive: true });
-for (const name of ['dist', 'licenses']) await fs.cp(path.join(repo, name), path.join(stage, name), { recursive: true });
+for (const name of ['dist', 'licenses', 'resources']) await fs.cp(path.join(repo, name), path.join(stage, name), { recursive: true });
 await fs.mkdir(path.join(stage,'reader'),{recursive:true});
 for(const name of ['web','native','api.cjs','codex','codex-code-mode-host','provenance.json','THIRD_PARTY_NOTICES.txt'])await fs.cp(path.join(repo,'build/reader',name),path.join(stage,'reader',name),{recursive:true});
 await copyDefaultMagazines(path.join(stage,'reader/seed'));
@@ -29,6 +30,7 @@ await fs.copyFile(path.join(repo, 'node_modules/zod/LICENSE'), path.join(stage, 
 const electron = require('electron/package.json');
 const outputs = await packager({ dir: stage, out: path.join(repo, 'out'), name: 'Vantilo', platform: 'darwin', arch: process.arch,
   electronVersion: electron.version, electronDist: path.join(repo, 'node_modules/electron/dist'),
+  icon: path.join(repo, 'resources/vantilo.icns'),
   appBundleId: 'com.vantilo.desktop', overwrite: true, prune: false, asar: false,
 });
 console.log('Packaged Mac application:', outputs.join(', '));

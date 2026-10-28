@@ -5,8 +5,8 @@ export function adaptTranslationPreview(source,filename) {
   const exact=(a,b)=>{if(source.split(a).length!==2)throw new Error('Translation seam changed: '+a.slice(0,100));source=source.replace(a,b);};
   if(filename.endsWith('/frontend/paragraph-translation-state.ts')) {
     // Existing records stay in their original key and are never promoted without provenance.
-    source=source.replace('provider: "easycliproxy"','provider: "easycliproxy" | "qwen-mlx" | "qwen-gguf" | "vantilo-agent"');
-    source=source.replace('item.provider === "easycliproxy"','["easycliproxy", "qwen-mlx", "qwen-gguf", "vantilo-agent"].includes(item.provider ?? "")');
+    source=source.replace('provider: "easycliproxy"','provider: "easycliproxy" | "qwen-mlx" | "qwen-gguf" | "vantilo-agent" | "custom-api"');
+    source=source.replace('item.provider === "easycliproxy"','["easycliproxy", "qwen-mlx", "qwen-gguf", "vantilo-agent", "custom-api"].includes(item.provider ?? "")');
     exact('      .filter(isParagraphTranslationRecord)',
       '      .filter(isParagraphTranslationRecord)\n      .filter((item:any) => ["qwen-mlx","qwen-gguf"].includes(item.provider) ? item.translationZh.length <= 80000 : normalizeTranslation(item.translationZh,item.sourceText) !== null)');
     exact('const stored = item as ParagraphTranslationRecord',
@@ -16,17 +16,21 @@ export function adaptTranslationPreview(source,filename) {
   if(filename.endsWith('/frontend/sentence-translation-state.ts')) {
     const provider='provider: "easycliproxy" | "learning-material";';
     if(!source.includes(provider))throw new Error('Sentence provider seam changed');
-    source=source.replace(provider,'provider: "easycliproxy" | "learning-material" | "vantilo-agent" | "qwen-mlx" | "qwen-gguf";\n  engineId?: string;');
+    source=source.replace(provider,'provider: "easycliproxy" | "learning-material" | "vantilo-agent" | "qwen-mlx" | "qwen-gguf" | "custom-api";\n  engineId?: string;');
     const accepted='(item.provider === "easycliproxy" || item.provider === "learning-material")';
     if(!source.includes(accepted))throw new Error('Sentence cache validation seam changed');
-    return source.replace(accepted,'(item.provider === "easycliproxy" || item.provider === "learning-material" || item.provider === "vantilo-agent" || item.provider === "qwen-mlx" || item.provider === "qwen-gguf")');
+    return source.replace(accepted,'(item.provider === "easycliproxy" || item.provider === "learning-material" || item.provider === "vantilo-agent" || item.provider === "qwen-mlx" || item.provider === "qwen-gguf" || item.provider === "custom-api")');
   }
   if(filename.endsWith('/frontend/styles.css'))return source+`
-.vantilo-translation-bar {position:sticky;top:62px;z-index:29;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:8px 20px;background:var(--ui-surface,#f7f6f2);color:var(--ui-ink,#222);border-bottom:1px solid var(--ui-line,#d9d6cf);font-size:13px;}
+.reader-page-shell {--vantilo-translation-bar-top:62px;--vantilo-translation-bar-height:66px;}
+.reader-page-shell.is-focus-mode {--vantilo-translation-bar-top:48px;}
+.vantilo-translation-bar {position:sticky;top:var(--vantilo-translation-bar-top);z-index:29;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:8px 20px;background:var(--ui-surface,#f7f6f2);color:var(--ui-ink,#222);border-bottom:1px solid var(--ui-line,#d9d6cf);font-size:13px;}
+.reader-page-shell.is-chinese-mode .chinese-player {top:calc(var(--vantilo-translation-bar-top) + var(--vantilo-translation-bar-height) + 12px);}
+@media(max-width:640px){.reader-page-shell{--vantilo-translation-bar-height:78px;}}
 .vantilo-translation-engine {display:flex;align-items:center;gap:10px;white-space:nowrap;}
 .vantilo-translation-engine select {max-width:min(330px,55vw);padding:5px 8px;border:1px solid var(--ui-line,#ccc);border-radius:7px;background:var(--ui-soft,#fff);color:inherit;font:inherit;}
 .vantilo-translation-note {font-size:12px;color:var(--ui-muted,#666);line-height:1.5;}
-.reader-page-shell.is-focus-mode .vantilo-translation-bar {top:48px;}
+.reader-page-shell.is-focus-mode .vantilo-translation-bar {top:var(--vantilo-translation-bar-top);}
 .reader-page-shell .vantilo-sentence-provenance {display:block;margin:5px 0 8px;color:var(--ui-muted,#777);font-size:11px;}
 .reader-page-shell .vantilo-sentence-heading,.reader-page-shell .vantilo-expression-row {display:flex;align-items:center;justify-content:space-between;gap:12px;}
 .reader-page-shell .vantilo-sentence-heading {margin-bottom:10px;}
@@ -43,7 +47,7 @@ export function adaptTranslationPreview(source,filename) {
   if(sentenceStateIndex<0)throw new Error('Sentence state seam changed');
   source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>{
     let saved:string|null=null;try{saved=getReaderStorage().getItem('vantilo-translation-engine-v1');}catch{}
-    return saved===${JSON.stringify(localId)} || /^qwen:qwen3\\.5-4b-gguf-q4-k-m@[a-f0-9]{64}$/.test(saved||'') || /^codex:[a-zA-Z0-9._-]{1,128}$/.test(saved||'') ? saved! : ${JSON.stringify(localId)};
+    return saved===${JSON.stringify(localId)} || /^custom-api:[a-f0-9]{12}$/.test(saved||'') || /^codex:[a-zA-Z0-9._-]{1,128}$/.test(saved||'') ? saved! : ${JSON.stringify(localId)};
   });
   const vantiloEngineRef=useRef(vantiloEngine);vantiloEngineRef.current=vantiloEngine;
   const [vantiloEngines,setVantiloEngines] = useState([{id:${JSON.stringify(localId)},label:'本地 Qwen3.5 4B'}]);
@@ -72,17 +76,18 @@ export function adaptTranslationPreview(source,filename) {
     vantiloEngineRef.current=id;
     setVantiloEngine(id);
     try{getReaderStorage().setItem('vantilo-translation-engine-v1',id);}catch{}
+    window.dispatchEvent(new Event('vantilo-translation-engine-change'));
     setParagraphTranslationRecords(loadParagraphTranslations({getItem:key=>getReaderStorage().getItem(key+':vantilo-v2:'+id)}));
     setSentenceTranslationRecords(loadSentenceTranslations({getItem:key=>getReaderStorage().getItem(key+':vantilo-v2:'+id)}));
     setSentenceTranslationRequests({});
     setFullArticleTranslationExpanded(false);
   }
   useEffect(()=>{
-    const ctl=new AbortController();
-    fetch('/api/vantilo-translation/engines',{signal:ctl.signal}).then(async r=>{if(!r.ok)throw new Error('无法读取引擎列表');return r.json();})
+    let ctl:AbortController|null=null;
+    const load=()=>{ctl?.abort();ctl=new AbortController();setVantiloEngineError('');fetch('/api/vantilo-translation/engines',{signal:ctl.signal}).then(async r=>{if(!r.ok)throw new Error('无法读取引擎列表');return r.json();})
       .then(data=>{setVantiloEngines(data.engines);if(!data.engines.some((engine:any)=>engine.id===vantiloEngineRef.current))changeVantiloEngine(data.defaultId);})
-      .catch(e=>{if(!ctl.signal.aborted)setVantiloEngineError(e.message);});
-    return ()=>ctl.abort();
+      .catch(e=>{if(!ctl?.signal.aborted)setVantiloEngineError(e.message);});};
+    load();window.addEventListener('vantilo-custom-api-updated',load);return ()=>{ctl?.abort();window.removeEventListener('vantilo-custom-api-updated',load);};
   },[]);
   useEffect(()=>{
     cancelVantiloTranslation();
@@ -190,7 +195,7 @@ export function adaptTranslationPreview(source,filename) {
   const provenanceSeam='                      {currentSentenceTranslation && <><p>{currentSentenceTranslation.translationZh}</p>';
   const provenanceIndex=source.indexOf(provenanceSeam);
   if(provenanceIndex<0)throw new Error('Sentence provenance seam changed');
-  source=source.slice(0,provenanceIndex)+source.slice(provenanceIndex).replace(provenanceSeam,`                      {currentSentenceTranslation && <><small className="vantilo-sentence-provenance">{currentSentenceTranslation.model} · {["qwen-mlx","qwen-gguf"].includes(currentSentenceTranslation.provider) ? "本地 Qwen" : "Codex / ChatGPT"} · 已保存</small><p>{currentSentenceTranslation.translationZh}</p>`);
+  source=source.slice(0,provenanceIndex)+source.slice(provenanceIndex).replace(provenanceSeam,`                      {currentSentenceTranslation && <><small className="vantilo-sentence-provenance">{currentSentenceTranslation.model} · {["qwen-mlx","qwen-gguf"].includes(currentSentenceTranslation.provider) ? "本地 Qwen" : currentSentenceTranslation.provider === "custom-api" ? "自定义 API" : "Codex / ChatGPT"} · 已保存</small><p>{currentSentenceTranslation.translationZh}</p>`);
   const noExpressionsSeam='{currentSentenceTranslation && !currentSentenceTranslation.expressions?.length && <p className="muted-text">本句暂无需要单独学习的关键表达。</p>}';
   if(!source.includes(noExpressionsSeam))throw new Error('Sentence expression help seam changed');
   source=source.replace(noExpressionsSeam,'{currentSentenceTranslation && !currentSentenceTranslation.expressions?.length && <p className="muted-text">{["qwen-mlx","qwen-gguf"].includes(currentSentenceTranslation.provider) ? "本地 Qwen 当前只生成逐句译文；如需关键表达，请切换 GPT 后点击“重新推荐关键表达”。" : "本句暂无需要单独学习的关键表达。"}</p>}');
@@ -214,7 +219,7 @@ export function adaptTranslationPreview(source,filename) {
             </select>
           </label>
           {vantiloEngineError && <span role="status">{vantiloEngineError}</span>}
-          <span className="vantilo-translation-note">{vantiloChunkProgress?.engineId===vantiloEngine&&vantiloChunkProgress.totalChunks>1?('本地 Qwen 分段 '+vantiloChunkProgress.completedChunks+'/'+vantiloChunkProgress.totalChunks+(vantiloChunkProgress.status==='failed'&&vantiloChunkProgress.failedChunk?' · 第 '+vantiloChunkProgress.failedChunk+' 段失败':'')):vantiloEngine.startsWith('qwen:')?'本地 Qwen · 长段落按句子分段翻译':'Codex / ChatGPT · 使用所选模型'} · 记住所选模型，译文分别保存</span>
+          <span className="vantilo-translation-note">{vantiloChunkProgress?.engineId===vantiloEngine&&vantiloChunkProgress.totalChunks>1?('本地 Qwen 分段 '+vantiloChunkProgress.completedChunks+'/'+vantiloChunkProgress.totalChunks+(vantiloChunkProgress.status==='failed'&&vantiloChunkProgress.failedChunk?' · 第 '+vantiloChunkProgress.failedChunk+' 段失败':'')):vantiloEngine.startsWith('qwen:')?'本地 Qwen · 长段落按句子分段翻译':vantiloEngine.startsWith('custom-api:')?'自定义 API · 使用所选模型':'Codex / ChatGPT · 使用所选模型'} · 记住所选模型，译文分别保存</span>
           {(fullArticleTranslationRunning || currentArticleTranslationLoading) && <button className="toolbar-button" onClick={cancelVantiloTranslation}>停止翻译</button>}
       </aside>
       <div className="reader-progress-line">`);
