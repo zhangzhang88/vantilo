@@ -17,9 +17,8 @@ function hasReaderSession(cookieHeader, sessionToken) {
   const expected=Buffer.from(sessionToken,'hex'), received=Buffer.from(value,'hex');
   return expected.length===received.length && timingSafeEqual(expected,received);
 }
-async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, edgeTtsExecutable = null, localQwenService, softwareUpdates, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
+async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
   if(!/^[a-f0-9]{64}$/.test(sessionToken))throw new Error('Reader session token is invalid');
-  if(typeof edgeTtsExecutable==='string'&&edgeTtsExecutable)process.env.VANTILO_EDGE_TTS_EXECUTABLE=edgeTtsExecutable;
   for (const folder of ['issues', 'books', 'data', 'config']) await fs.mkdir(path.join(libraryRoot, folder), { recursive: true, mode: 0o700 });
   if (seedDir) await initializeReaderLibrary({ seedDir, libraryRoot });
   const { buildServer, GitHubMagazineSyncService } = apiModule || require(path.join(assetsDir, 'api.cjs'));
@@ -68,12 +67,13 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
   // catalogue generation and magazine-sync features.
   let ownedQwen = null, catalogLocalModel = null;
   if (enableLocalQwen || enableTranslation) {
-    ownedQwen = localQwenService !== undefined ? null : (process.platform==='darwin' && process.arch==='arm64' ? require('./reader-model-service.cjs').createReaderModelService({userData:path.dirname(libraryRoot),assetsDir,persistentGloss:true}) : null);
+    ownedQwen = null;
     const model=localQwenService || ownedQwen;
     catalogLocalModel=model;
     if(enableTranslation){
       require('./reader-translation-preview.cjs').registerTranslationPreview(api,{model,listModels,runAi,customApi,lifetime,getAccountStatus});
       require('./reader-contextual-gloss.cjs').registerContextualGloss(api,{model,customApi,lifetime,listModels,runAi,getAccountStatus});
+      require('./reader-word-context.cjs').registerWordContext(api,{customApi,lifetime,listModels,runAi,getAccountStatus});
     }
     if(enableLocalQwen) {
     api.get('/api/vantilo-qwen/status',async (_request,reply)=>{
@@ -138,7 +138,7 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
     const health=request.method==='GET' && request.url.split('?')[0]==='/api/health';
     if(requireSessionAuth && !health && !hasReaderSession(request.headers.cookie,sessionToken))return reply.code(401).send({error:'Reader session authentication required'});
   });
-  if(enableLocalQwen)api.addHook('onRequest',async(request,reply)=>{
+  if(enableLocalQwen||enableReaderPreviews)api.addHook('onRequest',async(request,reply)=>{
     if(request.method==='POST' && /^\/api\/(?:books\/[^/]+\/toc-chinese|issues\/[^/]+\/(?:guide-preparation|section-translations|reader-guides))$/.test(request.url.split('?')[0]))
       return reply.code(409).send({error:'请在目录页面选择目录模型，并点击“生成中文目录”'});
   });

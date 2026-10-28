@@ -53,13 +53,6 @@ type RuntimeApi = {
   checkReaderSetup:()=>Promise<ReaderSetupCheck>;
   finishReaderSetup:(decision:'finished'|'skipped')=>Promise<{show:boolean}>;
   openDictionaryApp:()=>Promise<{opened:boolean;error?:string}>;
-  viewLocalModelInfo:()=>Promise<void>;
-  inspectLocalModel?:()=>Promise<{selected:boolean;modelName:string;modelPath:string|null;active:boolean;helperAvailable:boolean;health:{ready:boolean;status:string};hardware:{supported:boolean;memoryGiB:number;warning:string|null};disk:{availableBytes:number;freshInstallBytes:number};model:{bytes:number;license:string}}>;
-  chooseLocalModel?:()=>Promise<{canceled:boolean;result?:{health:{ready:boolean;status:string}}}>;
-  recheckLocalModel?:()=>Promise<{ready:boolean;status:string}>;
-  installLocalModel?:()=>Promise<{canceled?:boolean;health?:{ready:boolean;status:string}}>;
-  cancelLocalModel?:()=>Promise<{canceled:boolean}>;
-  onLocalModelProgress?:(callback:(value:{completedBytes:number;totalBytes:number;file:string})=>void)=>()=>void;
   onRuntimeStatus:(callback:(status:RuntimeState)=>void)=>()=>void; onAgentEvent:(callback:(event:AgentEvent)=>void)=>()=>void;
 };
 const statusLabel: Record<string,string> = { connecting:'正在连接 Codex…', ready:'Codex 已连接', error:'Codex 不可用', stopped:'Runtime 已停止', running:'正在运行', cancelling:'正在取消…', completed:'已完成', failed:'失败', cancelled:'已取消' };

@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MagazineReaderModule } from '../src/ui/magazine-reader-module';
+import { isReaderAppearance, MagazineReaderModule } from '../src/ui/magazine-reader-module';
 
 afterEach(cleanup);
+
+it('accepts global font sizes down to 12px and rejects values below the supported range', () => {
+  const base = { theme: 'paper', fontSize: 12, fontFamily: 'serif' };
+  expect(isReaderAppearance(base)).toBe(true);
+  expect(isReaderAppearance({ ...base, fontSize: 11 })).toBe(false);
+});
 
 describe('MagazineReaderModule', () => {
   it('loads only the fixed local Reader origin after startup succeeds', () => {
@@ -47,4 +53,17 @@ it('accepts environment setup only from its fixed Reader frame',()=>{
  expect(onSetup).not.toHaveBeenCalled();
  window.dispatchEvent(new MessageEvent('message',{origin:'http://127.0.0.1:5175',source:frame.contentWindow,data:{type:'vantilo:open-environment-settings'}}));expect(onSetup).toHaveBeenCalledOnce();
  expect(screen.queryByRole('button',{name:'检查更新'})).toBeNull();
+});
+
+it('synchronizes only valid appearance settings from the Reader frame',()=>{
+ const onAppearanceChange=vi.fn();
+ render(<MagazineReaderModule status="ready" error={null} onRetry={vi.fn()} onBack={vi.fn()} onAppearanceChange={onAppearanceChange}/>);
+ const frame=screen.getByTitle('Magazine Reader') as HTMLIFrameElement;
+ const data={type:'vantilo:reader-appearance',theme:'blue',fontSize:20,fontFamily:'sans'};
+ window.dispatchEvent(new MessageEvent('message',{origin:'https://evil.test',source:frame.contentWindow,data}));
+ window.dispatchEvent(new MessageEvent('message',{origin:'http://127.0.0.1:5175',source:window,data}));
+ window.dispatchEvent(new MessageEvent('message',{origin:'http://127.0.0.1:5175',source:frame.contentWindow,data:{...data,fontSize:999}}));
+ expect(onAppearanceChange).not.toHaveBeenCalled();
+ window.dispatchEvent(new MessageEvent('message',{origin:'http://127.0.0.1:5175',source:frame.contentWindow,data}));
+ expect(onAppearanceChange).toHaveBeenCalledExactlyOnceWith({theme:'blue',fontSize:20,fontFamily:'sans'});
 });

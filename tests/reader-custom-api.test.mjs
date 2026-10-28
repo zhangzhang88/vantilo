@@ -55,6 +55,14 @@ describe('custom OpenAI-compatible API provider',()=>{
    expect(sent).toMatchObject({max_tokens:128,thinking:{type:'disabled'}});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
+ it('uses non-thinking mode for DeepSeek context without changing regular translation',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-deepseek-context-'));const calls=[];
+  const fetchImpl=vi.fn(async(_url,options)=>{calls.push(JSON.parse(options.body));return new Response(JSON.stringify({choices:[{message:{content:'结果'}}]}),{headers:{'content-type':'application/json'}});});
+  try{const service=createReaderCustomApi({filePath:path.join(dir,'provider.json'),safeStorage:safeStorage(),fetchImpl});await service.save({...config,baseUrl:'https://api.deepseek.com',model:'deepseek-flash'});
+   await service.complete({instruction:'解释语境',input:'bank',task:'word-context'});await service.complete({instruction:'翻译',input:'A passage.'});
+   expect(calls[0]).toMatchObject({thinking:{type:'disabled'},max_tokens:1000});expect(calls[1]).not.toHaveProperty('thinking');expect(calls[1].max_tokens).toBe(6000);
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
  it('supports a local Responses endpoint on the supplied private LAN address',async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-responses-api-'));
   const fetchImpl=vi.fn(async(url,options)=>{

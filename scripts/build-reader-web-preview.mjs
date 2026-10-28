@@ -8,7 +8,7 @@ import {sharedReaderComposerPlugin} from './reader-assistant-adapter.mjs';
 import {readerVariantPlugin} from './reader-variant.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-process.env.VANTILO_QWEN_READER_PREVIEW='1'; // Never leak auto-Qwen into the normal Reader build.
+process.env.VANTILO_QWEN_READER_PREVIEW=process.env.VANTILO_RELEASE_READER==='1'?'0':'1';
 const original=readerSourceRoot;
 const fromReader=createRequire(path.join(original,'package.json'));
 const {build}=await import(pathToFileURL(fromReader.resolve('vite')).href);

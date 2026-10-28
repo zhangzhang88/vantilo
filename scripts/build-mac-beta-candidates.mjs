@@ -32,11 +32,11 @@ process.env.VANTILO_QWEN_API_OUTPUT=path.join(reader,'api.cjs');
 process.env.VANTILO_QWEN_WEB_OUTPUT=path.join(reader,'web');
 process.env.VANTILO_QWEN_NATIVE_OUTPUT=path.join(reader,'native');
 process.env.VANTILO_QWEN_VITE_CACHE=path.join(root,'reader-cache');
+process.env.VANTILO_RELEASE_READER='1';
 process.env.VANTILO_TRANSLATION_READER='1';
 process.env.VANTILO_CATALOG_READER_PREVIEW='1';
 await import('./build-reader-api-preview.mjs');
 await import('./build-reader-web-preview.mjs');
-await import('./stage-reader-qwen-health.mjs');
 await viteBuild({root:repo,configFile:false,envFile:false,base:'./',cacheDir:path.join(root,'vite-cache'),
   plugins:[parcelMacros.vite(),react()],build:{outDir:dist,emptyOutDir:true,sourcemap:false}});
 
@@ -51,15 +51,6 @@ function archOf(file){return execFileSync('/usr/bin/lipo',['-archs',file],{encod
 for(const [file,arch] of [[nativeArm,'arm64'],[nativeIntel,'x86_64'],[path.join(codexArm,'codex'),'arm64'],[path.join(codexArm,'codex-code-mode-host'),'arm64'],[path.join(codexIntel,'codex'),'x86_64'],[path.join(codexIntel,'codex-code-mode-host'),'x86_64'],[path.join(electronArm,'Electron.app/Contents/MacOS/Electron'),'arm64'],[path.join(electronIntel,'Electron.app/Contents/MacOS/Electron'),'x86_64']]){
   if(!archOf(file).includes(arch))throw new Error('组件架构不匹配: '+path.basename(file));
 }
-const mainPlugin={name:'beta-release-gate',setup(b){b.onLoad({filter:/electron[\\/]main\.cjs$/},async args=>{
-  let code=await fs.readFile(args.path,'utf8');
-  const substitutions=[
-    ["const modelSetupPreview = app.isPackaged && process.env.VANTILO_READER_PREVIEW === '1';","const modelSetupPreview = app.isPackaged && process.env.VANTILO_BETA_BUILD === '1';"],
-    ["const readerQwenIntegrated = modelSetupPreview && process.arch === 'arm64' && path.basename(app.getPath('userData')) === 'Vantilo Qwen Setup Preview';","const readerQwenIntegrated = modelSetupPreview && process.arch === 'arm64';"],
-  ];
-  for(const [before,after] of substitutions){if(code.split(before).length!==2)throw new Error('候选版集成位置已改变');code=code.replace(before,after);}
-  return {contents:code,loader:'js'};
-});}};
 const metadata=JSON.parse(await fs.readFile(path.join(repo,'package.json'),'utf8'));
 const electronVersion=require('electron/package.json').version;
 const artifacts=[];
@@ -74,11 +65,10 @@ for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:elec
   await fs.cp(path.join(reader,'web'),path.join(r,'web'),{recursive:true});
   await fs.copyFile(path.join(reader,'api.cjs'),path.join(r,'api.cjs'));
   await fs.copyFile(nativeArm===target.native?nativeArm:nativeIntel,path.join(r,'native/vantilo-dictionary'));
-  if(target.arch==='arm64')for(const name of ['vantilo-qwen-health','mlx-swift_Cmlx.bundle','swift-transformers_Hub.bundle','swift-crypto_Crypto.bundle'])await fs.cp(path.join(reader,'native',name),path.join(r,'native',name),{recursive:true});
   await copyCodexRuntime(target.codex,r);
   for(const name of ['provenance.json','THIRD_PARTY_NOTICES.txt'])await fs.copyFile(path.join(repo,'build/reader',name),path.join(r,name));
   await copyDefaultMagazines(path.join(r,'seed'));
-  for(const entry of ['main.cjs','preload.cjs','runtime-entry.cjs','portable-reader-entry.cjs','portable-reader-service.cjs'])await bundle({entryPoints:[path.join(repo,'electron',entry)],outfile:path.join(stage,'electron',entry),platform:'node',target:'node22',format:'cjs',bundle:true,external:['electron'],minify:true,legalComments:'eof',plugins:[mainPlugin]});
+  for(const entry of ['main.cjs','preload.cjs','runtime-entry.cjs','portable-reader-entry.cjs','portable-reader-service.cjs'])await bundle({entryPoints:[path.join(repo,'electron',entry)],outfile:path.join(stage,'electron',entry),platform:'node',target:'node22',format:'cjs',bundle:true,external:['electron'],minify:true,legalComments:'eof',plugins:[]});
   await fs.writeFile(path.join(stage,'electron/beta-main.cjs'),`'use strict';\nconst {app}=require('electron');\nconst path=require('node:path');\nconst override=app.commandLine.getSwitchValue('user-data-dir');\napp.setPath('userData',override&&path.isAbsolute(override)?override:path.join(app.getPath('appData'),'Vantilo Beta'));\nprocess.env.VANTILO_BETA_BUILD='1';\nrequire('./main.cjs');\n`);
   await fs.writeFile(path.join(stage,'package.json'),JSON.stringify({name:'vantilo-beta',version:metadata.version,private:true,main:'electron/beta-main.cjs'}));
   await fs.copyFile(path.join(repo,'node_modules/zod/LICENSE'),path.join(stage,'licenses/Zod-LICENSE.txt'));

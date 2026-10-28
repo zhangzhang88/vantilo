@@ -4,38 +4,18 @@ export function adaptChineseAudioPlayer(source, filename) {
     // Unit tests and small source probes may use a minimal server fragment. The
     // actual upstream file has this marker; leave unrelated fragments intact.
     if (!source.includes('const cialloTtsFetch = options.cialloTtsFetchImpl ?? fetch;')) return source;
-    const fsImport = 'import { existsSync } from "node:fs";';
-    if (source.split(fsImport).length !== 2) throw new Error('Chinese TTS import seam changed');
-    source = source.replace(fsImport, `${fsImport}
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { spawn } from "node:child_process";
-import os from "node:os";`);
-    const fetchSeam = '  const cialloTtsFetch = options.cialloTtsFetchImpl ?? fetch;';
-    if (source.split(fetchSeam).length !== 2) throw new Error('Chinese TTS client seam changed');
-    source = source.replace(fetchSeam, `${fetchSeam}
-  const edgeTtsExecutable = process.env.VANTILO_EDGE_TTS_EXECUTABLE;
-  const synthesizeWithEdgeTts = async (text: string, voice: string): Promise<Buffer | null> => {
-    if (!edgeTtsExecutable) return null;
-    const directory = await mkdtemp(path.join(os.tmpdir(), "vantilo-edge-tts-"));
-    const destination = path.join(directory, "speech.mp3");
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(edgeTtsExecutable, ["--voice", voice, "--text", text, "--write-media", destination], { stdio: ["ignore", "ignore", "ignore"] });
-        const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("Edge TTS synthesis timed out")); }, 30_000);
-        child.once("error", error => { clearTimeout(timer); reject(error); });
-        child.once("exit", code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error("Edge TTS synthesis failed")); });
-      });
-      const audio = await readFile(destination);
-      const hasMp3Header = audio.length > 100 && (audio.subarray(0, 3).toString("ascii") === "ID3" || (audio[0] === 0xff && ((audio[1] ?? 0) & 0xe0) === 0xe0));
-      return hasMp3Header ? audio : null;
-    } catch { return null; }
-    finally { await rm(directory, { recursive: true, force: true }).catch(() => {}); }
-  };`);
     const voiceSeam = '    const voice = chinese ? "zh-CN-XiaochenMultilingualNeural" : "en-US-AriaNeural";';
     if (source.split(voiceSeam).length !== 2) throw new Error('Chinese TTS voice seam changed');
     source = source.replace(voiceSeam, `${voiceSeam}
-    const edgeAudio = await synthesizeWithEdgeTts(chinese ? chineseSpeechText(text) : text, chinese ? "zh-CN-XiaoxiaoNeural" : "en-US-AriaNeural");
-    if (edgeAudio) return reply.header("Cache-Control", "no-store").type("audio/mpeg").send(edgeAudio);`);
+    const ttsController = new AbortController();
+    const cancelTts = () => { if (!reply.raw.writableEnded) ttsController.abort(); };
+    reply.raw.on("close", cancelTts);`);
+    const timeoutSeam = 'signal: AbortSignal.timeout(45_000)';
+    if (source.split(timeoutSeam).length !== 2) throw new Error('Chinese TTS timeout seam changed');
+    source = source.replace(timeoutSeam, 'signal: AbortSignal.any([ttsController.signal, AbortSignal.timeout(45_000)])');
+    const closeSeam = '      return reply.code(502).send({ error: "连接 Ciallo TTS 失败，请检查网络后重试。" });\n    }';
+    if (source.split(closeSeam).length !== 2) throw new Error('Chinese TTS cleanup seam changed');
+    source = source.replace(closeSeam, '      return reply.code(502).send({ error: "连接 Ciallo TTS 失败，请检查网络后重试。" });\n    } finally { reply.raw.removeListener("close", cancelTts); }');
     const check = '      const validMp3 = audio.length > 2 && (audio.subarray(0, 3).toString("ascii") === "ID3" || (audio[0] === 0xff && ((audio[1] ?? 0) & 0xe0) === 0xe0));';
     const report = '      if (!validMp3) return reply.code(502).send({ error: "Ciallo TTS 返回的音频无法识别，请稍后重试。" });';
     if (source.split(check).length !== 2 || source.split(report).length !== 2) throw new Error('Chinese TTS validation seam changed');
@@ -61,26 +41,68 @@ import os from "node:os";`);
       'phase === "paused" ? "继续朗读" : phase === "complete" ? "重新朗读" : phase === "error" ? "重试朗读" : "播放中文"');
     exact('phase === "complete" ? "已听完" : phase === "playing" ? "正在朗读" : "听书"',
       'phase === "complete" ? "已听完" : phase === "playing" ? "正在朗读" : phase === "error" ? "朗读中断" : "听书"');
-    exact('Ciallo TTS · 晓辰多语言', 'Edge TTS · 晓晓，失败时使用晓辰');
+    exact('Ciallo TTS · 晓辰多语言', 'Ciallo TTS · 晓辰多语言 · 后台提前准备');
     return source;
+  }
+  if (filename.endsWith('/frontend/chinese-listening-state.ts')) {
+    const seam = 'export function splitChineseSpeech(text: string, limit = 130): string[] {';
+    if (source.split(seam).length !== 2) throw new Error('Chinese speech chunk size seam changed');
+    const start = source.indexOf(seam);
+    return source.slice(0, start) + `export function splitChineseSpeech(text: string, limit = 200): string[] {
+  const characters = Array.from(text);
+  const max = Math.max(1, Math.floor(limit) || 200);
+  const chunks: string[] = [];
+  let offset = 0;
+  while (offset < characters.length) {
+    let end = Math.min(offset + max, characters.length);
+    if (end < characters.length) {
+      const minimum = offset + Math.floor(max * 0.45);
+      const strong = /[。！？!?；;\\n]/u;
+      const weak = /[，、,:：]/u;
+      let boundary = -1;
+      for (let i = end - 1; i >= minimum; i--) if (strong.test(characters[i])) { boundary = i + 1; break; }
+      if (boundary < 0) for (let i = end - 1; i >= minimum; i--) if (weak.test(characters[i])) { boundary = i + 1; break; }
+      if (boundary > offset) end = boundary;
+    }
+    const chunk = characters.slice(offset, end).join("");
+    if (chunk.trim()) chunks.push(chunk);
+    offset = end;
+  }
+  return chunks;
+}\n`;
   }
   if (!filename.endsWith('/frontend/chinese-audio-player.ts')) return source;
   const start = source.indexOf('    const prepare = async (position: SpeechCursor): Promise<Prepared> => {');
   const loop = source.indexOf('      while (valid()) {', start);
   if (start < 0 || loop < 0) throw new Error('Chinese audio prefetch seams changed');
   const adapted = `    type SpeechJob = { result: Promise<Prepared>; next: Promise<SpeechCursor | null>; isReady: () => boolean };
+    let activeSyntheses = 0;
+    const waiters: Array<{ resolve: () => void; cancel: () => void }> = [];
+    const acquire = async () => {
+      if (!valid()) throw new DOMException("Cancelled", "AbortError");
+      if (activeSyntheses < 2) { activeSyntheses++; return; }
+      await new Promise<void>((resolve, reject) => {
+        const waiter = { resolve: () => { signal.removeEventListener("abort", waiter.cancel); resolve(); },
+          cancel: () => { const at = waiters.indexOf(waiter); if (at >= 0) waiters.splice(at, 1); reject(new DOMException("Cancelled", "AbortError")); } };
+        waiters.push(waiter);
+        signal.addEventListener("abort", waiter.cancel, { once: true });
+        if (!valid()) waiter.cancel();
+      });
+      if (!valid()) { release(); throw new DOMException("Cancelled", "AbortError"); }
+    };
+    const release = () => { const next = waiters.shift(); if (next) next.resolve(); else activeSyntheses--; };
     const synthesize = async (text: string): Promise<Blob> => {
+      await acquire();
       const startedAt = Date.now();
-      try { return await this.dependencies.synthesize(text, signal); }
+      try { try { return await this.dependencies.synthesize(text, signal); }
       catch (error) {
         // Retry only fast failures. A request that already took a long time is
         // likely a slow upstream timeout; repeating it would double the wait.
-        const reason = error instanceof Error ? error.message : String(error);
-        if (!valid() || (Date.now() - startedAt > 12_000 && !reason.includes("音频无法识别"))) throw error;
+        if (!valid() || Date.now() - startedAt > 12_000) throw error;
         await new Promise<void>(resolve => setTimeout(resolve, 500));
         if (!valid()) throw error;
-        return this.dependencies.synthesize(text, signal);
-      }
+        return await this.dependencies.synthesize(text, signal);
+      } } finally { release(); }
     };
     const prepare = (position: SpeechCursor): SpeechJob => {
       let resolveNext!: (cursor: SpeechCursor | null) => void;
@@ -111,8 +133,6 @@ import os from "node:os";`);
     };
     const advance = (item: Promise<SpeechJob | null>): Promise<SpeechJob | null> => item.then(async job => {
       if (!job) return null;
-      const ready = await job.result;
-      if (!ready || !("part" in ready) || !ready.part?.next) return null;
       const cursor = await job.next;
       return cursor && valid() ? prepare(cursor) : null;
     });
@@ -145,9 +165,7 @@ import os from "node:os";`);
   source = source.replace(awaitCurrent, awaitJob);
   const queueSeam = '        current = ahead; ahead = following; following = advance(following);\n        if (!this.paused) this.dependencies.phase("loading");';
   if (source.split(queueSeam).length !== 2) throw new Error('Chinese audio queue seam changed');
-  source = source.replace(queueSeam, `        // Match the release queue: keep two chunks prepared ahead while
-        // each upstream synthesis finishes before the next request begins.
-        current = ahead; ahead = following; following = advance(following);
-        if (!this.paused) this.dependencies.phase("loading");`);
+  source = source.replace(queueSeam, `        // Keep two chunks ahead, with at most two syntheses in flight.
+        current = ahead; ahead = following; following = advance(following);`);
   return source;
 }

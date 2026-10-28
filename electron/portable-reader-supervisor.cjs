@@ -1,9 +1,9 @@
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 class PortableReaderSupervisor {
-  constructor({ utilityProcess, assetsDir, libraryRoot, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, edgeTtsExecutable = null, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
+  constructor({ utilityProcess, assetsDir, libraryRoot, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
     if(typeof installSessionCookie!=='function'||typeof clearSessionCookie!=='function')throw new Error('Reader session authentication is not configured');
-    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, edgeTtsExecutable, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
+    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
     this.webOrigin = 'http://127.0.0.1:5175';
     this.apiOrigin = 'http://127.0.0.1:5174';
     this.status = 'idle'; this.error = null; this.child = null; this.pending = null; this.stopping = false; this.failedHealthChecks = 0;
@@ -55,7 +55,7 @@ class PortableReaderSupervisor {
       this.rejectStartup = fail;
       let child;
       try {
-        child = this.utilityProcess.fork(this.entryPath, [this.assetsDir, this.libraryRoot, this.enableLocalQwen ? 'preview-local-qwen' : 'disabled', this.enableTranslation ? 'reader-translation' : 'disabled', this.enableReaderPreviews ? 'reader-previews' : 'disabled', this.edgeTtsExecutable || ''], {
+        child = this.utilityProcess.fork(this.entryPath, [this.assetsDir, this.libraryRoot, this.enableLocalQwen ? 'preview-local-qwen' : 'disabled', this.enableTranslation ? 'reader-translation' : 'disabled', this.enableReaderPreviews ? 'reader-previews' : 'disabled'], {
           serviceName: 'Vantilo Reader', stdio: 'ignore',
           // The installed app never inherits developer AI keys, GitHub tokens or local provider configuration.
           env: { PATH: process.env.PATH || '/usr/bin:/bin', LANG: process.env.LANG || 'en_US.UTF-8', TMPDIR: process.env.TMPDIR || '/tmp' },
@@ -70,11 +70,11 @@ class PortableReaderSupervisor {
           const send=(ok,result,error)=>{if(this.child===child&&!this.stopping)child.postMessage({type:'custom-api-result',requestId,ok,...(ok?{result}:{error})});};
           const idOk=typeof requestId==='string'&&/^[0-9a-f-]{36}$/i.test(requestId);
           const validConfig=config=>config&&typeof config==='object'&&!Array.isArray(config)&&Object.keys(config).every(key=>['id','name','baseUrl','model','apiKey'].includes(key))&&(config.id===undefined||typeof config.id==='string')&&typeof config.name==='string'&&typeof config.baseUrl==='string'&&typeof config.model==='string'&&(config.apiKey===undefined||typeof config.apiKey==='string');
-          const valid=operation==='get'?Object.keys(message).sort().join(',')==='operation,requestId,type':operation==='save'||operation==='test'?Object.keys(message).sort().join(',')==='config,operation,requestId,type'&&validConfig(message.config):operation==='activate'||operation==='remove'?Object.keys(message).sort().join(',')==='id,operation,requestId,type'&&typeof message.id==='string'&&/^[a-f0-9-]{36}$/i.test(message.id):operation==='complete'?Object.keys(message).sort().join(',')==='input,instruction,operation,requestId,type'&&typeof message.instruction==='string'&&message.instruction.length>0&&message.instruction.length<=8000&&typeof message.input==='string'&&message.input.length>0&&message.input.length<=18000&&message.instruction.length+message.input.length<=19000:false;
+          const valid=operation==='get'?Object.keys(message).sort().join(',')==='operation,requestId,type':operation==='save'||operation==='test'?Object.keys(message).sort().join(',')==='config,operation,requestId,type'&&validConfig(message.config):operation==='activate'||operation==='remove'?Object.keys(message).sort().join(',')==='id,operation,requestId,type'&&typeof message.id==='string'&&/^[a-f0-9-]{36}$/i.test(message.id):operation==='complete'?['input,instruction,operation,requestId,type','input,instruction,operation,profileId,requestId,task,type'].includes(Object.keys(message).sort().join(','))&&(message.task===undefined||(message.task==='word-context'&&typeof message.profileId==='string'&&/^[a-f0-9-]{36}$/i.test(message.profileId)))&&typeof message.instruction==='string'&&message.instruction.length>0&&message.instruction.length<=8000&&typeof message.input==='string'&&message.input.length>0&&message.input.length<=18000&&message.instruction.length+message.input.length<=19000:false;
           if(!idOk||!valid||!this.customApi){if(idOk)send(false,null,'自定义 API 请求无效');return;}
           const controller=operation==='complete'?new AbortController():null;
           if(controller)this.customApiRequests.set(requestId,controller);
-          const payload=operation==='get'?{}:operation==='complete'?{instruction:message.instruction,input:message.input}:operation==='save'||operation==='test'?message.config:{id:message.id};
+          const payload=operation==='get'?{}:operation==='complete'?{instruction:message.instruction,input:message.input,...(message.task?{task:message.task,profileId:message.profileId}:{})}:operation==='save'||operation==='test'?message.config:{id:message.id};
           void Promise.resolve(this.customApi(operation,payload,controller?.signal)).then(result=>send(true,result),error=>send(false,null,error instanceof Error?error.message:'自定义 API 请求失败')).finally(()=>{if(this.customApiRequests.get(requestId)===controller)this.customApiRequests.delete(requestId);});
           return;
         }

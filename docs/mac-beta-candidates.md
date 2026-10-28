@@ -1,6 +1,6 @@
 # macOS 通用测试包
 
-Vantilo 使用一个 Universal macOS 测试包，同时包含 Apple Silicon（arm64）和 Intel（x64）运行代码。系统会自动选择本机架构。云端和局域网 OpenAI 兼容 API 两边通用；MLX 本地 Qwen 仅在 Apple Silicon 上启用。
+Vantilo 使用一个 Universal macOS 测试包，同时包含 Apple Silicon（arm64）和 Intel（x64）运行代码。系统会自动选择本机架构。两种架构均可使用配置的云端或局域网 OpenAI 兼容 API。
 
 Intel 设备使用自定义云端或局域网 API；网络、API 服务与模型是否可用取决于用户配置和服务商。
 
@@ -20,7 +20,7 @@ Intel 设备使用自定义云端或局域网 API；网络、API 服务与模型
 ## 验收与发布边界
 
 - 通用候选包应同时检查 arm64 与 x86_64 切片、签名完整性和安装包校验值，并分别在两种芯片的真实设备上验收安装和主要功能。
-- Intel 的 Codex 与系统词典原生程序、模型选择、段落翻译、点词、取消和异常恢复必须在 Intel 设备实测；Apple Silicon 上还需确认 MLX Qwen 可用。
+- Intel 的 Codex 与系统词典原生程序、模型选择、段落翻译、点词、取消和异常恢复必须在 Intel 设备实测；两种架构均需验证已配置的 API 服务。
 - Reader 的会话认证、合成 EPUB 流程和隔离的助手通道需验证；真实账号或真实模型测试须单独说明，不能从模拟测试推断。
 - 候选包使用 ad-hoc 签名，未经过 Developer ID 签名和 Apple 公证。测试者可能需要根据 macOS 提示确认打开。
 - 软件更新当前只检查 GitHub 的稳定 Release 并打开发布页面，不自动安装；预发布版不触发稳定版更新提示。

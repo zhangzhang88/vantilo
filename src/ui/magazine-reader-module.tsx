@@ -5,6 +5,14 @@ import { BookDiscovery } from '../reader/book-discovery';
 export type MagazineSyncState = { enabled: boolean; status: 'idle' | 'checking' | 'error'; message: string; importedCount: number; failedCount: number; lastAttemptAt?: string | null; lastSuccessAt?: string | null };
 
 export type MagazineReaderStatus = 'idle' | 'starting' | 'ready' | 'error';
+export type ReaderAppearance = { theme: 'paper'|'sepia'|'green'|'blue'|'night'; fontSize: number; fontFamily: 'serif'|'sans' };
+export function isReaderAppearance(value: unknown): value is ReaderAppearance {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.theme === 'string' && ['paper','sepia','green','blue','night'].includes(item.theme)
+    && typeof item.fontSize === 'number' && Number.isInteger(item.fontSize) && item.fontSize >= 12 && item.fontSize <= 24
+    && (item.fontFamily === 'serif' || item.fontFamily === 'sans');
+}
 
 const MAGAZINE_READER_URL = 'http://127.0.0.1:5175/';
 
@@ -17,6 +25,7 @@ export function MagazineReaderModule({
   syncState,
   onSync,
   onSetup,
+  onAppearanceChange,
   visible = true,
 }: {
   navigationRequest?: {target:'settings'|'library';sequence:number};
@@ -27,6 +36,7 @@ export function MagazineReaderModule({
   syncState?: MagazineSyncState | null;
   onSync?: () => void;
   onSetup?: () => void;
+  onAppearanceChange?: (appearance: ReaderAppearance) => void;
   visible?: boolean;
 }) {
   const frameRef=React.useRef<HTMLIFrameElement>(null);
@@ -41,9 +51,12 @@ export function MagazineReaderModule({
       if(event.data?.type==='vantilo:reader-ready')navigate();
       if(event.data?.type==='vantilo:open-environment-settings')onSetup?.();
       if(event.data?.type==='vantilo:open-discovery')setDiscoveryOpen(true);
+      if(event.data?.type==='vantilo:reader-appearance' && isReaderAppearance(event.data)) {
+        onAppearanceChange?.({theme:event.data.theme,fontSize:event.data.fontSize,fontFamily:event.data.fontFamily});
+      }
     };
     window.addEventListener('message',receive);return ()=>window.removeEventListener('message',receive);
-  },[origin,navigate,onSetup]);
+  },[origin,navigate,onSetup,onAppearanceChange]);
   React.useEffect(()=>{if(status==='ready')navigate();},[status,navigate]);
   return (
     <section className="magazine-reader-module" aria-label="Magazine Reader" hidden={!visible}>

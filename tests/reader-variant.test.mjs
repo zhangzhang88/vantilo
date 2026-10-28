@@ -24,6 +24,9 @@ describe('Reader build adaptation', () => {
     expect(wrapRules.at(-1)?.nodes?.map(node => node.toString())).toEqual([
       'overflow-wrap: normal', 'word-break: normal', 'hyphens: none',
     ]);
+    const sentenceFocusRule = result.nodes.find(node => node.type === 'rule' && node.selector.includes('.reader-canvas .reading-page:focus'));
+    expect(sentenceFocusRule?.nodes?.toString()).toContain('outline: none !important');
+    expect(sentenceFocusRule?.selector).toContain('.sentence-reading-card:focus-visible');
   });
   it('keeps Reader toolbar labels horizontal on wide windows and applies the compact layout only on narrow windows', () => {
     const selectors = [
@@ -51,6 +54,17 @@ describe('Reader build adaptation', () => {
     const result = adaptReaderSource(source, '/source/src/frontend/App.tsx');
     expect(result).toContain('className="toolbar-button vantilo-discovery-entry"');
     expect(result).toContain('window.parent.postMessage({ type: "vantilo:open-discovery" }, "*")');
+    expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  });
+  it('shows whole-book progress on the resume card by aggregating saved chapter progress', () => {
+    const source = `function BookContinueCard({ book, item, onContinue }: { book: BookSummary; item: ReadingEntryView; onContinue: () => void }) {
+      return <div><div className="continue-progress"><ProgressBar value={item.progress} /><span>{item.progress}%</span></div></div>;
+    }
+    const card = <BookContinueCard key={bookContinue.key} book={continueBook} item={bookContinue} onContinue={() => openReadingEntry(bookContinue.entry)} />;`;
+    const result = adaptReaderSource(source, '/source/src/frontend/App.tsx');
+    expect(result).toContain('summedChapterProgress / Math.max(1, book.readableUnitCount)');
+    expect(result).toContain('chapterProgress={readerState.bookProgress}');
+    expect(result).toContain('ProgressBar value={wholeBookProgress}');
     expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
   });
   it('removes crawlers, science routes and the second assistant login and rejects upstream seam changes', () => {
@@ -160,6 +174,7 @@ it('renders the Apple Dictionary card as a compact gloss with an expandable full
     });
     return result;
   };
+  expect(properties('.reader-page-shell .vocabulary-panel .word-detail-back').display).toBe('none');
   const article = '.word-lookup-dictionary-summary .vantilo-dict-article';
   const detail = '.word-detail-content .vantilo-dict-article';
   const detailLight = properties(detail);
@@ -196,6 +211,8 @@ it('simplifies the word popup without removing real keyboard or dictionary funct
   expect(adapted).toContain('ariaKeyShortcuts={String(level)}');
   expect(adapted).toContain('onFamiliarityChange(level)');
   expect(adapted).toContain('onOpenDetails');
+  expect(adapted).toContain('onMouseLeave={detailLookup ? onCloseDetail : undefined}');
+  expect(adapted).toContain('closeWordDetailOnOutsidePointer');
   // Dictionary content and full entry still work.
   expect(adapted).toContain('className="vantilo-dictionary-quick"');
   expect(adapted).toContain('查看完整词条与例句');

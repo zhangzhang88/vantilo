@@ -22,15 +22,15 @@ export function adaptTranslationPreview(source,filename) {
     return source.replace(accepted,'(item.provider === "easycliproxy" || item.provider === "learning-material" || item.provider === "vantilo-agent" || item.provider === "qwen-mlx" || item.provider === "qwen-gguf" || item.provider === "custom-api")');
   }
   if(filename.endsWith('/frontend/styles.css'))return source+`
-.reader-page-shell {--vantilo-translation-bar-top:62px;--vantilo-translation-bar-height:66px;}
-.reader-page-shell.is-focus-mode {--vantilo-translation-bar-top:48px;}
-.vantilo-translation-bar {position:sticky;top:var(--vantilo-translation-bar-top);z-index:29;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:8px 20px;background:var(--ui-surface,#f7f6f2);color:var(--ui-ink,#222);border-bottom:1px solid var(--ui-line,#d9d6cf);font-size:13px;}
-.reader-page-shell.is-chinese-mode .chinese-player {top:calc(var(--vantilo-translation-bar-top) + var(--vantilo-translation-bar-height) + 12px);}
-@media(max-width:640px){.reader-page-shell{--vantilo-translation-bar-height:78px;}}
-.vantilo-translation-engine {display:flex;align-items:center;gap:10px;white-space:nowrap;}
-.vantilo-translation-engine select {max-width:min(330px,55vw);padding:5px 8px;border:1px solid var(--ui-line,#ccc);border-radius:7px;background:var(--ui-soft,#fff);color:inherit;font:inherit;}
-.vantilo-translation-note {font-size:12px;color:var(--ui-muted,#666);line-height:1.5;}
-.reader-page-shell.is-focus-mode .vantilo-translation-bar {top:var(--vantilo-translation-bar-top);}
+.reader-page-shell.is-chinese-mode .chinese-player {top:74px;}
+.reader-page-shell.is-focus-mode.is-chinese-mode .chinese-player {top:60px;}
+.vantilo-translation-menu {position:relative;flex:none;font-size:13px;color:var(--ui-ink,#222);}
+.vantilo-translation-menu summary {cursor:pointer;list-style:none;white-space:nowrap;padding:7px 10px;border:1px solid var(--ui-line,#d9d6cf);border-radius:8px;background:var(--ui-surface,#f7f6f2);}
+.vantilo-translation-menu summary::-webkit-details-marker {display:none;}
+.vantilo-translation-bar {position:absolute;top:100%;right:0;z-index:40;box-sizing:border-box;width:min(360px,85vw);display:grid;gap:10px;padding:14px;background:var(--ui-surface,#f7f6f2);color:var(--ui-ink,#222);border:1px solid var(--ui-line,#d9d6cf);border-radius:12px;box-shadow:0 8px 24px #0002;white-space:normal;}
+.vantilo-translation-engine {display:grid;gap:6px;min-width:0;}
+.vantilo-translation-engine select {box-sizing:border-box;width:100%;min-width:0;max-width:100%;padding:7px 8px;border:1px solid var(--ui-line,#ccc);border-radius:7px;background:var(--ui-soft,#fff);color:inherit;font:inherit;}
+.vantilo-translation-note {font-size:12px;color:var(--ui-muted,#666);line-height:1.5;white-space:normal;overflow-wrap:anywhere;}
 .reader-page-shell .vantilo-sentence-provenance {display:block;margin:5px 0 8px;color:var(--ui-muted,#777);font-size:11px;}
 .reader-page-shell .vantilo-sentence-heading,.reader-page-shell .vantilo-expression-row {display:flex;align-items:center;justify-content:space-between;gap:12px;}
 .reader-page-shell .vantilo-sentence-heading {margin-bottom:10px;}
@@ -47,10 +47,10 @@ export function adaptTranslationPreview(source,filename) {
   if(sentenceStateIndex<0)throw new Error('Sentence state seam changed');
   source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>{
     let saved:string|null=null;try{saved=getReaderStorage().getItem('vantilo-translation-engine-v1');}catch{}
-    return saved===${JSON.stringify(localId)} || /^custom-api:[a-f0-9]{12}$/.test(saved||'') || /^codex:[a-zA-Z0-9._-]{1,128}$/.test(saved||'') ? saved! : ${JSON.stringify(localId)};
+    return /^custom-api:[a-f0-9]{12}$/.test(saved||'') || /^codex:[a-zA-Z0-9._-]{1,128}$/.test(saved||'') ? saved! : '';
   });
   const vantiloEngineRef=useRef(vantiloEngine);vantiloEngineRef.current=vantiloEngine;
-  const [vantiloEngines,setVantiloEngines] = useState([{id:${JSON.stringify(localId)},label:'本地 Qwen3.5 4B'}]);
+  const [vantiloEngines,setVantiloEngines] = useState<{id:string;label:string}[]>([]);
   const [vantiloEngineError,setVantiloEngineError] = useState('');
   const vantiloEpoch = useRef(0);
   const vantiloRequests = useRef(new Set<AbortController>());
@@ -97,6 +97,53 @@ export function adaptTranslationPreview(source,filename) {
   const selectionState='  const [activeSelection, setActiveSelection] = useState<ActiveTextSelection | null>(null);';
   if(!source.includes(selectionState))throw new Error('Selection state seam changed');
   source=source.replace(selectionState,selectionState+'\n  useEffect(()=>()=>{vantiloSelectionRequest.current?.abort();},[activeSelection]);');
+  const contextFunction='  function ensureWordContextMeaning(\n';
+  exact(contextFunction, `  function vantiloContextMatches(record: WordContextMeaningRecord | undefined) {
+    return !!record && (record.meaningSource === 'user' || (record as any).engineId === vantiloEngineRef.current);
+  }
+  async function vantiloExplainWordContext(input: any, onPartial: (result: any) => void) {
+    const engineId=vantiloEngineRef.current;
+    const call=async(stage: string, primary: any = {})=>{
+      const response=await fetch('/api/vantilo-word-context',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({engineId,stage,text:input.text,sentence:input.sentence,paragraph:input.paragraph||'',meaningZh:primary.meaningZh||'',explanationZh:primary.explanationZh||'',...(stage==='verified'?{sentenceTranslationZh:input.sentenceTranslationZh||'',expressionExplanationZh:input.expressionExplanationZh||'',suggestedMeaningZh:input.suggestedMeaningZh||''}:{})})});
+      if(!response.ok)throw new Error('语境解释暂时不可用');
+      return await response.json();
+    };
+    if(input.verifyConsistency)return call('verified');
+    const primary=await call('primary');
+    const partial={...primary,meaningEn:'',explanationEn:'',examplesEn:[],supplementStatus:'loading'};
+    if(vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
+    onPartial(partial);
+    try {
+      const extra=await call('supplement',primary);
+      if(vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
+      return {...partial,...extra,meaningZh:primary.meaningZh,explanationZh:primary.explanationZh,partOfSpeech:primary.partOfSpeech,supplementStatus:'ready'};
+    } catch { return {...partial,supplementStatus:'error'}; }
+  }
+  function ensureWordContextMeaning(
+`);
+  exact('    if (cached && hasEnglishWordContext(cached) && (!verifyConsistency || cached.meaningVersion === 2 || cached.meaningSource === "user")) return Promise.resolve(cached);',
+    '    if (cached && vantiloContextMatches(cached) && hasEnglishWordContext(cached) && (!verifyConsistency || cached.meaningVersion === 2 || cached.meaningSource === "user")) return Promise.resolve(cached);');
+  exact('    const requestKey = key + (verifyConsistency ? ":verified-v2" : "");',
+    '    const requestKey = key + ":" + vantiloEngineRef.current + (verifyConsistency ? ":verified-v2" : "");');
+  exact('    const request = explainWordContext({','    const request = vantiloExplainWordContext({');
+  exact('    }).then((result) => {\n      const latest = findWordContextMeaning(wordContextMeaningsRef.current, occurrence);', `    }, (partial) => {
+      if (vantiloEngineRef.current !== partial.engineId) return;
+      const latest=findWordContextMeaning(wordContextMeaningsRef.current,occurrence);
+      if(latest?.meaningSource==='user')return;
+      const record={...partial,...occurrence,key,sentence,generatedAt:new Date().toISOString(),meaningSource:'ai'} as WordContextMeaningRecord;
+      const next=upsertWordContextMeaning(wordContextMeaningsRef.current,record);
+      wordContextMeaningsRef.current=next;saveWordContextMeanings(getReaderStorage(),next);setWordContextMeanings(next);
+      const update=(current:ActiveWordLookup|null)=>current?.key===key?{...current,contextStatus:'ready' as const,contextMeaning:record}:current;
+      setActiveWordLookup(update);setWordDetailLookup(update);
+    }).then((result) => {
+      if (vantiloEngineRef.current !== result.engineId) return undefined;
+      const latest = findWordContextMeaning(wordContextMeaningsRef.current, occurrence);`);
+  exact('    if (!cachedContext || !hasEnglishWordContext(cachedContext)) {','    if (!vantiloContextMatches(cachedContext) || !hasEnglishWordContext(cachedContext!)) {');
+  exact('      contextStatus: cachedContext ? "ready" : "loading",\n      contextMeaning: cachedContext,',
+    '      contextStatus: vantiloContextMatches(cachedContext) ? "ready" : "loading",\n      contextMeaning: vantiloContextMatches(cachedContext) ? cachedContext : undefined,');
+  exact('            <p>{context.explanationZh}</p>', `            <p>{context.explanationZh}</p>
+            {(context as any).supplementStatus === 'loading' && <p role="status">正在补充英文释义与例句…</p>}
+            {(context as any).supplementStatus === 'error' && <p>英文释义与例句暂未完成，再次点词可重试。</p>}`);
   const closeSelection='  function closeSelectionAssist() {\n';
   if(!source.includes(closeSelection))throw new Error('Selection close seam changed');
   source=source.replace(closeSelection,closeSelection+'    vantiloSelectionRequest.current?.abort();\n');
@@ -211,17 +258,21 @@ export function adaptTranslationPreview(source,filename) {
   source=source.replace('{currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。"}','{currentSentenceTranslationRequest.error || (currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。")}');
   exact('        await ensureParagraphTranslation(item.index, item.paragraph, false, true);','        if(!await ensureParagraphTranslation(item.index, item.paragraph, false, true)) break;');
   exact('Math.min(3, missing.length)','Math.min(1, missing.length)');
-  exact('      <div className="reader-progress-line">', `      <aside className="vantilo-translation-bar" aria-label="阅读翻译设置">
+  exact('          <div className="reader-mode-switch" aria-label="阅读模式">', `          <details className="vantilo-translation-menu" onMouseLeave={event => { if (event.relatedTarget) event.currentTarget.open = false; }}>
+        <summary title="选择阅读翻译模型">翻译模型 ▾</summary>
+        <aside className="vantilo-translation-bar" aria-label="阅读翻译设置">
           <label className="vantilo-translation-engine">
             <span>阅读翻译模型</span>
             <select aria-label="阅读翻译引擎，适用于段落、全文和逐句模式" value={vantiloEngine} onChange={e=>changeVantiloEngine(e.target.value)}>
+              {!vantiloEngines.length && <option value="">暂无可用模型，请在设置中配置 API 或登录 ChatGPT</option>}
               {vantiloEngines.map(engine=><option key={engine.id} value={engine.id}>{engine.label}</option>)}
             </select>
           </label>
           {vantiloEngineError && <span role="status">{vantiloEngineError}</span>}
           <span className="vantilo-translation-note">{vantiloChunkProgress?.engineId===vantiloEngine&&vantiloChunkProgress.totalChunks>1?('本地 Qwen 分段 '+vantiloChunkProgress.completedChunks+'/'+vantiloChunkProgress.totalChunks+(vantiloChunkProgress.status==='failed'&&vantiloChunkProgress.failedChunk?' · 第 '+vantiloChunkProgress.failedChunk+' 段失败':'')):vantiloEngine.startsWith('qwen:')?'本地 Qwen · 长段落按句子分段翻译':vantiloEngine.startsWith('custom-api:')?'自定义 API · 使用所选模型':'Codex / ChatGPT · 使用所选模型'} · 记住所选模型，译文分别保存</span>
-          {(fullArticleTranslationRunning || currentArticleTranslationLoading) && <button className="toolbar-button" onClick={cancelVantiloTranslation}>停止翻译</button>}
       </aside>
-      <div className="reader-progress-line">`);
+      </details>
+      {(fullArticleTranslationRunning || currentArticleTranslationLoading) && <button className="toolbar-button" onClick={cancelVantiloTranslation}>停止翻译</button>}
+          <div className="reader-mode-switch" aria-label="阅读模式">`);
   return source;
 }

@@ -1,0 +1,17 @@
+/* The host uses the Reader's saved appearance, including when Reader is hidden. */
+main[data-vantilo-theme="paper"] { --vantilo-bg:#f4f2ec; --vantilo-surface:#fffdf8; --vantilo-soft:#ecefe9; --vantilo-ink:#272e2b; --vantilo-muted:#64716b; --vantilo-line:#d5ddd5; --vantilo-accent:#247780; }
+main[data-vantilo-theme="sepia"] { --vantilo-bg:#efe6d5; --vantilo-surface:#fbf4e6; --vantilo-soft:#e9dfcd; --vantilo-ink:#35352c; --vantilo-muted:#656b5d; --vantilo-line:#cfc8b4; --vantilo-accent:#247780; }
+main[data-vantilo-theme="green"] { --vantilo-bg:#e8f0e5; --vantilo-surface:#f4f8ef; --vantilo-soft:#dce8d8; --vantilo-ink:#2b382d; --vantilo-muted:#596d5d; --vantilo-line:#c3d3bf; --vantilo-accent:#247780; }
+main[data-vantilo-theme="blue"] { --vantilo-bg:#30477e; --vantilo-surface:#223666; --vantilo-soft:#263c70; --vantilo-ink:#f5f7ff; --vantilo-muted:#c3d1ed; --vantilo-line:#6681b1; --vantilo-accent:#9ed3ed; }
+main[data-vantilo-theme="night"] { --vantilo-bg:#171717; --vantilo-surface:#212121; --vantilo-soft:#303030; --vantilo-ink:#ececec; --vantilo-muted:#aaaaaa; --vantilo-line:#424242; --vantilo-accent:#8bc6c8; }
+
+main[data-vantilo-theme] { background:var(--vantilo-bg); color:var(--vantilo-ink); }
+main[data-vantilo-theme] :is(.app-titlebar,.app-rail,.sidebar) { background:var(--vantilo-surface); border-color:var(--vantilo-line); color:var(--vantilo-ink); }
+main[data-vantilo-theme] :is(.workspace-sheet,.magazine-reader-module,.center) { background:var(--vantilo-bg); color:var(--vantilo-ink); }
+main[data-vantilo-theme] :is(.sidebar-workspace,.new,.session-row.selected,.message.user,.transcript-agent-mark) { background:var(--vantilo-soft); border-color:var(--vantilo-line); color:var(--vantilo-ink); }
+main[data-vantilo-theme] :is(.brand,.sidebar-context-title,.session-row,.transcript-agent-row,.transcript-agent-mark,.account-controls,.conversation-markdown,.conversation-markdown p,.conversation-markdown h1,.conversation-markdown h2,.conversation-markdown h3,.conversation-markdown h4,.composer-field [role="textbox"]) { color:var(--vantilo-ink); }
+main[data-vantilo-theme] :is(.sidebar-context-status,.sidebar-workspace-path,.session-meta,.session-preview,.session-empty,.transcript-agent-meta,.hero p,.composer-note) { color:var(--vantilo-muted); }
+main[data-vantilo-theme] :is(.app-rail-cell.is-active::before) { background:var(--vantilo-accent); }
+main[data-vantilo-theme] .app-rail-cell.is-active .react-aria-Button { color:var(--vantilo-accent); }
+main[data-vantilo-theme] .account-controls button { background:var(--vantilo-soft); border-color:var(--vantilo-line); color:var(--vantilo-ink); }
+main[data-vantilo-theme] :is(.conversation-markdown,.message.user,.composer-field [role="textbox"]) { font-family:var(--vantilo-reading-font); font-size:var(--vantilo-reading-size); }

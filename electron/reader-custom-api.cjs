@@ -79,7 +79,7 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
     const record={version:2,activeId:state.activeId,profiles:state.profiles.map(config=>({config:{id:config.id,name:config.name,baseUrl:config.baseUrl,model:config.model},encryptedApiKey:safeStorage.encryptString(config.apiKey).toString('base64')}))};
     const temp=filePath+'.'+randomUUID()+'.tmp';await fs.writeFile(temp,JSON.stringify(record),{mode:0o600});await fs.rename(temp,filePath);cached=state;
   }
-  async function request(config, { instruction, input, signal, test = false } = {}) {
+  async function request(config, { instruction, input, signal, test = false, task } = {}) {
     const responsesEndpoint=config.baseUrl.endsWith('/responses');
     const endpoint=responsesEndpoint||config.baseUrl.endsWith('/chat/completions')?config.baseUrl:config.baseUrl+'/chat/completions';
     const controller=new AbortController();
@@ -90,9 +90,10 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
     try {
       const bodyText=test?'Reply with exactly: OK':input;
       const isDeepSeek=/^(?:[a-z0-9-]+\.)*deepseek\.com$/i.test(new URL(config.baseUrl).hostname);
+      const quickContext=isDeepSeek && task==='word-context';
       const body=responsesEndpoint
-        ?{model:config.model,instructions:test?'Reply with exactly OK.':instruction||'',input:bodyText,temperature:0,max_output_tokens:test?128:6000}
-        :{model:config.model,messages:test?[{role:'user',content:bodyText}]:[{role:'system',content:instruction},{role:'user',content:bodyText}],temperature:0,max_tokens:test?128:6000,...(test&&isDeepSeek?{thinking:{type:'disabled'}}:{})};
+        ?{model:config.model,instructions:test?'Reply with exactly OK.':instruction||'',input:bodyText,temperature:0,max_output_tokens:test?128:quickContext?1000:6000,...(quickContext?{reasoning:{effort:'none'}}:{})}
+        :{model:config.model,messages:test?[{role:'user',content:bodyText}]:[{role:'system',content:instruction},{role:'user',content:bodyText}],temperature:0,max_tokens:test?128:quickContext?1000:6000,...((test&&isDeepSeek)||quickContext?{thinking:{type:'disabled'}}:{})};
       const response=await fetchImpl(endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json',...(config.apiKey?{authorization:'Bearer '+config.apiKey}:{})},body:JSON.stringify(body)});
       const result=await responseJson(response,config.apiKey);const content=result?.choices?.[0]?.message?.content;
       const responseText=typeof result?.output_text==='string'?result.output_text:Array.isArray(result?.output)?result.output.flatMap(item=>Array.isArray(item?.content)?item.content:[]).map(part=>typeof part?.text==='string'?part.text:'').join(''):'';
@@ -115,10 +116,12 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
     async activate(id){const state=await read();if(!state||!state.profiles.some(item=>item.id===id))throw new Error('找不到已保存的 API 服务');state.activeId=id;await persist(state);const config=state.profiles.find(item=>item.id===id);return publicConfig(config,state.profiles,id);},
     async remove(id){const state=await read();if(!state||!state.profiles.some(item=>item.id===id))throw new Error('找不到已保存的 API 服务');state.profiles=state.profiles.filter(item=>item.id!==id);state.activeId=state.profiles[0]?.id||'';if(state.profiles.length)await persist(state);else{cached=null;await fs.rm(filePath,{force:true});}const active=state.profiles.find(item=>item.id===state.activeId)||null;return publicConfig(active,state.profiles,state.activeId);},
     async test(input){const config=validateConfig(input);if(!config.apiKey){const state=await read();config.apiKey=state?.profiles.find(item=>item.id===config.id)?.apiKey||state?.profiles.find(item=>item.id===state.activeId)?.apiKey||'';}await request(config,{test:true});return {ok:true,message:'连接成功，模型已返回测试内容'};},
-    async complete({instruction,input,signal}){
+    async complete({instruction,input,signal,task,profileId}){
       if(typeof instruction!=='string'||!instruction.trim()||instruction.length>8000||typeof input!=='string'||!input.trim()||input.length>18000||instruction.length+input.length>19000)throw new Error('自定义 API 请求超出允许长度');
       const state=await read();const config=state?.profiles.find(item=>item.id===state.activeId);if(!config)throw new Error('请先在阅读设置中配置自定义 API');
-      return request(config,{instruction,input,signal});
+      if(task!==undefined&&task!=='word-context')throw new Error('自定义 API 请求类型无效');
+      if(profileId!==undefined&&profileId!==config.id)throw new Error('自定义 API 已切换，请重新点词');
+      return request(config,{instruction,input,signal,task});
     },
   };
 }

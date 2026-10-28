@@ -35,6 +35,14 @@ describe('macOS system dictionary provider', () => {
     expect(result.definitionsZh[1].definition).toContain('to impose a tax');
   });
 
+  it('keeps one-character Chinese glosses and skips long examples in complex native entries', () => {
+    const raw = "lump | BrE lʌmp, AmE ləmp | A. noun ① (of rock, cheese, concrete) 块 kuài▸ to get or take one's lumps figurative 吃苦头 ② (on body) 肿块 zhǒngkuài▸ she had a lump in her breast 她乳房里长了个肿块▸ to have a lump in one's throat figurative 喉咙哽住 ③ informal derogatory (person) 傻大个 shǎdàgè B. transitive verb 把…归并在一起 bǎ… guībìng zài yīqǐ▸ these two things shouldn't be lumped together 这二者不应该混为一谈";
+    const result = formatMacDictionaryReply('lump', {word:'lump',definition:raw});
+    expect(result.definitionsZh[0].definition).toBe('块；肿块');
+    expect(result.definitionsZh[0].definition).not.toMatch(/noun|lumps|figurative|乳房|throat|归并/);
+    expect(result.definitionsZh[1].definition).toContain('she had a lump in her breast');
+  });
+
   it('keeps an English-only source entry in expandable form', () => {
     const result = formatMacDictionaryReply('hello', {
       word:'hello',definition:'hello | interjection | Used as a greeting when meeting someone.▸ Hello there!'

@@ -30,8 +30,25 @@ await Promise.all([inputRoot,electronRoot,codexRoot,nativeRoot,path.join(inputRo
 // bandwidth-friendly mirror for the archive and verify SHA-256 before extraction.
 const electronVersion=require('electron/package.json').version;
 const releaseResponse=await fetch(`https://api.github.com/repos/electron/electron/releases/tags/v${electronVersion}`,{headers:{Accept:'application/vnd.github+json','User-Agent':'Vantilo-universal-build','X-GitHub-Api-Version':'2022-11-28'}});
-if(!releaseResponse.ok)throw new Error(`无法从 GitHub 验证 Electron 发布版本（HTTP ${releaseResponse.status}）`);
-const release=await releaseResponse.json();
+let release;
+if(releaseResponse.ok){
+  release=await releaseResponse.json();
+}else if(releaseResponse.status===403||releaseResponse.status===429){
+  // The public API can be rate limited; the official release checksum file is
+  // an independently available source for the exact same archive digests.
+  const checksums=await fetch(`https://github.com/electron/electron/releases/download/v${electronVersion}/SHASUMS256.txt`,{redirect:'follow'});
+  if(!checksums.ok)throw new Error(`无法从 GitHub 获取 Electron 官方校验值（HTTP ${checksums.status}）`);
+  const lines=(await checksums.text()).split(/\r?\n/);
+  const assets=[];
+  for(const arch of ['arm64','x64']){
+    const name=`electron-v${electronVersion}-darwin-${arch}.zip`;
+    const line=lines.find(item=>item.endsWith(` *${name}`)||item.endsWith(`  ${name}`));
+    const digest=/^([a-f0-9]{64})\s+\*?/i.exec(line||'')?.[1];
+    if(!digest)throw new Error(`GitHub 官方校验文件缺少 ${name}`);
+    assets.push({name,digest:'sha256:'+digest});
+  }
+  release={assets};
+}else throw new Error(`无法从 GitHub 验证 Electron 发布版本（HTTP ${releaseResponse.status}）`);
 async function sha256File(filename){const hash=createHash('sha256');for await(const chunk of createReadStream(filename))hash.update(chunk);return hash.digest('hex');}
 async function electronArchive(arch){
   const filename=`electron-v${electronVersion}-darwin-${arch}.zip`,target=path.join(inputRoot,filename);
@@ -101,17 +118,6 @@ async function candidateApp(arch){
 }
 const armApp=await candidateApp('arm64');
 const x64App=await candidateApp('x64');
-const armNative=path.join(armApp,'Contents/Resources/app/reader/native');
-const x64Native=path.join(x64App,'Contents/Resources/app/reader/native');
-// Local MLX Qwen is an Apple Silicon feature. Include its ARM-only runtime in
-// both merge inputs so the universal merge can preserve it as a single-arch file;
-// Intel selects the x64 executable and never starts this helper.
-for(const name of ['vantilo-qwen-health','mlx-swift_Cmlx.bundle','swift-transformers_Hub.bundle','swift-crypto_Crypto.bundle']){
-  const source=path.join(armNative,name),target=path.join(x64Native,name);
-  if(await fs.stat(target).then(()=>true,()=>false)){
-    if((await fs.stat(source)).isDirectory()!==(await fs.stat(target)).isDirectory())throw new Error(`通用合并资源类型不一致: ${name}`);
-  }else await fs.cp(source,target,{recursive:true,errorOnExist:true,force:false});
-}
 async function stripSignatures(app){
   async function visit(folder){
     for(const entry of await fs.readdir(folder,{withFileTypes:true})){
@@ -136,8 +142,7 @@ await stripSignatures(armApp);
 
 const mergeDir=path.join(candidates,'universal');await fs.mkdir(mergeDir,{recursive:true});
 const universalApp=path.join(mergeDir,'Vantilo Beta.app');
-await makeUniversalApp({x64AppPath:x64App,arm64AppPath:armApp,outAppPath:universalApp,
-  x64ArchFiles:'Contents/Resources/app/reader/native/vantilo-qwen-health'});
+await makeUniversalApp({x64AppPath:x64App,arm64AppPath:armApp,outAppPath:universalApp});
 
 // Sign every Mach-O leaf explicitly before signing its containing bundles.
 // codesign --deep alone does not sign loose framework dylibs such as Electron's
@@ -174,7 +179,6 @@ const appExecutable=path.join(universalApp,'Contents/MacOS/Vantilo Beta');
 for(const file of [appExecutable,path.join(universalApp,'Contents/Resources/app/reader/codex'),path.join(universalApp,'Contents/Resources/app/reader/codex-code-mode-host'),path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary')]){
   const found=arches(file);if(!found.includes('arm64')||!found.includes('x86_64'))throw new Error(`通用架构验证失败: ${path.basename(file)} (${found.join(',')})`);
 }
-if(!arches(path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-qwen-health')).includes('arm64'))throw new Error('Apple Silicon MLX helper 未保留');
 
 const outDir=path.join(repo,'out');await fs.mkdir(outDir,{recursive:true});
 const zip=path.join(outDir,`Vantilo-Beta-${metadata.version}-universal.zip`);
@@ -184,7 +188,7 @@ execFileSync('/usr/bin/ditto',['-c','-k','--sequesterRsrc','--keepParent',univer
 const hash=createHash('sha256');for await(const chunk of (await import('node:fs')).createReadStream(zip))hash.update(chunk);
 const sha256=hash.digest('hex');await fs.writeFile(checksumPath,sha256+'  '+path.basename(zip)+'\n',{flag:'wx'});
 const report={version:metadata.version,architecture:'arm64+x86_64',artifact:path.relative(repo,zip),sha256,bytes:(await fs.stat(zip)).size,
-  qwen:{appleSilicon:'MLX enabled',intel:'disabled; use configured API'},signature:'ad-hoc; not notarized',intelHardwareTest:'NOT RUN'};
+  modelProviders:'configured cloud or LAN APIs',signature:'ad-hoc; not notarized',intelHardwareTest:'NOT RUN'};
 const reportPath=path.join(outDir,`Vantilo-Beta-${metadata.version}-universal.report.json`);
 if(await fs.stat(reportPath).then(()=>true,()=>false))throw new Error(`为保护已有文件，拒绝覆盖: ${reportPath}`);
 await fs.writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});

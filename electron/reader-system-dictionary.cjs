@@ -9,11 +9,23 @@ const MAX_ENTRY_CHARS = 3000;
 // Extract only literal primary Chinese glosses from Dictionary Services' compact
 // bilingual text. The complete entry remains available behind an expander.
 function quickChineseGloss(body) {
-  const firstSense = body.split(/▸|[②③④⑤⑥⑦⑧⑨]|\bB\.\s+(?:intransitive|transitive|noun|verb)/u)[0];
-  const glossText = firstSense.replace(/‹[^›]*›/gu, ' ');
-  const glosses = [...glossText.matchAll(/[\p{Script=Han}][\p{Script=Han}…，、·]{0,21}/gu)]
+  // Dictionary Services returns a compact stream with structural markers.
+  // Keep grammar/sense text, but skip ▸ example phrases; those often contain
+  // several Chinese translations and made the old fallback dump the whole
+  // entry into the compact card when a valid gloss was only one character.
+  const structural = /▸|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|(?:^|\s)([A-F])\.\s+(?=(?:to\s+|(?:in)?transitive\b|reflexive\b|noun\b|verb\b|adjective\b|adverb\b|phrasal\b|pronoun\b|interjection\b))/gu;
+  const glossText = [];
+  let activeKind = 'sense';
+  let offset = 0;
+  for (const match of body.matchAll(structural)) {
+    if (activeKind === 'sense') glossText.push(body.slice(offset, match.index));
+    activeKind = match[0] === '▸' || match[1] ? 'skip' : 'sense';
+    offset = (match.index ?? 0) + match[0].length;
+  }
+  if (activeKind === 'sense') glossText.push(body.slice(offset));
+  const glosses = [...glossText.join(' ').replace(/‹[^›]*›/gu, ' ').matchAll(/[\p{Script=Han}][\p{Script=Han}…，、·]{0,21}/gu)]
     .map(match => match[0].replace(/[，、·]+$/u, '').trim())
-    .filter(gloss => gloss.length >= 2);
+    .filter(gloss => gloss.length >= 1);
   return [...new Set(glosses)].slice(0, 2).join('；');
 }
 

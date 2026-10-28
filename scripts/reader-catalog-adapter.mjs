@@ -74,7 +74,7 @@ export function adaptCatalogPreview(source,filename) {
   if(!filename.endsWith('/frontend/App.tsx'))return source;
   exact('  const [assistantOpen, setAssistantOpen] = useState(() => window.matchMedia("(min-width: 1151px)").matches);',
     '  const [assistantOpen, setAssistantOpen] = useState(false);');
-  source=source.replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。','管理阅读环境、杂志与软件更新、外观和数据备份。目录与正文可单独选择本地千问或 GPT；选择 GPT 时使用 ChatGPT 登录。').replaceAll('阅读偏好在浏览器 · AI 配置在本机','阅读偏好保存在本机 · 翻译模型独立选择');
+  source=source.replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。','管理阅读环境、杂志与软件更新、外观、数据备份和自定义 API。').replaceAll('阅读偏好在浏览器 · AI 配置在本机','阅读偏好保存在本机 · 翻译模型独立选择');
   exact('    { id: \"settings\", label: \"设置\", icon: \"⚙\" },\n','');
   const modeSwitchEnd='          </div>\n        </div>\n        <div className=\"reader-toolbar-actions\">';
   exact(modeSwitchEnd,'          </div>\n          {readerLanguage === \"chinese\" && <button className=\"toolbar-button vantilo-reader-exit-chinese\" aria-label=\"退出中文阅读并返回英文原文\" title=\"退出中文阅读，返回对应英文段落\" onClick={toggleChineseReader}>返回英文</button>}\n        </div>\n        <div className=\"reader-toolbar-actions\">');

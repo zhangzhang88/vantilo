@@ -74,7 +74,7 @@ it('imports synthetic books and magazines and serves directories without automat
  const tmp=await mkdtemp(path.join(os.tmpdir(),'catalog-import-'));let service;const sessionToken='9'.repeat(64),sessionCookie='__Host-vantilo-reader='+sessionToken;
  const runAi=vi.fn(async p=>JSON.stringify(JSON.parse(p.input).map(r=>({id:r.id,titleZh:'中文 '+r.title}))));
  try{
-  service=await startPortableReader({assetsDir:path.resolve('build/reader-qwen-translation-stage'),libraryRoot:tmp,apiPort:0,webPort:0,autoSync:false,enableLocalQwen:true,sessionToken,
+  service=await startPortableReader({assetsDir:path.resolve('build/reader'),libraryRoot:tmp,apiPort:0,webPort:0,autoSync:false,enableReaderPreviews:true,sessionToken,
    runAi,getAccountStatus:async()=>({connected:true}),listModels:async()=>({models:[{id:'model-a',displayName:'A',defaultEffort:'low'}]}),localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})}});
   const epub=await readFile('tests/fixtures/minimal-magazine.epub');
   const upload=async url=>{const r=await fetch(service.webOrigin+url,{method:'POST',headers:{'content-type':'application/epub+zip',cookie:sessionCookie},body:epub});expect(r.status).toBe(201);return r.json();};
@@ -99,7 +99,7 @@ it('downloads automatic-sync fixture magazines without running translation',asyn
   const rel=decodeURIComponent(url.pathname.split('/contents/')[1]);const index=dirs.indexOf(rel.split('/')[0]);if(index<0)throw Error('Unexpected source');
   const issuePath=dirs[index]+'/2026.10.24',name=prefix[index]+'.2026.10.24.epub';
   return new Response(JSON.stringify(rel.includes('/')?[{type:'file',name,path:issuePath+'/'+name,download_url:'https://raw.githubusercontent.com/hehonghui/awesome-english-ebooks/master/'+issuePath+'/'+name}]:[{type:'dir',name:'2026.10.24',path:issuePath}]));};
- try{service=await startPortableReader({assetsDir:path.resolve('build/reader-qwen-translation-stage'),libraryRoot:tmp,apiPort:0,webPort:0,autoSync:false,enableLocalQwen:true,runAi,fetchImpl,sessionToken,
+ try{service=await startPortableReader({assetsDir:path.resolve('build/reader'),libraryRoot:tmp,apiPort:0,webPort:0,autoSync:false,enableReaderPreviews:true,runAi,fetchImpl,sessionToken,
   localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})}});
   await service.sync.check();const issues=await fetch(service.webOrigin+'/api/issues',{headers:{cookie:sessionCookie}}).then(r=>r.json());expect(issues).toHaveLength(4);expect(runAi).not.toHaveBeenCalled();
  }finally{await service?.close();await rm(tmp,{recursive:true,force:true});}

@@ -9,7 +9,7 @@ it('separates persistent magazine settings from software settings and validates 
  const sessionToken='e'.repeat(64),sessionCookie='__Host-vantilo-reader='+sessionToken;
  const software={status:vi.fn(async()=>({currentVersion:'0.1.0',phase:'unpublished',automatic:true})),check:vi.fn(async()=>({currentVersion:'0.1.0',phase:'current',automatic:true})),setAutomatic:vi.fn(async automatic=>({automatic,currentVersion:'0.1.0',phase:'idle'})),openRelease:vi.fn(async()=>({opened:true}))};
  const fetchImpl=vi.fn(async()=>{throw Error('Offline fixture');});
- const setup=autoSync=>startPortableReader({assetsDir:path.resolve('build/reader-qwen-translation-stage'),libraryRoot:root,apiPort:0,webPort:0,autoSync,enableLocalQwen:true,softwareUpdates:software,localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})},fetchImpl,sessionToken});
+ const setup=autoSync=>startPortableReader({assetsDir:path.resolve('build/reader'),libraryRoot:root,apiPort:0,webPort:0,autoSync,enableReaderPreviews:true,softwareUpdates:software,localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})},fetchImpl,sessionToken});
  const call=async(method,url,body)=>{const response=await fetch(server.webOrigin+'/api/vantilo-updates/'+url,{method,headers:{'Content-Type':'application/json',cookie:sessionCookie},...(body?{body:JSON.stringify(body)}:{})});return {code:response.status,value:await response.json()};};
  try{server=await setup(false);expect((await call('PUT','magazines',{automatic:false})).value.enabled).toBe(false);expect(software.setAutomatic).not.toHaveBeenCalled();await server.close();server=null;
   server=await setup(true);expect((await call('GET','magazines')).value.enabled).toBe(false);expect(fetchImpl).not.toHaveBeenCalled();

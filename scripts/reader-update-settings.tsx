@@ -33,7 +33,7 @@ function VantiloUpdateSettings() {
   return <div className="settings-grid vantilo-update-settings" aria-label="更新设置">
     <section className="settings-card">
       <div className="settings-card-heading"><div><span>Reading environment</span><h2>阅读环境设置</h2></div></div>
-      <p>查看本地千问模型和阅读服务的准备状态。</p>
+      <p>检查系统词典，了解如何配置云端或局域网 API。</p>
       <button type="button" className="primary-button" onClick={()=>window.parent.postMessage({type:'vantilo:open-environment-settings'},'*')}>阅读环境设置</button>
     </section>
     <section className="settings-card" data-testid="magazine-update-settings">

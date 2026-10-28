@@ -30,7 +30,8 @@ const api = await build({ stdin: {
 }, outfile: path.join(output, 'api.cjs'), bundle: true, platform: 'node', target: 'node22', format: 'cjs', metafile: true,
   plugins: [{ name: 'vantilo-reader-api', setup(builder) { builder.onLoad({ filter: /\.ts$/ }, async args => {
     if (!args.path.startsWith(source + '/src/')) return;
-    return { contents: adaptReaderSource(await fs.readFile(args.path, 'utf8'), args.path), loader: 'ts' };
+    // Match the release API: importing an EPUB must not start background AI translation.
+    return { contents: adaptReaderSource(await fs.readFile(args.path, 'utf8'), args.path, {catalogPreview:true}), loader: 'ts' };
   }); } }],
   legalComments: 'eof', minify: true, logLevel: 'info',
 });

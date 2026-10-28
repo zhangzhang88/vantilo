@@ -95,8 +95,9 @@ describe('portable Reader process ownership',()=>{
     expect(customApi).toHaveBeenCalledWith('get',{},undefined);
     expect(child.postMessage).toHaveBeenCalledWith({type:'custom-api-result',requestId:getId,ok:true,result:{configured:true,hasApiKey:true}});
     const completeId='30000000-0000-4000-8000-000000000002';
-    child.emit('message',{type:'custom-api',requestId:completeId,operation:'complete',instruction:'Translate',input:'source'});
+    child.emit('message',{type:'custom-api',requestId:completeId,operation:'complete',instruction:'Translate',input:'source',task:'word-context',profileId:'30000000-0000-4000-8000-000000000003'});
     await new Promise(resolve=>setImmediate(resolve));expect(observedSignal?.aborted).toBe(false);
+    expect(customApi).toHaveBeenCalledWith('complete',{instruction:'Translate',input:'source',task:'word-context',profileId:'30000000-0000-4000-8000-000000000003'},expect.any(AbortSignal));
     child.emit('message',{type:'custom-api-cancel',requestId:completeId});await new Promise(resolve=>setImmediate(resolve));
     expect(observedSignal?.aborted).toBe(true);expect(rejectCall).toBeTypeOf('function');await supervisor.stop();
   });

@@ -3,6 +3,7 @@ node_modules
 dist/
 build/
 out/
+/out
 native/qwen-health/.build
 coverage/
 test-results/

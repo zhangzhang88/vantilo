@@ -50,7 +50,7 @@ it('starts fetching four magazines with no clicks or model calls',async()=>{
   const relative=decodeURIComponent(url.pathname.split('/contents/')[1]);const i=dirs.indexOf(relative.split('/')[0]);if(i<0)throw Error('Unexpected source');
   const prefix=dirs[i]+'/2026.10.31',name=names[i]+'.2026.10.31.epub';return new Response(JSON.stringify(relative.includes('/')?[{type:'file',name,path:prefix+'/'+name,download_url:'https://raw.githubusercontent.com/hehonghui/awesome-english-ebooks/master/'+prefix+'/'+name}]:[{type:'dir',name:'2026.10.31',path:prefix}]));
  });
- try{service=await startPortableReader({assetsDir:path.resolve('build/reader-qwen-translation-stage'),libraryRoot:root,apiPort:0,webPort:0,autoSync:true,enableLocalQwen:true,runAi,fetchImpl,onSync:state=>states.push(state),localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})},sessionToken});
+ try{service=await startPortableReader({assetsDir:path.resolve('build/reader'),libraryRoot:root,apiPort:0,webPort:0,autoSync:true,enableReaderPreviews:true,runAi,fetchImpl,onSync:state=>states.push(state),localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})},sessionToken});
   await service.sync.pending;expect((await fetch(service.webOrigin+'/api/issues',{headers:{cookie:sessionCookie}}).then(r=>r.json()))).toHaveLength(4);expect(states.at(-1)).toMatchObject({status:'idle',importedCount:4,enabled:true});expect(runAi).not.toHaveBeenCalled();
   const calls=fetchImpl.mock.calls.length;await service.close();service=null;await new Promise(r=>setTimeout(r,20));expect(fetchImpl).toHaveBeenCalledTimes(calls);
  }finally{await service?.close();await rm(root,{recursive:true,force:true});}
