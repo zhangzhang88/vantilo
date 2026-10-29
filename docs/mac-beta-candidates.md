@@ -6,23 +6,23 @@ Intel 设备使用自定义云端或局域网 API；网络、API 服务与模型
 
 ## 本机构建前提
 
-`npm run build:mac:universal` 需要 Apple Silicon macOS、可用的本地 Magazine Reader 源码和依赖、网络访问，以及 Xcode Command Line Tools。脚本会下载与项目 Electron 版本匹配的官方 x64 Electron 和与 Reader ARM 版一致版本的 Codex x64 包，并在仓库忽略的 `build/` 目录中交叉编译 Intel 系统词典辅助程序。它**不是**从公开仓库即可独立重现的发行流水线；Reader 源码和部分依赖仍来自本机路径。源码、上游依赖的许可证、来源与版本必须在正式发布前核对。
+`npm run build:mac:universal` 需要 Apple Silicon macOS、Vantilo npm workspace 依赖、网络访问，以及 Xcode Command Line Tools。Reader 源码与 ARM Codex 运行时从仓库内 `packages/reader/` 解析；脚本会复用已校验的 Electron/Codex 输入，并在仓库忽略的 `build/` 目录中交叉编译 Intel 系统词典辅助程序。原始外部 Magazine Reader checkout 不再是构建输入。项目所有者已确认 Reader 自有源码版权；第三方依赖、外部贡献、媒体和在线服务仍须分别审查。源码本身未添加或选择 Vantilo 开源许可证。
 
-构建成功后，单一安装包和 SHA-256 文件位于 `out/`。构建拒绝覆盖同名已有产物；候选架构包和通用包的中间文件保留在忽略的 `build/` 目录，供复查。
+`npm run build:mac:beta` 是底层双架构候选构建脚本：它将 arm64/x64 候选 ZIP、sidecar 与报告写入 `VANTILO_BETA_ROOT` 指定的新目录（应在外置工作副本的 `build/` 下），且拒绝覆盖已存在的目录。它不是最终 Universal 发行包入口。`npm run build:mac:universal` 再生成 Universal ZIP、sidecar 和报告到版本化输出目录；可通过绝对路径 `VANTILO_UNIVERSAL_OUTPUT_ROOT` 指向一个新建、经核验的外置输出命名空间，避免触碰既有 ZIP。Universal 发行不生成或上传 DMG。
 
 构建时需要设置两个绝对路径：
 
 - `VANTILO_BETA_ROOT`：仅直接运行底层双架构候选构建脚本时使用，必须是仓库忽略的 `build/` 子目录或 `/private/tmp` 下尚不存在的目录。
 - `VANTILO_BETA_INPUTS`：仅直接运行底层候选构建脚本时使用，含 Electron 双架构归档、Intel Codex 和 Intel 系统词典辅助程序。通用包入口会在仓库 `build/universal-inputs/` 中自动准备这些输入。
 
-构建过程只允许从专用清单复制四种默认杂志的候选文件，不复制个人书库或模型权重。应用所有者已确认本人拥有或已取得四种杂志随应用分发和获取新刊的权利；这项确认未附书面材料，也未独立核验。候选清单必须记录准确的确认来源，不能把它描述为已核验书面授权。
+源码中的 Universal 候选流程默认不复制任何 seed；主进程仅在 packaged Reader 资源确有 seed manifest 时才启用 seed 初始化。若旧的 `build/reader/seed` 存在，Reader build 会失败并要求人工检查，不会自动删除或纳入包。构建会拒绝包含 EPUB 条目的最终 ZIP，并在报告中记录 `defaultMagazineSeedIncluded: false` 与 `bundledEpubCount: 0`。必须验证无 seed 首次启动和用户导入合成 fixture 的流程。四种默认杂志的既有权利声明未独立核验，因此不随包分发；不得复制个人书库或模型权重。项目所有者已单独确认 `assembly-typing-game.tsx` 中 Worm 项目的布局/键盘生命周期代码属于其版权并授权公开发布；该确认不涵盖任何第三方依赖或外部媒体素材。
 
 ## 验收与发布边界
 
 - 通用候选包应同时检查 arm64 与 x86_64 切片、签名完整性和安装包校验值，并分别在两种芯片的真实设备上验收安装和主要功能。
 - Intel 的 Codex 与系统词典原生程序、模型选择、段落翻译、点词、取消和异常恢复必须在 Intel 设备实测；两种架构均需验证已配置的 API 服务。
 - Reader 的会话认证、合成 EPUB 流程和隔离的助手通道需验证；真实账号或真实模型测试须单独说明，不能从模拟测试推断。
-- 候选包使用 ad-hoc 签名，未经过 Developer ID 签名和 Apple 公证。测试者可能需要根据 macOS 提示确认打开。
+- 候选包使用 ad-hoc 签名，未经过 Developer ID 签名和 Apple 公证。测试者可能需要根据 macOS 提示确认打开。Universal 公共交付只包括 ZIP、SHA-256 sidecar 和构建报告，不生成、不上传 DMG。
 - 软件更新当前只检查 GitHub 的稳定 Release 并打开发布页面，不自动安装；预发布版不触发稳定版更新提示。
 - 检查源码和安装包中的第三方许可、隐私数据与构建内容，建立可回滚 Git 基线之后，才适合准备公开 Release。
 

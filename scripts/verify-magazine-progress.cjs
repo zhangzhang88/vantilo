@@ -1,6 +1,8 @@
 // Test magazine issue progress using synthetic issue records and the built Reader UI.
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path');
-const {chromium}=require(require.resolve('playwright',{paths:[process.env.VANTILO_MAGAZINE_READER_ROOT || path.resolve(__dirname,'../../magazine-reader')]}));
+const {createRequire}=require('node:module');
+const readerRequire=createRequire(path.resolve(__dirname,'../packages/reader/package.json'));
+const {chromium}=readerRequire('playwright');
 const root=process.env.VANTILO_READER_WEB_ROOT?path.resolve(process.env.VANTILO_READER_WEB_ROOT):path.resolve(__dirname,'../build/reader/web');
 const issueId='economist:2026-10-24';
 const articles=Array.from({length:20},(_,i)=>({id:'article-'+i,issueId,publicationId:'economist',href:`a${i}.xhtml`,section:'Politics',kicker:null,title:`Synthetic article ${i}`,subtitle:null,author:null,publishedAt:null,sourceUrl:null,bodyText:'This is a synthetic article.\n\nThis is another paragraph.',wordCount:12,status:null,analysis:null}));

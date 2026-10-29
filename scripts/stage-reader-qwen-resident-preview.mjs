@@ -10,8 +10,8 @@ const entry=path.join(repo,'electron/portable-reader-entry.cjs');
 const target=path.join(stage,'portable-reader-entry.cjs');
 const body=await fs.readFile(entry,'utf8');
 const anchors=[
-  ["seedDir: path.join(process.argv[2], 'seed'),",
-   "seedDir: path.join(process.argv[2], 'seed'), apiPort: 5194, webPort: 5195, autoSync: true,"],
+  ["seedDir: process.argv[7] === '--no-seed' ? undefined : process.argv[7] || path.join(process.argv[2], 'seed'),",
+   "seedDir: process.argv[7] === '--no-seed' ? undefined : process.argv[7] || path.join(process.argv[2], 'seed'), apiPort: 5194, webPort: 5195, autoSync: true,"],
 ];
 let patched=body;
 for(const [a,b] of anchors) {

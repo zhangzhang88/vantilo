@@ -5,6 +5,7 @@ import {adaptScopedAssistant} from './reader-assistant-adapter.mjs';
 import {adaptNativeDictionaryWordDetail} from './reader-word-detail-adapter.mjs';
 import {adaptQwenWordDetail} from './reader-qwen-detail-adapter.mjs';
 import {adaptReaderBackup} from './reader-backup-adapter.mjs';
+import {adaptReaderGrowthBridge} from './reader-growth-adapter.mjs';
 import ts from 'typescript';
 import postcss from 'postcss';
 import { readFileSync } from 'node:fs';
@@ -18,6 +19,8 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
   if (catalogPreview) source=adaptCatalogPreview(source,filename);
   if (translationPreview) source=adaptTranslationPreview(source,filename);
   source=adaptChineseAudioPlayer(source,filename);
+  // Catalog owns exact JSX seams in App.tsx; apply the growth additions only after it.
+  source = adaptReaderGrowthBridge(source, filename);
   if (filename.endsWith('/frontend/codex-prep-panel.tsx')) return adaptScopedAssistant(source, filename);
   if (filename.endsWith('/frontend/reader-preferences.ts')) {
     const changes = [
@@ -429,7 +432,7 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
   if (filename.endsWith('/frontend/App.tsx') && source.includes('reader-toolbar-actions')) {
     const toolbar = '        <div className="reader-toolbar-actions">';
     if (source.split(toolbar).length !== 2) throw new Error('Reader toolbar discovery insertion seam changed');
-    source = source.replace(toolbar, toolbar + `\n          <button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery"}, "*")}>▧ <span>发现好书</span></button>`);
+    source = source.replace(toolbar, toolbar + `\n          <button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}>▧ <span>发现好书</span></button>`);
   }
   if (filename.endsWith('/frontend/App.tsx') && source.includes('function BookContinueCard(')) {
     const signature = 'function BookContinueCard({ book, item, onContinue }: { book: BookSummary; item: ReadingEntryView; onContinue: () => void }) {';
@@ -458,7 +461,7 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
   if (filename.endsWith('/frontend/global-navigation.tsx')) {
     const nav = '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}</div>';
     if (source.split(nav).length !== 2) throw new Error('Global navigation discovery insertion seam changed');
-    source = source.replace(nav, '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}<button className="global-nav-link vantilo-discovery-link" type="button" aria-label="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery"}, "*")}><span>发现好书</span></button></div>');
+    source = source.replace(nav, '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}<button className="global-nav-link vantilo-discovery-link" type="button" aria-label="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}><span>发现好书</span></button></div>');
   }
   if (filename.endsWith('/frontend/App.tsx') && qwenPreview) {
     source = source.replaceAll('释义与语境：统一 Agent · AI 生成，请结合原文核对',

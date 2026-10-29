@@ -1,0 +1,37 @@
+/* Last-row actions extend below the text; reserve space so they don't create a vertical scroll area. */
+.book-table-scroll { max-width: 100%; overflow-x: auto; margin: 1.5em 0 1.8em; padding: 2px 2px 28px; }
+.book-table-scroll:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 3px; }
+.book-table { border-collapse: collapse; width: 100%; color: inherit; font: inherit; line-height: 1.55; text-align: left; }
+.book-table caption { text-align: left; padding: 0 0 .9em; font-weight: 500; }
+.book-table :is(td, th) { padding: .4em .9em .4em 0; vertical-align: top; min-width: 4.5em; }
+.book-table :is(td, th):last-child { padding-right: 0; }
+.book-table th { font-weight: 650; }
+.book-table .reading-paragraph-block { margin: 0; }
+.book-table .reading-paragraph-block + .reading-paragraph-block { margin-top: .3em; }
+.book-table .reading-paragraph-block > p { font-size: 1em; line-height: 1.55; }
+.book-table .reading-paragraph-block > :is(.paragraph-translate-button,.paragraph-note-button,.paragraph-note-marker) { position: absolute; top: calc(100% - 2px); right: 0; z-index: 4; display: grid; place-items: center; margin: 0; width: 26px; height: 24px; font-size: 11px; line-height: 1; color: var(--theme-muted); background: var(--theme-surface); }
+.book-table .reading-paragraph-block > .paragraph-translate-button { right: 28px; }
+.book-table .reading-paragraph-block > .paragraph-note-marker { right: 56px; }
+.book-table .reading-paragraph-block > :is(.paragraph-translate-button,.paragraph-note-button) { opacity: 0; pointer-events: none; }
+.book-table .reading-paragraph-block:is(:hover,:focus-within) > :is(.paragraph-translate-button,.paragraph-note-button),
+.book-table .reading-paragraph-block > .paragraph-translate-button.is-active { opacity: 1; pointer-events: auto; }
+.book-table .translation-panel { padding: 10px; margin-top: 8px; min-width: 9em; font-size: .86em; }
+.book-table .translation-label { flex-wrap: wrap; gap: 4px; }
+.book-table img { max-width: 100%; height: auto; }
+.book-table img.book-table-rule-image { display: inline-block; width: 3.3em; height: 1px; max-width: none; margin-bottom: .25em; vertical-align: baseline; }
+html[data-color-mode="dark"] .book-table-rule-image { filter: invert(1); }
+.book-table .chinese-reading-paragraph { padding: 0; margin: 0; border: 0; border-radius: 0; }
+.book-table .chinese-paragraph-play { position: absolute; left: auto; right: 0; top: calc(100% - 2px); z-index: 4; width: 22px; height: 24px; background: var(--theme-surface); }
+.book-table .chinese-reading-placeholder { min-height: 1.5em; }
+@media (pointer: coarse) {
+  .book-table :is(td,th,caption) { padding-bottom: 28px; }
+  .book-table .reading-paragraph-block > :is(.paragraph-translate-button,.paragraph-note-button) { opacity: 1; pointer-events: auto; }
+}
+@media (max-width: 640px) {
+  .book-table { font-size: .92em; }
+  .book-table :is(td,th) { padding-right: .7em; }
+  .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode):has(.book-table) .reader-toolbar { grid-template-columns: minmax(0,1fr) minmax(0,3fr); gap: 8px; }
+  .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode):has(.book-table) .reader-toolbar-left { min-width: 0; }
+  .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode):has(.book-table) .reader-toolbar-actions { min-width: 0; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .reader-page-shell:has(.book-table) .reader-toolbar-actions .toolbar-button { flex-shrink: 0; }
+}

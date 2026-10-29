@@ -1,4 +1,4 @@
-// Compile Reader entry points; separately prepare the explicitly authorized offline EPUB library.
+// Compile Reader entry points and record provenance/notices; personal library seeding is a separate opt-in task.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -11,12 +11,20 @@ import parcelMacros from 'unplugin-parcel-macros';
 import {sharedReaderComposerPlugin} from './reader-assistant-adapter.mjs';
 import { adaptReaderSource, readerVariantPlugin } from './reader-variant.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
+import {findPackageRoot} from './package-root-resolution.mjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = readerSourceRoot;
 const output = path.join(repo, 'build/reader');
+const legacySeedPath = path.join(output, 'seed');
+try {
+  await fs.lstat(legacySeedPath);
+  throw new Error('Reader build output contains a legacy seed directory; inspect it manually and move it out of the build tree before rebuilding');
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
 const requireReader = createRequire(path.join(source, 'package.json'));
 const readerPackage = JSON.parse(await fs.readFile(path.join(source, 'package.json'), 'utf8'));
-if (readerPackage.name !== 'magazine-reader') throw new Error('Not the expected original Reader project');
+if (readerPackage.name !== '@vantilo/reader') throw new Error('Not Vantilo\'s embedded Reader workspace');
 await fs.mkdir(output, { recursive: true });
 const { build: buildWeb } = await import(pathToFileURL(requireReader.resolve('vite')).href);
 const { default: react } = await import(pathToFileURL(requireReader.resolve('@vitejs/plugin-react')).href);
@@ -37,17 +45,18 @@ const api = await build({ stdin: {
 });
 // Keep code provenance and dependency notices; seed content has its own manifest, never source config/data.
 const inputs = Object.keys(api.metafile.inputs).filter(input => input !== 'vantilo-reader-api-entry.ts');
-const provenance = { sourceProject: readerPackage.name, version: readerPackage.version,
-  sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(),
+const provenance = { sourceProject: readerPackage.sourceProject, version: readerPackage.version,
+  sourceCommit: readerPackage.sourceCommit,
   sourceFiles: {}, builtAt: new Date().toISOString(),
 };
 const packages = new Set();
 for (const input of inputs) {
   const filename = path.resolve(repo, input);
   if (filename.startsWith(source + '/src/')) provenance.sourceFiles[path.relative(source, filename)] = createHash('sha256').update(await fs.readFile(filename)).digest('hex');
-  let dir = path.dirname(filename);
-  while (dir.includes('node_modules')) {
-    try { await fs.access(path.join(dir, 'package.json')); packages.add(dir); break; } catch { dir = path.dirname(dir); }
+  if (filename.includes(`${path.sep}node_modules${path.sep}`)) {
+    const packageRoot = await findPackageRoot(filename);
+    if (!packageRoot) throw new Error(`Unable to identify bundled third-party package: ${path.relative(repo, filename)}`);
+    packages.add(packageRoot);
   }
 }
 // Frontend production dependencies also need attribution.
@@ -61,6 +70,7 @@ for (const name of Object.keys(readerPackage.dependencies)) {
 let notices = 'Compiled Reader code attribution. Offline reading content is inventoried separately by seed/manifest.json. Personal records, credentials and local provider settings are excluded.\n';
 for (const dir of [...packages].sort()) {
   const pkg = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8'));
+  if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string') throw new Error(`Third-party package identity is incomplete: ${dir}`);
   notices += `\n===== ${pkg.name}@${pkg.version} (${pkg.license || 'see notice'}) =====\n`;
   for (const name of await fs.readdir(dir)) if (/^(licen[cs]e|copying|notice)(\.|$)/i.test(name)) {
     const file = path.join(dir, name);
@@ -85,5 +95,3 @@ if (process.platform === 'darwin') {
     '-o', path.join(nativeDir, 'vantilo-dictionary'),
   ], { cwd: repo, stdio: 'inherit', timeout: 120000 });
 }
-
-await import('./prepare-reader-library.mjs');

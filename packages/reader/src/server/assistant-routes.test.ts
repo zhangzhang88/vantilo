@@ -1,0 +1,55 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { expect, it, vi } from "vitest";
+import { buildServer } from "./app.js";
+import { CodexAuthService } from "./services/codex-auth-service.js";
+import { CodexPrepRuntime } from "./services/codex-prep-runtime.js";
+import { visualBookEpub } from "../../tests/fixtures/visual-book-epub.js";
+it("guards local assistant routes, resolves local catalogs, streams and restores isolated history", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mr-assistant-api-"));
+  const token = vi.spyOn(CodexAuthService.prototype, "accessToken").mockResolvedValue("synthetic-token");
+  const prompts: string[] = [];
+  const run = vi.spyOn(CodexPrepRuntime.prototype, "run").mockImplementation(async (input, _token, _cwd, _binary, options) => {
+    prompts.push(input);
+    if (input.startsWith("ASSISTANT_RESEARCH_PLAN_V1")) return '{"reads":[{"id":"S1","start":0,"count":2}]}';
+    options?.onDelta?.("真实目录"); return "真实目录中的阅读建议。";
+  });
+  const options = { projectRoot: root, serveFrontend: false, aiProviderEnv: {}, bookTocChineseProvider: null, readerGuideProvider: null, sectionTranslationProvider: null };
+  let app = await buildServer(options);
+  const scope = encodeURIComponent('{"kind":"books"}'); const url = `/api/prep/assistant/chat?scope=${scope}`, history = `/api/prep/assistant/history?scope=${scope}`;
+  try {
+    const imported = await app.inject({ method: "POST", url: "/api/books/import?filename=Fixture.epub&categoryId=psychology", headers: { "content-type": "application/epub+zip" }, payload: await visualBookEpub() }); expect(imported.statusCode).toBe(201);
+    for (const currentParagraphIndex of [-1, 1.5, "1"]) expect((await app.inject({ method: "POST", url, payload: { message: "Explain", currentParagraphIndex } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url, headers: { origin: "https://other.example" }, payload: { message: "Hi" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: history, remoteAddress: "10.0.0.2" })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url, payload: { message: "" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/api/prep/assistant/history?scope=null" })).statusCode).toBe(400);
+    const missingScope = encodeURIComponent('{"kind":"chapter","bookId":"missing","chapterId":"missing"}');
+    expect((await app.inject({ method: "POST", url: `/api/prep/assistant/chat?scope=${missingScope}`, payload: { message: "Explain" } })).statusCode).toBe(400);
+    expect(run).not.toHaveBeenCalled();
+    const response = await app.inject({ method: "POST", url, headers: { accept: "application/x-ndjson" }, payload: { message: "Recommend", source: "FORGED SOURCE" } });
+    expect(response.headers["content-type"]).toContain("x-ndjson");
+    expect(response.headers["x-assistant-source"]).toMatch(/^[a-f0-9]{64}$/);
+    expect(response.body).toContain('"type":"delta"'); expect(response.body).toContain('"type":"done"');
+    expect(prompts[0]).toContain("心理学"); expect(prompts[0]).not.toContain("FORGED SOURCE");
+    const savedHistory = await app.inject({ method: "GET", url: history });
+    expect(savedHistory.json()).toHaveLength(2); expect(savedHistory.headers["x-assistant-source"]).toBe(response.headers["x-assistant-source"]);
+    expect((await app.inject({ method: "GET", url: `/api/prep/assistant/history?scope=${encodeURIComponent('{"kind":"magazines"}')}` })).json()).toEqual([]);
+    const importedBook = { id: imported.json().bookId };
+    const record = (await app.inject({ method: "GET", url: `/api/books/${encodeURIComponent(importedBook.id)}` })).json();
+    const chapterScope = encodeURIComponent(JSON.stringify({ kind: "chapter", bookId: record.id, chapterId: record.chapters[0].id }));
+    run.mockImplementation(async (input, _token, _cwd, _binary, options) => { prompts.push(input); options?.onDelta?.("解释"); return "依据第一段。[P1][P999]"; });
+    const callsBefore = run.mock.calls.length;
+    const currentReply = await app.inject({ method: "POST", url: `/api/prep/assistant/chat?scope=${chapterScope}`, headers: { accept: "application/x-ndjson" }, payload: { message: "解释这一段", currentParagraphIndex: 0 } });
+    const done = currentReply.body.trim().split("\n").map(line => JSON.parse(line)).find(event => event.type === "done");
+    expect(done).toMatchObject({ answer: "依据第一段。", paragraphIndexes: [0] });
+    expect(run.mock.calls.length - callsBefore).toBe(1);
+    expect(prompts.at(-1)).toContain("Current reading paragraph: P1");
+    expect((await app.inject({ method: "GET", url: `/api/prep/assistant/history?scope=${chapterScope}` })).json()[1].paragraphIndexes).toEqual([0]);
+    await app.close(); app = await buildServer(options);
+    expect((await app.inject({ method: "GET", url: history })).json()).toHaveLength(2);
+    expect((await app.inject({ method: "DELETE", url: history })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: history })).json()).toEqual([]);
+  } finally { await app.close(); token.mockRestore(); run.mockRestore(); await rm(root, { recursive: true, force: true }); }
+});

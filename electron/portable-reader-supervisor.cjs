@@ -1,9 +1,9 @@
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 class PortableReaderSupervisor {
-  constructor({ utilityProcess, assetsDir, libraryRoot, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
+  constructor({ utilityProcess, assetsDir, libraryRoot, seedDir, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
     if(typeof installSessionCookie!=='function'||typeof clearSessionCookie!=='function')throw new Error('Reader session authentication is not configured');
-    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
+    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, seedDir, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
     this.webOrigin = 'http://127.0.0.1:5175';
     this.apiOrigin = 'http://127.0.0.1:5174';
     this.status = 'idle'; this.error = null; this.child = null; this.pending = null; this.stopping = false; this.failedHealthChecks = 0;
@@ -55,7 +55,7 @@ class PortableReaderSupervisor {
       this.rejectStartup = fail;
       let child;
       try {
-        child = this.utilityProcess.fork(this.entryPath, [this.assetsDir, this.libraryRoot, this.enableLocalQwen ? 'preview-local-qwen' : 'disabled', this.enableTranslation ? 'reader-translation' : 'disabled', this.enableReaderPreviews ? 'reader-previews' : 'disabled'], {
+        child = this.utilityProcess.fork(this.entryPath, [this.assetsDir, this.libraryRoot, this.enableLocalQwen ? 'preview-local-qwen' : 'disabled', this.enableTranslation ? 'reader-translation' : 'disabled', this.enableReaderPreviews ? 'reader-previews' : 'disabled', this.seedDir || '--no-seed'], {
           serviceName: 'Vantilo Reader', stdio: 'ignore',
           // The installed app never inherits developer AI keys, GitHub tokens or local provider configuration.
           env: { PATH: process.env.PATH || '/usr/bin:/bin', LANG: process.env.LANG || 'en_US.UTF-8', TMPDIR: process.env.TMPDIR || '/tmp' },

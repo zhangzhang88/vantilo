@@ -8,6 +8,8 @@ const API = 'https://gutendex.com/books/';
 const SIZE_LIMIT = 64 * 1024 * 1024;
 const TIMEOUT = 25000;
 const ATOM_NS = 'http://www.w3.org/2005/Atom';
+const DCTERMS_NS = 'http://purl.org/dc/terms/';
+const OPENSEARCH_NS = 'http://a9.com/-/spec/opensearch/1.1/';
 const OFFICIAL = 'https://www.gutenberg.org';
 const isEpubLink = (value, id) => typeof value === 'string' &&
   new RegExp('^https://www\\.gutenberg\\.org/ebooks/' + id + '\\.(?:epub3?\\.images|epub\\.noimages)$', 'i').test(value);
@@ -19,6 +21,26 @@ const isEpubRedirect = (value, id) => {
   } catch { return false; }
 };
 const stripHtml = value => String(value || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+function parseAtomFeed(xml, label, maxBytes) {
+  if (typeof xml !== 'string' || Buffer.byteLength(xml, 'utf8') > maxBytes) throw new Error(`${label}响应无效或过大`);
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error(`${label}包含不允许的 XML 声明`);
+  const errors = [];
+  const document = new DOMParser({ onError: (level, message) => {
+    if (level === 'error' || level === 'fatalError') errors.push(message);
+  } }).parseFromString(xml, 'application/xml');
+  const root = document.documentElement;
+  if (errors.length || !root || root.localName !== 'feed' || root.namespaceURI !== ATOM_NS) {
+    throw new Error(`${label}格式无效`);
+  }
+  return document;
+}
+function atomSubjects(entry) {
+  const values = [
+    ...Array.from(entry.getElementsByTagNameNS(DCTERMS_NS, 'subject')).map(node => node.textContent?.trim()),
+    ...Array.from(entry.getElementsByTagNameNS(ATOM_NS, 'category')).map(node => node.getAttribute('label') || node.getAttribute('term') || node.textContent?.trim())
+  ];
+  return [...new Set(values.filter(Boolean))];
+}
 function normalizeBook(book) {
   const formats = book.formats || {};
   const epub = Object.entries(formats).find(([type, url]) => type.toLowerCase().includes('epub') && isEpubLink(url, book.id));
@@ -37,8 +59,7 @@ function createGutenbergService({ fetchImpl = fetch, fetchBookList = async () =>
   async function officialDetail(id) {
     const response = await get(`${OFFICIAL}/ebooks/${id}.opds`, 'application/atom+xml');
     const xml = await response.text();
-    if (xml.length > 2 * 1024 * 1024) throw new Error('官方书目响应过大');
-    const document = new DOMParser().parseFromString(xml, 'application/xml');
+    const document = parseAtomFeed(xml, '官方书目', 2 * 1024 * 1024);
     const entries = Array.from(document.getElementsByTagNameNS(ATOM_NS, 'entry'));
     const links = entries.flatMap(entry => Array.from(entry.getElementsByTagNameNS(ATOM_NS, 'link')));
     const epubLinks = links.filter(link => link.getAttribute('type') === 'application/epub+zip' &&
@@ -53,7 +74,10 @@ function createGutenbergService({ fetchImpl = fetch, fetchBookList = async () =>
       .map(author => author.getElementsByTagNameNS(ATOM_NS, 'name')[0]?.textContent?.trim()).filter(Boolean);
     const cover = links.find(link => link.getAttribute('type') === 'image/jpeg' &&
       /^https:\/\/www\.gutenberg\.org\/cache\/epub\/\d+\/pg\d+\.cover\.(?:small|medium)\.jpg$/i.test(link.getAttribute('href') || ''));
-    return { id, title, authors, subjects: [], bookshelves: [], languages: ['en'], downloadCount: 0,
+    const itemId = item.getElementsByTagNameNS(ATOM_NS, 'id')[0]?.textContent?.trim() || '';
+    const itemIdMatch = itemId.match(/^urn:gutenberg:(\d+):/) || itemId.match(/\/ebooks\/(\d+)\.opds$/);
+    if (!itemIdMatch || Number(itemIdMatch[1]) !== id) throw new Error('官方书目 ID 与请求不匹配');
+    return { id, title, authors, subjects: atomSubjects(item), bookshelves: [], languages: ['en'], downloadCount: 0,
       formats: ['application/epub+zip'], epubUrl: preferred.getAttribute('href'), coverUrl: cover?.getAttribute('href') || null,
       sourceUrl: `${OFFICIAL}/ebooks/${id}` };
   }
@@ -76,12 +100,38 @@ function createGutenbergService({ fetchImpl = fetch, fetchBookList = async () =>
   }
   async function search(raw) {
     const input = SearchInput.parse(raw);
-    const url = new URL(API); url.searchParams.set('page', String(input.page));
-    if (input.query) url.searchParams.set('search', input.query);
-    if (input.topic) url.searchParams.set('topic', input.topic);
-    const response = await get(url);
+    const searchTerm = [input.query, input.topic].map(value => value?.trim()).filter(Boolean).join(' ').slice(0, 120);
+    const url = new URL(OFFICIAL + '/ebooks/search.opds/');
+    if (searchTerm) url.searchParams.set('query', searchTerm);
+    url.searchParams.set('start_index', String((input.page - 1) * 25 + 1));
+    try {
+      const response = await get(url, 'application/atom+xml');
+      const xml = await response.text();
+      const doc = parseAtomFeed(xml, '官方在线书目', 4 * 1024 * 1024);
+      const entries = Array.from(doc.getElementsByTagNameNS(ATOM_NS, 'entry'));
+      const books = entries.map(entry => {
+        const idMatch = (entry.getElementsByTagNameNS(ATOM_NS, 'id')[0]?.textContent || '').match(/\/ebooks\/(\d+)\.opds(?:[?#]|$)/);
+        if (!idMatch) return null;
+        const id = Number(idMatch[1]);
+        const links = Array.from(entry.getElementsByTagNameNS(ATOM_NS, 'link'));
+        const epub = links.find(link => link.getAttribute('type') === 'application/epub+zip' && isEpubLink(link.getAttribute('href'), id));
+        const authors = Array.from(entry.getElementsByTagNameNS(ATOM_NS, 'author')).map(a => a.getElementsByTagNameNS(ATOM_NS, 'name')[0]?.textContent?.trim()).filter(Boolean);
+        const contentAuthor = entry.getElementsByTagNameNS(ATOM_NS, 'content')[0]?.textContent?.trim();
+        const title = entry.getElementsByTagNameNS(ATOM_NS, 'title')[0]?.textContent?.trim() || '';
+        const cover = links.find(link => link.getAttribute('type') === 'image/jpeg' && /^https:\/\/www\.gutenberg\.org\/cache\/epub\/\d+\/pg\d+\.cover\.(?:small|medium)\.jpg$/i.test(link.getAttribute('href') || ''));
+        return { id, title, authors: authors.length ? authors : (contentAuthor && contentAuthor.length <= 180 ? [contentAuthor] : []), subjects: atomSubjects(entry), bookshelves: [], languages: ['en'], downloadCount: 0, formats: epub ? ['application/epub+zip'] : [], epubUrl: epub?.getAttribute('href') || null, coverUrl: cover?.getAttribute('href') || null, sourceUrl: OFFICIAL + '/ebooks/' + id };
+      }).filter(x => x?.title);
+      const hasNext = Array.from(doc.getElementsByTagNameNS(ATOM_NS, 'link')).some(link => link.getAttribute('rel') === 'next');
+      const totalResults = Number(doc.getElementsByTagNameNS(OPENSEARCH_NS, 'totalResults')[0]?.textContent);
+      return { count: Number.isFinite(totalResults) && totalResults > 0 ? totalResults : books.length, next: hasNext ? input.page + 1 : null, previous: input.page > 1 ? input.page - 1 : null, books };
+    } catch { /* Gutendex remains a resilient fallback when official OPDS search is unavailable or invalid. */ }
+    const fallback = new URL(API); fallback.searchParams.set('page', String(input.page));
+    if (input.query) fallback.searchParams.set('search', input.query);
+    if (input.topic) fallback.searchParams.set('topic', input.topic);
+    const response = await get(fallback);
     const data = await response.json();
-    return { count: Number(data.count) || 0, next: typeof data.next === 'string' && data.next.startsWith(API) ? input.page + 1 : null, previous: input.page > 1 ? input.page - 1 : null, books: (data.results || []).map(normalizeBook) };
+    if (!data || !Array.isArray(data.results)) throw new Error('在线书目数据格式无效');
+    return { count: Number(data.count) || 0, next: typeof data.next === 'string' && data.next.startsWith(API) ? input.page + 1 : null, previous: input.page > 1 ? input.page - 1 : null, books: data.results.map(normalizeBook) };
   }
   async function detail(raw) {
     const { id } = DetailInput.parse(raw);

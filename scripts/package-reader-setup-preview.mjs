@@ -107,8 +107,8 @@ function previewOnlyOverrides(source,file) {
     return source;
   }
   if(short==='portable-reader-entry.cjs') {
-    source=exact("seedDir: path.join(process.argv[2], 'seed'),",
-      "seedDir: path.join(process.argv[2], 'seed'), apiPort: "+previewApiPort+", webPort: "+previewWebPort+", autoSync: "+isQwenPreview+",");
+    source=exact("seedDir: process.argv[7] === '--no-seed' ? undefined : process.argv[7] || path.join(process.argv[2], 'seed'),",
+      "seedDir: process.argv[7] === '--no-seed' ? undefined : process.argv[7] || path.join(process.argv[2], 'seed'), apiPort: "+previewApiPort+", webPort: "+previewWebPort+", autoSync: "+isQwenPreview+",");
     if(!isQwenPreview)source=exact("if (data?.type === 'sync' && service && !closing) void service.sync.check();",
       "// Preview deliberately disables manual and automatic network magazine synchronization.");
     return source;

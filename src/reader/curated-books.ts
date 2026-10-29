@@ -26,3 +26,11 @@ export const CURATED_BOOKS: CuratedBookBase[] = [
 import { CURATED_BOOK_COPY } from './curated-book-copy';
 export const CURATED_BOOKS_V01: CuratedBook[] = CURATED_BOOKS.map(book => ({...book,...CURATED_BOOK_COPY[book.id]}));
 export const BOOK_CATEGORIES = ['全部','冒险与生存','科幻','悬疑推理','自然与科学','历史与社会','成长故事'];
+export const ONLINE_CATEGORY_TOPICS: Record<string, string> = {
+  '冒险与生存': 'adventure survival',
+  '科幻': 'science fiction',
+  '悬疑推理': 'mystery detective',
+  '自然与科学': 'nature science',
+  '历史与社会': 'history society',
+  '成长故事': 'coming of age'
+};

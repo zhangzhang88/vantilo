@@ -47,6 +47,10 @@ describe('portable Reader process ownership',()=>{
     await expect(pending).rejects.toThrow(/安全会话/);
     expect(supervisor.getStatus().status).toBe('error');await supervisor.stop();
   });
+  it('disables stale development seed data unless a packaged seed is explicitly supplied',async()=>{
+    const {supervisor:development,children:devChildren}=fixture();const devStart=development.start();expect((development as any).utilityProcess.fork.mock.calls[0][1].at(-1)).toBe('--no-seed');devChildren[0].emit('message',{type:'ready'});await devStart;await development.stop();
+    const {supervisor:packaged,children}=fixture(undefined,{seedDir:'/app/reader/seed'});const packagedStart=packaged.start();expect((packaged as any).utilityProcess.fork.mock.calls[0][1].at(-1)).toBe('/app/reader/seed');children[0].emit('message',{type:'ready'});await packagedStart;await packaged.stop();
+  });
   it('starts only on demand, uses an isolated environment, reuses its own service and stops it',async()=>{
     const {supervisor,utilityProcess,children}=fixture();
     expect(utilityProcess.fork).not.toHaveBeenCalled();

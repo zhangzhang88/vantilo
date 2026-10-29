@@ -6,6 +6,14 @@ export type GutenbergBook = {
 export type GutenbergPage = { count: number; next: number | null; previous: number | null; books: GutenbergBook[] };
 export type GutenbergSearch = { query?: string; topic?: string; page?: number };
 const ROOT = 'https://gutendex.com/books/';
+function isEpubUrl(value: unknown, id: number): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.origin === 'https://www.gutenberg.org' && !url.search && !url.hash &&
+      new RegExp('^/ebooks/' + id + '\\.(?:epub3?\\.images|epub\\.noimages)$', 'i').test(url.pathname);
+  } catch { return false; }
+}
 function safeBook(value: unknown): GutenbergBook {
   if (!value || typeof value !== 'object') throw new Error('在线书目数据格式无效');
   const book = value as Record<string, unknown>;
@@ -15,7 +23,7 @@ function safeBook(value: unknown): GutenbergBook {
   const bookshelves = Array.isArray(book.bookshelves) ? book.bookshelves.map(String) : [];
   const formats = Array.isArray(book.formats) ? book.formats.map(String) : [];
   const id = book.id as number;
-  const epubUrl = typeof book.epubUrl === 'string' && /^https:\/\/www\.gutenberg\.org\/ebooks\/\d+\.epub3?\.images(?:-noimages)?$/i.test(book.epubUrl) ? book.epubUrl : null;
+  const epubUrl = isEpubUrl(book.epubUrl, id) ? book.epubUrl : null;
   const coverUrl = typeof book.coverUrl === 'string' && /^https:\/\/www\.gutenberg\.org\//.test(book.coverUrl) ? book.coverUrl : null;
   return { id, title: book.title, authors, subjects, bookshelves, languages: Array.isArray(book.languages) ? book.languages.map(String) : [], downloadCount: Number(book.downloadCount) || 0, formats, epubUrl, coverUrl, sourceUrl: `https://www.gutenberg.org/ebooks/${id}` };
 }
@@ -35,7 +43,7 @@ export async function searchGutenberg(input: GutenbergSearch = {}, fetchImpl: ty
   const nextUrl = typeof body.next === 'string' ? new URL(body.next) : null;
   const prevUrl = typeof body.previous === 'string' ? new URL(body.previous) : null;
   if ((nextUrl && nextUrl.origin + nextUrl.pathname !== ROOT) || (prevUrl && prevUrl.origin + prevUrl.pathname !== ROOT)) throw new Error('在线书目分页来源无效');
-  return adaptGutenbergPage({ count: body.count, next: nextUrl ? Number(nextUrl.searchParams.get('page')) : null, previous: prevUrl ? Number(prevUrl.searchParams.get('page')) : null, books: body.results?.map((item: any) => ({ id: item.id, title: item.title, authors: item.authors, subjects: item.subjects, bookshelves: item.bookshelves, languages: item.languages, downloadCount: item.download_count, formats: Object.keys(item.formats || {}), epubUrl: Object.entries(item.formats || {}).find(([type, address]) => /epub/i.test(type) && typeof address === 'string' && /^https:\/\/www\.gutenberg\.org\/ebooks\/\d+\.epub3?\.images(?:-noimages)?$/i.test(address))?.[1] || null, coverUrl: item.formats?.['image/jpeg'] || null })) });
+  return adaptGutenbergPage({ count: body.count, next: nextUrl ? Number(nextUrl.searchParams.get('page')) : null, previous: prevUrl ? Number(prevUrl.searchParams.get('page')) : null, books: body.results?.map((item: any) => ({ id: item.id, title: item.title, authors: item.authors, subjects: item.subjects, bookshelves: item.bookshelves, languages: item.languages, downloadCount: item.download_count, formats: Object.keys(item.formats || {}), epubUrl: Object.entries(item.formats || {}).find(([type, address]) => /epub/i.test(type) && isEpubUrl(address, item.id))?.[1] || null, coverUrl: item.formats?.['image/jpeg'] || null })) });
 }
 export async function getGutenbergDetail(id: number, fetchImpl: typeof fetch = fetch): Promise<GutenbergBook> {
   if (!Number.isSafeInteger(id) || id < 1) throw new Error('Gutenberg ID 无效');
@@ -43,5 +51,5 @@ export async function getGutenbergDetail(id: number, fetchImpl: typeof fetch = f
   if (!response.ok) throw new Error(`书籍详情暂不可用（${response.status}）`);
   const raw = await response.json() as any;
   if (raw.id !== id) throw new Error('书籍详情 ID 不匹配');
-  return safeBook({ id: raw.id, title: raw.title, authors: raw.authors, subjects: raw.subjects, bookshelves: raw.bookshelves, languages: raw.languages, downloadCount: raw.download_count, formats: Object.keys(raw.formats || {}), epubUrl: Object.entries(raw.formats || {}).find(([type, address]) => /epub/i.test(type) && typeof address === 'string' && /^https:\/\/www\.gutenberg\.org\/ebooks\/\d+\.epub3?\.images(?:-noimages)?$/i.test(address))?.[1] || null, coverUrl: raw.formats?.['image/jpeg'] });
+  return safeBook({ id: raw.id, title: raw.title, authors: raw.authors, subjects: raw.subjects, bookshelves: raw.bookshelves, languages: raw.languages, downloadCount: raw.download_count, formats: Object.keys(raw.formats || {}), epubUrl: Object.entries(raw.formats || {}).find(([type, address]) => /epub/i.test(type) && isEpubUrl(address, raw.id))?.[1] || null, coverUrl: raw.formats?.['image/jpeg'] });
 }

@@ -15,7 +15,8 @@ describe('Reader build adaptation', () => {
     const result = adaptReaderSource(frontend, '/source/src/frontend/App.tsx');
     expect(result).not.toMatch(/ScienceArticle|科普文章|id: "articles"/);
     expect(result).toContain('fetchBookLessons'); expect(result).toContain('电子书');
-    expect(adaptReaderSource('.science-article {color:red}.book {color:blue}@media(max-width:600px){.discovery-list{display:grid}}', '/source/src/frontend/styles.css')).toBe('.book {color:blue}');
+    const css=adaptReaderSource('.science-article {color:red}.book {color:blue}@media(max-width:600px){.discovery-list{display:grid}}', '/source/src/frontend/styles.css');
+    expect(css).toMatch(/^\.book \{color:blue\}/);expect(css).toContain('.vantilo-growth-home-card');expect(css).toContain('.reader-growth-timer');
   });
   it('keeps English words intact in sentence reading mode', () => {
     const source = '.reader-page-shell.is-sentence-mode .sentence-reading-block > p{overflow-wrap:anywhere}';
@@ -53,7 +54,7 @@ describe('Reader build adaptation', () => {
     }`;
     const result = adaptReaderSource(source, '/source/src/frontend/App.tsx');
     expect(result).toContain('className="toolbar-button vantilo-discovery-entry"');
-    expect(result).toContain('window.parent.postMessage({ type: "vantilo:open-discovery" }, "*")');
+    expect(result).toContain('type: "vantilo:open-discovery", token: (window as Window & {');expect(result).toContain('__vantiloGrowthDocumentId?: string;');expect(result).toContain('__vantiloGrowthBookId?: string;');expect(result).toContain('__vantiloGrowthPageId?: string;');
     expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
   });
   it('shows whole-book progress on the resume card by aggregating saved chapter progress', () => {
@@ -226,6 +227,14 @@ it('simplifies the word popup without removing real keyboard or dictionary funct
   expect(adapted).toContain('context?.meaningSource === "user"');
   expect(adapted).toContain('word-detail-context-section');
   expect(ts.createSourceFile('result.tsx', adapted, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+});
+
+it('applies Reader growth additions after catalog JSX adaptation so development preview seams remain valid',()=>{
+  const filename=`${readerSourceRoot}/src/frontend/App.tsx`;const original=readFileSync(filename,'utf8');
+  const adapted=adaptReaderSource(original,filename,{qwenPreview:false,catalogPreview:true,translationPreview:true});
+  expect(adapted).toContain('vantilo-growth-home-card');expect(adapted).toContain('reader-growth-timer');
+  expect(adapted).toContain('VantiloCatalogControl');expect(adapted).toContain('vantilo-reader-translation-action');
+  expect(ts.createSourceFile('catalog-growth.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
 });
 
 it('keeps automatic Qwen and collapsed dictionary exclusive to the separate preview build',()=>{

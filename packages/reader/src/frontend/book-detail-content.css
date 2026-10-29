@@ -1,0 +1,52 @@
+.book-detail-content { min-width: 0; margin-bottom: 24px; }
+.book-shelf-controls { display: flex; align-items: flex-end; gap: 14px; margin: 20px 0; }
+.book-shelf-controls label { display: grid; gap: 7px; color: var(--theme-secondary); font-size: 13px; font-weight: 550; }
+.book-shelf-search { flex: 1 1 320px; min-width: 0; }
+.book-shelf-category { flex: 0 1 220px; min-width: 140px; }
+.book-shelf-controls :is(input,select) { width: 100%; min-width: 0; min-height: 42px; padding: 9px 12px; border: 1px solid var(--theme-line); font: 15px/1.5 system-ui,sans-serif; }
+.book-shelf-reset { flex: 0 0 auto; min-height: 42px; }
+.book-import-category { display: grid; gap: 7px; margin-top: 12px; font-size: 13px; color: var(--theme-secondary); }
+.book-import-category select { width: 100%; max-width: 280px; min-height: 40px; padding: 7px 10px; font: inherit; }
+.book-category-dialog .book-import-category select { max-width: none; }
+.app-shell .book-library-menu .text-button:not(.is-danger) { color: var(--theme-ink); }
+.book-continue-card .book-cover { width: 150px; align-self: center; }
+.book-continue-card .book-cover img { object-fit: contain; }
+.book-continue-card .book-cover[data-cover-source="epub"] .book-cover-fallback { display: none; }
+.book-continue-card .continue-copy { min-width: 0; overflow-wrap: anywhere; }
+.app-shell .book-continue-card .book-continue-location { color: var(--theme-secondary); font-size: 16px; }
+.book-continue-card .continue-meta { overflow-wrap: anywhere; }
+.book-detail-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--theme-line); margin-bottom: 4px; }
+.book-detail-tabs > button { display: inline-flex; align-items: center; gap: 7px; min-height: 46px; padding: 9px 1px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--theme-muted); font: 600 15px/1.5 system-ui,sans-serif; cursor: pointer; }
+.book-detail-tabs > button[aria-selected="true"] { color: var(--theme-ink); border-bottom-color: var(--theme-accent); }
+.book-detail-tabs > button > span { font-size: 12px; font-weight: 500; color: var(--theme-muted); }
+.book-detail-content > [role="tabpanel"] { outline-offset: 3px; }
+.book-detail-content > [role="tabpanel"] > .book-toc-card { border: 0; border-radius: 0; padding: 18px 0; background: transparent; box-shadow: none; }
+.book-lessons-list { display: grid; }
+.book-lessons-message { padding: 24px 0; margin: 0; font-size: 14px; line-height: 1.7; }
+.book-lesson-row { display: grid; grid-template-columns: minmax(0,1fr) 36px; align-items: center; gap: 8px; border-bottom: 1px solid var(--theme-line); transition: background-color .2s; }
+.book-lesson-row:last-child { border-bottom: 0; }
+.book-lesson-row:is(:hover,:focus-within) { background: color-mix(in srgb,var(--theme-selected) 50%,transparent); }
+.book-lesson-row.is-new { background: var(--theme-selected); }
+.book-lesson-card { display: block; text-align: left; width: 100%; min-width: 0; padding: 14px 4px; border: 0; border-radius: 0; background: transparent; color: var(--theme-ink); font: inherit; cursor: pointer; }
+.book-lesson-card h3 { margin: 0 0 4px; font: 600 16px/1.5 system-ui,sans-serif; overflow-wrap: anywhere; }
+.book-lesson-card p { margin: 0 0 7px; color: var(--theme-secondary); font: 14px/1.5 system-ui,sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.book-lesson-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--theme-muted); font: 12px/1.5 system-ui,sans-serif; }
+.book-lesson-meta .book-lesson-new { margin-left: 4px; color: var(--theme-accent); }
+.book-lesson-actions { position: relative; align-self: start; margin-top: 13px; }
+.book-lesson-more { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--theme-muted); font: 22px/1 system-ui,sans-serif; cursor: pointer; }
+.book-lesson-more:is(:hover,[aria-expanded="true"]) { background: var(--theme-selected); color: var(--theme-ink); }
+.book-lesson-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: 140px; padding: 5px; border: 1px solid var(--theme-line); border-radius: 8px; background: var(--theme-surface); box-shadow: var(--theme-shadow); }
+.book-lesson-menu .book-lesson-delete { width: 100%; min-height: 38px; padding: 8px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--theme-danger); text-align: left; font: 14px/1.5 system-ui,sans-serif; cursor: pointer; }
+.book-lesson-menu .book-lesson-delete:is(:hover,:focus-visible) { background: var(--theme-danger-soft); }
+.book-detail-content :is([role="tab"],.book-lesson-card,.book-lesson-more,.book-lesson-delete):focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
+@media (max-width: 640px) { .book-detail-content { padding-inline: 16px; } }
+@media (max-width: 640px) {
+  .book-shelf-controls { flex-wrap: wrap; gap: 12px; }
+  .book-shelf-search { flex-basis: 100%; }
+  .book-shelf-category { flex: 1 1 160px; }
+  .book-continue-card { grid-template-columns: 90px minmax(0,1fr); gap: 16px; padding: 16px; }
+  .book-continue-card .book-cover { width: 90px; align-self: start; }
+  .book-continue-card .continue-copy h2 { font-size: 24px; }
+}
+@media (pointer: coarse) { .book-lesson-more { width: 36px; min-height: 44px; } .book-lesson-actions { margin-top: 7px; } }
+@media (prefers-reduced-motion: reduce) { .book-lesson-row { transition: none; } }

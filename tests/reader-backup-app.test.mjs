@@ -44,6 +44,17 @@ describe('desktop reading backup', () => {
     expect(target.getItem(paragraph)).toBeNull(); expect(target.getItem(sentence)).toBeNull();
     expect(target.getItem('unrelated-api-secret')).toBe('preserved');
   });
+  it('exports and validates the host growth record while preserving the host-owned copy during Reader-side restore', () => {
+    const from=storage();const growth={days:{'2026-10-29':{seconds:1800,books:{'book:one':1200,'book:two':600}}}};
+    const backup=api.parseUserDataBackup(JSON.stringify(api.buildUserDataBackup({getItem:key=>key==='vantilo-reading-growth-v1'?JSON.stringify(growth):from.getItem(key)})));
+    expect(backup.data['vantilo-reading-growth-v1']).toEqual(growth);
+    const growthPreview=api.summarizeUserDataBackup(backup).entries.find(entry=>entry.key==='vantilo-reading-growth-v1');
+    expect(growthPreview).toMatchObject({label:'阅读成长记录',count:1,description:'1 天 · 0.5 小时 · 1 个达标日'});
+    expect(()=>api.parseUserDataBackup(JSON.stringify({...backup,data:{...backup.data,'vantilo-reading-growth-v1':{days:{'2026-10-29':{seconds:NaN,books:{}}}}}}))).toThrow('阅读成长记录');
+    const target=storage();target.setItem('vantilo-reading-growth-v1',JSON.stringify({days:{'2026-10-28':{seconds:30,books:{'book:old':30}}}}));
+    api.restoreUserDataBackup(target,backup);
+    expect(JSON.parse(target.getItem('vantilo-reading-growth-v1'))).toMatchObject({days:{'2026-10-28':{seconds:30}}});
+  });
   it('keeps model caches when restoring an old backup that could not contain them', () => {
     const target = storage(); target.setItem(paragraph, JSON.stringify([base]));
     const old = api.parseUserDataBackup(JSON.stringify({ app: 'magazine-reader', version: 1, exportedAt: '2026-10-28T00:00:00Z', data: {} }));

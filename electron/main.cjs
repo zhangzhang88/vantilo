@@ -1,13 +1,17 @@
 const {createSoftwareUpdateService}=require('./software-update-service.cjs');
 const softwareUpdateSource=require('../resources/software-update-source.json');
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess, session, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess, session, nativeImage, safeStorage, powerMonitor } = require('electron');
 const path = require('node:path');
 const { installReaderNavigation } = require('./magazine-reader-navigation.cjs');
 const { RuntimeSupervisor } = require('./runtime-supervisor.cjs');
 const { PortableReaderSupervisor } = require('./portable-reader-supervisor.cjs');
+const { packagedReaderSeedDir } = require('./reader-seed-path.cjs');
 const { readerSessionCookies } = require('./reader-session-cookie.cjs');
 const { createReaderOnboarding } = require('./reader-onboarding.cjs');
 const { createReaderCustomApi } = require('./reader-custom-api.cjs');
+const { createGutenbergIntroService } = require('./gutenberg-intro.cjs');
+const { createCodexIntroApi } = require('./gutenberg-codex-intro.cjs');
+const { listGutenbergIntroEngines } = require('./gutenberg-intro-engines.cjs');
 const { installReaderBackupDownloads } = require('./reader-backup-download.cjs');
 const { isTrustedSender, isTrustedPageUrl, PACKAGED_RENDERER_PATH } = require('./ipc-security.cjs');
 
@@ -19,6 +23,16 @@ app.setPath('userData', existingUserDataPath);
 let win;
 let runtime;
 let readerCustomApiService;
+let gutenbergIntroService;
+const gutenbergIntroRequests = new Map();
+function getGutenbergIntroService() {
+  if (!gutenbergIntroService) gutenbergIntroService = createGutenbergIntroService({
+    cacheDir: path.join(app.getPath('userData'), 'gutenberg-intros-v1'),
+    customApi: getReaderCustomApiService(),
+    codexApi: createCodexIntroApi({ workspaceRoot: app.getPath('userData') })
+  });
+  return gutenbergIntroService;
+}
 function getReaderCustomApiService() {
   if(!readerCustomApiService)readerCustomApiService=createReaderCustomApi({filePath:path.join(app.getPath('userData'),'reader-custom-api-v1.json'),safeStorage});
   return readerCustomApiService;
@@ -30,7 +44,7 @@ const readerOnboarding = createReaderOnboarding({ userData: app.getPath('userDat
 const softwareUpdates=createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:app.getVersion(),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),
   onAvailable:async state=>{if(!win||win.isDestroyed())return;const result=await dialog.showMessageBox(win,{type:'info',title:'Vantilo 软件更新',message:'发现新版本 '+state.latestVersion,detail:'当前版本 '+state.currentVersion+'。可前往 GitHub 发布页下载安装，应用不会强制退出。',buttons:['稍后','前往发布页'],defaultId:0,cancelId:0});if(result.response===1)await softwareUpdates.openRelease();}
 });
-const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableTranslation: true, enableReaderPreviews: true, customApi: async (operation,payload,signal) => {const service=getReaderCustomApiService();const result=operation==='activate'||operation==='remove'?await service[operation](payload.id):await service[operation](operation==='complete'?{...payload,signal}:payload);return operation==='complete'?{output:result}:result;}, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
+const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableTranslation: true, enableReaderPreviews: true, customApi: async (operation,payload,signal) => {const service=getReaderCustomApiService();const result=operation==='activate'||operation==='remove'?await service[operation](payload.id):await service[operation](operation==='complete'?{...payload,signal}:payload);return operation==='complete'?{output:result}:result;}, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), seedDir: packagedReaderSeedDir({ isPackaged: app.isPackaged, assetsDir: readerAssets }), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
   ...readerSessionCookies(()=>session.defaultSession),
 });
 let quitting = false;
@@ -233,9 +247,34 @@ ipcMain.handle('magazine-reader:start', (event, ...args) => {
 ipcMain.handle('gutenberg:request', async (event, request) => {
   requireTrustedSender(event);
   if (!usePortableReader || quitting || magazineReaderSupervisor.status !== 'ready') throw new Error('请先打开阅读空间');
-  if (!request || typeof request !== 'object' || Array.isArray(request) || !['search','detail','acquire'].includes(request.operation)) throw new Error('Invalid Gutenberg request');
-  const allowed=request.operation==='search'?['operation','query','topic','page']:request.operation==='detail'?['operation','id']:['operation','id','filename','categoryId'];
-  if(Object.keys(request).some(key=>!allowed.includes(key)))throw new Error('Invalid Gutenberg request');
+  if (!request || typeof request !== 'object' || Array.isArray(request) || !['search','detail','acquire','intro','introCached','introCancel','introEngines'].includes(request.operation)) throw new Error('Invalid Gutenberg request');
+  const isIntro = ['intro','introCached','introCancel'].includes(request.operation);
+  const allowed = request.operation === 'introEngines' ? ['operation'] : isIntro ? ['operation','id','engine','force','modelId','reasoningEffort'] : request.operation === 'detail' ? ['operation','id'] : request.operation === 'search' ? ['operation','query','topic','page'] : ['operation','id','filename','categoryId'];
+  if (Object.keys(request).some(key => !allowed.includes(key))) throw new Error('Invalid Gutenberg request');
+  if (request.operation === 'introEngines') {
+    return listGutenbergIntroEngines({
+      customApi: getReaderCustomApiService(),
+      listModels: async () => runtime ? runtime.listModels() : { models: [] }
+    });
+  }
+  if (isIntro) {
+    if (!Number.isSafeInteger(request.id) || request.id < 1 || request.id > 10000000) throw new Error('Gutenberg ID 无效');
+    if (request.engine !== undefined && !['custom','codex'].includes(request.engine)) throw new Error('中文介绍引擎无效');
+    if (request.modelId !== undefined && request.modelId !== null && (typeof request.modelId !== 'string' || request.modelId.length > 256 || !request.modelId)) throw new Error('模型设置无效');
+    if (request.reasoningEffort !== undefined && request.reasoningEffort !== null && (typeof request.reasoningEffort !== 'string' || request.reasoningEffort.length > 64 || !request.reasoningEffort)) throw new Error('思考强度无效');
+    if (request.force !== undefined && (request.operation !== 'intro' || typeof request.force !== 'boolean')) throw new Error('重新生成参数无效');
+    if (request.operation === 'introCancel') {
+      gutenbergIntroRequests.get(request.id)?.abort(new Error('用户取消生成'));
+      return { canceled: true };
+    }
+    if (request.operation === 'introCached') return getGutenbergIntroService().cached({ id: request.id, engine: request.engine ?? 'custom', modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null });
+    gutenbergIntroRequests.get(request.id)?.abort(new Error('新请求已替换旧请求'));
+    const controller = new AbortController();
+    gutenbergIntroRequests.set(request.id, controller);
+    const timer = setTimeout(() => controller.abort(new Error('中文介绍生成超时')), request.engine === 'codex' ? 150000 : 75000);
+    try { return await getGutenbergIntroService().generate({ id: request.id, engine: request.engine ?? 'custom', force: request.force ?? false, modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null }, { signal: controller.signal }); }
+    finally { clearTimeout(timer); if (gutenbergIntroRequests.get(request.id) === controller) gutenbergIntroRequests.delete(request.id); }
+  }
   const path = request.operation==='search' ? '/api/vantilo-gutenberg/search' : request.operation==='detail' ? '/api/vantilo-gutenberg/books/'+encodeURIComponent(String(request.id)) : '/api/vantilo-gutenberg/acquire';
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),30000);
   try {
@@ -263,6 +302,8 @@ app.whenReady().then(() => {
   // This isolated preview checks new issues from app launch, even while Agent is visible.
   void softwareUpdates.start();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+powerMonitor.on('suspend', () => { if (win && !win.isDestroyed()) win.webContents.send('system:suspended'); });
+powerMonitor.on('lock-screen', () => { if (win && !win.isDestroyed()) win.webContents.send('system:suspended'); });
 });
 
 app.on('before-quit', event => {

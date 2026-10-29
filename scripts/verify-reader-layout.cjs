@@ -17,7 +17,7 @@ const compiled = ts.transpileModule(readFileSync(sourcePath, 'utf8'), {
 }).outputText;
 const exported = {};
 vm.runInNewContext(compiled, {
-  exports: exported, URL, require: name => name.endsWith('.css') ? {} : name === '../reader/book-discovery' ? {BookDiscovery:()=>null} : requireRepo(name),
+  exports: exported, URL, require: name => name.endsWith('.css') ? {} : name === '../reader/book-discovery' ? {BookDiscovery:()=>null} : name === '../reader/growth-page' ? {ReadingGrowthPage:()=>null} : name === '../reader/growth' ? {READING_GROWTH_STORAGE_KEY:'fixture',readGrowthRecord:()=>({days:{}}),saveGrowthRecord(){},growthStats:()=>({todaySeconds:0}),emptyGrowthRecord:()=>({days:{}}),isValidGrowthRecord:()=>true} : name === '../reader/growth-session' ? {createReadingSession:record=>({active:false,pausedByIdle:false,reminder:false,mode:null,bookId:null,lastActivity:0,lastTick:null,record}),pauseSession:state=>state,acceptReaderState:state=>state,readerActivity:state=>state,resumeSession:state=>state,tickSession:state=>state} : requireRepo(name),
 });
 const localProfile = mkdtempSync(path.join(os.tmpdir(), 'vantilo-layout-'));
 app.setPath('userData', localProfile);

@@ -11,13 +11,17 @@ import {build as viteBuild} from 'vite';
 import react from '@vitejs/plugin-react';
 import parcelMacros from 'unplugin-parcel-macros';
 import {packager} from '@electron/packager';
-import {copyDefaultMagazines,readDefaultMagazines} from './default-magazine-seed.mjs';
 import {copyCodexRuntime} from './codex-runtime-assets.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
+import {assertNoEpubFiles} from './package-artifact-policy.mjs';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const legacyReaderSeed=path.join(repo,'build/reader/seed');
+try { await fs.lstat(legacyReaderSeed); throw new Error('拒绝使用含旧 seed 的 Reader build 输出；请先人工检查并移出 build/reader/seed'); }
+catch(error) { if(error.code!=='ENOENT') throw error; }
 for(const icon of ['resources/vantilo-icon.png','resources/vantilo.icns'])await fs.access(path.join(repo,icon));
 const require=createRequire(import.meta.url);
+const requireReader=createRequire(path.join(readerSourceRoot,'package.json'));
 const root=process.env.VANTILO_BETA_ROOT;
 const inputs=process.env.VANTILO_BETA_INPUTS;
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('此候选版构建要求 Apple Silicon macOS');
@@ -25,7 +29,6 @@ if(!path.isAbsolute(root||'')||!path.isAbsolute(inputs||''))throw new Error('请
 const tempRoot=await fs.realpath('/private/tmp'),repoBuild=await fs.realpath(path.join(repo,'build')),parent=await fs.realpath(path.dirname(root));
 if(parent!==tempRoot&&!parent.startsWith(tempRoot+path.sep)&&parent!==repoBuild&&!parent.startsWith(repoBuild+path.sep))throw new Error('候选构建目录必须位于 /private/tmp 或仓库忽略的 build 目录');
 await fs.mkdir(root,{recursive:false}); // Refuse to overwrite an existing directory.
-await readDefaultMagazines();
 const reader=path.join(root,'reader-input'),dist=path.join(root,'dist');
 await fs.mkdir(reader);
 process.env.VANTILO_QWEN_API_OUTPUT=path.join(reader,'api.cjs');
@@ -43,7 +46,7 @@ await viteBuild({root:repo,configFile:false,envFile:false,base:'./',cacheDir:pat
 const nativeArm=path.join(repo,'build/reader/native/vantilo-dictionary');
 const nativeIntel=path.join(inputs,'native-x64/vantilo-dictionary');
 // Prepared separately from the pinned official b11904 archive; no model weights.
-const codexArm=path.join(readerSourceRoot,'node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin');
+const codexArm=path.join(path.dirname(requireReader.resolve('@openai/codex-darwin-arm64/package.json')),'vendor/aarch64-apple-darwin/bin');
 const codexIntel=path.join(inputs,'codex-x64/package/vendor/x86_64-apple-darwin/bin');
 const electronArm=path.join(repo,'node_modules/electron/dist');
 const electronIntel=path.join(inputs,'electron-x64');
@@ -67,7 +70,6 @@ for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:elec
   await fs.copyFile(nativeArm===target.native?nativeArm:nativeIntel,path.join(r,'native/vantilo-dictionary'));
   await copyCodexRuntime(target.codex,r);
   for(const name of ['provenance.json','THIRD_PARTY_NOTICES.txt'])await fs.copyFile(path.join(repo,'build/reader',name),path.join(r,name));
-  await copyDefaultMagazines(path.join(r,'seed'));
   for(const entry of ['main.cjs','preload.cjs','runtime-entry.cjs','portable-reader-entry.cjs','portable-reader-service.cjs'])await bundle({entryPoints:[path.join(repo,'electron',entry)],outfile:path.join(stage,'electron',entry),platform:'node',target:'node22',format:'cjs',bundle:true,external:['electron'],minify:true,legalComments:'eof',plugins:[]});
   await fs.writeFile(path.join(stage,'electron/beta-main.cjs'),`'use strict';\nconst {app}=require('electron');\nconst path=require('node:path');\nconst override=app.commandLine.getSwitchValue('user-data-dir');\napp.setPath('userData',override&&path.isAbsolute(override)?override:path.join(app.getPath('appData'),'Vantilo Beta'));\nprocess.env.VANTILO_BETA_BUILD='1';\nrequire('./main.cjs');\n`);
   await fs.writeFile(path.join(stage,'package.json'),JSON.stringify({name:'vantilo-beta',version:metadata.version,private:true,main:'electron/beta-main.cjs'}));
@@ -80,7 +82,7 @@ for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:elec
   await fs.copyFile(path.join(repo,'resources/vantilo.icns'),path.join(appPath,'Contents/Resources/electron.icns'));
   execFileSync('/usr/libexec/PlistBuddy',['-c','Set :CFBundleIconFile electron.icns',path.join(appPath,'Contents/Info.plist')]);
   const app=appPath;
-  await readDefaultMagazines(path.join(app,'Contents/Resources/app/reader/seed'));
+  await assertNoEpubFiles(app);
   const packagedNative=path.join(app,'Contents/Resources/app/reader/native');
   if(target.arch==='x64' && await fs.stat(path.join(packagedNative,'vantilo-qwen-health')).then(()=>true,()=>false))throw new Error('Intel 包不能包含 Apple Silicon MLX helper');
   // Electron's newly created bundle may carry Finder metadata that codesign
@@ -100,5 +102,5 @@ for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:elec
   const sha256=hash.digest('hex');await fs.writeFile(zip+'.sha256',sha256+'  '+path.basename(zip)+'\n');
   artifacts.push({arch:target.arch,zip,sha256,bytes:(await fs.stat(zip)).size});
 }
-await fs.writeFile(path.join(root,'BETA-REPORT.json'),JSON.stringify({version:metadata.version,artifacts,scope:'local beta candidates; Intel devices use configured cloud or LAN APIs; public distribution rights review pending',modelWeightsIncluded:false},null,2)+'\n');
+await fs.writeFile(path.join(root,'BETA-REPORT.json'),JSON.stringify({version:metadata.version,artifacts,scope:'beta test candidates; Reader users import their own EPUBs',modelWeightsIncluded:false,defaultMagazineSeedIncluded:false,bundledEpubCount:0},null,2)+'\n');
 console.log('LOCAL_BETA_CANDIDATES='+JSON.stringify(artifacts));

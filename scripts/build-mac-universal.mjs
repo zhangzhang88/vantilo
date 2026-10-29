@@ -1,5 +1,6 @@
 // Build one Universal macOS beta app from matching arm64 and x64 Vantilo builds.
-// All generated inputs and outputs remain under this repository's ignored build/out folders.
+// Inputs/intermediates remain under ignored build/; release artifacts go to repo/out/<version>.
+// An external build copy must link out/ to the canonical Workspace release root.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -10,13 +11,22 @@ import {createReadStream,createWriteStream} from 'node:fs';
 import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {makeUniversalApp} from '@electron/universal';
+import {readerSourceRoot} from './reader-source-path.mjs';
+import {universalOutputDirectory} from './universal-output-path.mjs';
+import {assertNoEpubEntries,assertNoEpubFiles} from './package-artifact-policy.mjs';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const require=createRequire(import.meta.url);
 const metadata=JSON.parse(await fs.readFile(path.join(repo,'package.json'),'utf8'));
+const sourceCommit=execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim();
+const sourceStatus=execFileSync('/usr/bin/git',['status','--porcelain','--untracked-files=all'],{cwd:repo,encoding:'utf8'}).trim();
+if(sourceStatus)throw new Error('Universal 发布构建要求干净的 Git 源码快照');
+const readerPackage=JSON.parse(await fs.readFile(path.join(readerSourceRoot,'package.json'),'utf8'));
+const packageLockHash=createHash('sha256').update(await fs.readFile(path.join(repo,'package-lock.json'))).digest('hex');
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('通用版构建需要 Apple Silicon macOS 构建机');
-const readerSource=path.resolve(process.env.VANTILO_MAGAZINE_READER_ROOT||path.join(repo,'..','magazine-reader'));
-const sourceCodex=JSON.parse(await fs.readFile(path.join(readerSource,'node_modules/@openai/codex-darwin-arm64/package.json'),'utf8'));
+const requireReader=createRequire(path.join(readerSourceRoot,'package.json'));
+const sourceCodexPath=requireReader.resolve('@openai/codex-darwin-arm64/package.json');
+const sourceCodex=JSON.parse(await fs.readFile(sourceCodexPath,'utf8'));
 const codexVersion=/^(\d+\.\d+\.\d+)-darwin-arm64$/.exec(sourceCodex.version)?.[1];
 if(!codexVersion)throw new Error('无法确认 ARM Codex 运行时版本');
 
@@ -180,17 +190,28 @@ for(const file of [appExecutable,path.join(universalApp,'Contents/Resources/app/
   const found=arches(file);if(!found.includes('arm64')||!found.includes('x86_64'))throw new Error(`通用架构验证失败: ${path.basename(file)} (${found.join(',')})`);
 }
 
-const outDir=path.join(repo,'out');await fs.mkdir(outDir,{recursive:true});
+const configuredOutputRoot=process.env.VANTILO_UNIVERSAL_OUTPUT_ROOT;
+if(configuredOutputRoot&&!path.isAbsolute(configuredOutputRoot))throw new Error('VANTILO_UNIVERSAL_OUTPUT_ROOT 必须是绝对路径');
+const outDir=universalOutputDirectory(repo,metadata.version,configuredOutputRoot||path.join(repo,'out'));
+await fs.mkdir(path.dirname(outDir),{recursive:true});
+await fs.mkdir(outDir); // A version directory is single-use; never reuse an old release directory.
 const zip=path.join(outDir,`Vantilo-Beta-${metadata.version}-universal.zip`);
 const checksumPath=zip+'.sha256';
-for(const target of [zip,checksumPath])if(await fs.stat(target).then(()=>true,()=>false))throw new Error(`为保护已有文件，拒绝覆盖: ${target}`);
+const reportPath=path.join(outDir,`Vantilo-Beta-${metadata.version}-universal.report.json`);
+for(const target of [zip,checksumPath,reportPath]){
+  try { await fs.lstat(target); throw new Error(`为保护已有文件，拒绝覆盖: ${target}`); }
+  catch(error) { if(error.code!=='ENOENT') throw error; }
+}
+await assertNoEpubFiles(universalApp);
 execFileSync('/usr/bin/ditto',['-c','-k','--sequesterRsrc','--keepParent',universalApp,zip],{stdio:'inherit'});
+const zipEntries=execFileSync('/usr/bin/unzip',['-Z1',zip],{encoding:'utf8',maxBuffer:64*1024*1024}).split(/\r?\n/).filter(Boolean);
+const bundledEpubCount=assertNoEpubEntries(zipEntries);
 const hash=createHash('sha256');for await(const chunk of (await import('node:fs')).createReadStream(zip))hash.update(chunk);
 const sha256=hash.digest('hex');await fs.writeFile(checksumPath,sha256+'  '+path.basename(zip)+'\n',{flag:'wx'});
-const report={version:metadata.version,architecture:'arm64+x86_64',artifact:path.relative(repo,zip),sha256,bytes:(await fs.stat(zip)).size,
+const report={version:metadata.version,architecture:'arm64+x86_64',artifact:path.basename(zip),sha256,bytes:(await fs.stat(zip)).size,
+  sourceCommit,sourceTreeClean:true,packageLockSha256:packageLockHash,readerSourceCommit:readerPackage.sourceCommit,
+  defaultMagazineSeedIncluded:false,bundledEpubCount,
   modelProviders:'configured cloud or LAN APIs',signature:'ad-hoc; not notarized',intelHardwareTest:'NOT RUN'};
-const reportPath=path.join(outDir,`Vantilo-Beta-${metadata.version}-universal.report.json`);
-if(await fs.stat(reportPath).then(()=>true,()=>false))throw new Error(`为保护已有文件，拒绝覆盖: ${reportPath}`);
 await fs.writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
 console.log('UNIVERSAL_APP='+universalApp);
 console.log('UNIVERSAL_ZIP='+zip);

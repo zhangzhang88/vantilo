@@ -1,5 +1,13 @@
 # Reader integration and unified Agent boundary
 
+## Embedded Reader source and origin/data compatibility
+
+The Reader source snapshot is under `packages/reader/` and is managed as the `@vantilo/reader` npm workspace. The project owner has confirmed ownership of the Magazine Reader project and the Reader source integrated into Vantilo; no Vantilo-wide source license has been selected. Reader frontend/API builds and Mac packaging resolve source and dependencies only from this workspace; they do not fall back to a sibling checkout or `VANTILO_MAGAZINE_READER_ROOT`. The original project remains read-only. See `packages/reader/SOURCE_PROVENANCE.md` for source commit, owner confirmation, excluded private data/assets, and separately identified third-party provenance still requiring review.
+
+This is a source relocation, not a runtime storage migration: the production/development Reader remains on `http://127.0.0.1:5175/` with its API on `:5174`, retains the session-cookie handshake, and uses the existing Vantilo `userData/reader-library`. Development and public/test packages start with no default seed; users can import EPUBs they are authorized to use. No build copies personal EPUBs, histories, databases, credentials or caches. Existing local `reader-library` data is not reset or rewritten.
+
+The fixed-string adapters remain technical debt and are being reduced incrementally. Their ordering is tested: catalog JSX transformation runs before the Reader growth bridge so toolbar edits do not invalidate the catalog toolbar seam. Provenance and third-party dependency notices remain part of the Reader build.
+
 ## Reader session authentication
 
 The ordinary app and preview builds require a fresh per-start session token for Reader's non-health HTTP endpoints. Electron installs it as a host-only, Secure, HttpOnly cookie before Reader is marked ready; a failed installation stops startup. Stopping removes the cookie, and the next start rotates the token. Host and origin checks remain in place. `npm run test:reader:auth` exercises the real Reader utility and Chromium iframe with a temporary profile and a synthetic EPUB, including unauthorized requests, cross-origin rejection, cookie visibility and token rotation. This HTTP protection does not prevent a process with the same user's filesystem permissions from accessing library files directly.
@@ -50,19 +58,11 @@ The original Reader repository, including its existing book-detail-content.css m
 
 Official references: [Codex app-server account protocol](https://learn.chatgpt.com/docs/app-server), [Electron utilityProcess](https://github.com/electron/electron/blob/main/docs/api/utility-process.md), [Electron packaging](https://electron.github.io/packager/main/). These describe supported interfaces; local tests establish only the narrower evidence above.
 
-## Empty-library recovery follow-up
+## Reader source and content build boundary
 
-An origin-local reading-history entry can remain from the previous development Reader even though the isolated Vantilo library is empty. The adapter retains the saved history, but excludes unavailable entries from the home-page continue card. The subsequent seed-library initialization restores available local content without deleting or changing original EPUBs. First-use downloads show the publication and whether metadata or EPUB bytes are being fetched; each request retains its 60-second limit. Failed checks retry after five minutes while running. A failed/interrupted check does not suppress a new attempt for three hours after restart. Successful fresh checks retain the normal three-hour interval. A completed download still requires the explicit “查看新刊” action to refresh the page without interrupting reading. External source reachability and real downloads are not established by fixture tests.
+Reader source is maintained under `packages/reader/`; the project owner has confirmed its copyright ownership. Development and packaged Mac flows omit the default-magazine seed and reject any final ZIP containing EPUB entries. Personal books and issues remain user data in `userData/reader-library`, are not copied from the original Magazine Reader checkout, and are not reset by source relocation. Historical origin-local progress and growth storage remain on the same loopback origin. The project owner separately confirmed ownership and public-distribution authorization for the Worm-derived layout/keyboard-lifecycle code in `assembly-typing-game.tsx`; that confirmation does not cover third-party dependencies, other media/assets, or online services.
 
-## Offline starter library (user-requested content reuse)
-
-The user explicitly requested reusing the previously downloaded magazines and ebooks, superseding the earlier restriction on copying EPUB content for this task. `prepare:reader-library` copies only regular top-level `.epub` files from the original `issues/` and `books/` into ignored `build/reader/seed/`. The current local inventory is 19 issues and 11 books (~335 MiB). It never copies `data/`, `config/`, credentials, browser state, notes or learning history. Original files are read-only. `build:reader` prepares this seed after compiling code; packaging remains paused.
-
-Before opening its API, the production Reader entry initializes the independent writable library from the seed. Each manifest entry specifies kind, filename, bytes and SHA-256. Files are verified and published atomically without replacing existing user files. Same-content duplicates are skipped. Atomic per-entry initialization records let restart resume an interrupted import and ensure future launches/updates do not resurrect deleted starter books. New seed hashes can be added incrementally. Conflicting same-name user files win; their seed is recorded as handled. A missing/corrupt seed or ledger fails initialization rather than silently resetting the library. Tests can omit `seedDir` to retain synthetic, empty fixtures.
-
-Local initialization can be performed without starting the API, sync or models using `npm run prepare:reader-library -- --install-local`. This changes only Vantilo's writable library. Restart the app to expose the populated content through its existing Reader.
-
-The development manifest is explicitly `personal-development`. Downloaded content has not been cleared for redistribution. The prepared packaging script rejects that audience; a release manifest requires `redistributable` plus individual `rights` and `rightsEvidence` entries. This guard is metadata validation, not verification of legal ownership. Selecting/clearing the distributable starter catalog remains release preparation, before any installer is made. Existing magazines remain subject to actual source availability for future updates. Neither the seed nor user EPUBs are committed or pushed.
+First-use publication downloads retain their existing 60-second request limit and retry behavior; a completed download still requires the explicit “查看新刊” action before refreshing the reading view. Fixture tests do not establish external source reachability or real downloads.
 
 ## Composer model picker
 

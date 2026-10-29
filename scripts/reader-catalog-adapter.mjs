@@ -125,7 +125,7 @@ export function adaptCatalogPreview(source,filename) {
   exact('export default function App() {',`export default function App() {
   useEffect(()=>{
     const receive=(event:MessageEvent)=>{
-      if(event.source!==window.parent||!['null','http://127.0.0.1:5173'].includes(event.origin))return;
+      if(event.source!==window.parent||!['null','file://','http://127.0.0.1:5173'].includes(event.origin))return;
       if(event.data?.type==='vantilo:navigate'&&['settings','library'].includes(event.data.target)){if(event.data.target==='settings')setAssistantOpen(false);handleNav(event.data.target);}
     };
     window.addEventListener('message',receive);

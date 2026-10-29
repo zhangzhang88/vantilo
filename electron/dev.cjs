@@ -16,7 +16,9 @@ vite = spawn(process.execPath, [viteBin, '--host', '127.0.0.1', '--port', '5173'
 vite.stdout.on('data', chunk => {
   const text = chunk.toString(); process.stdout.write(text);
   if (!electron && /\bready in\b/.test(text)) {
-    electron = spawn(process.execPath, [electronBin, '.'], { stdio: 'inherit', cwd: root, env: { ...process.env, VANTILO_DEV_SERVER_URL: url } });
+    const userDataDir = process.env.VANTILO_DEV_USER_DATA_DIR;
+    const electronArgs = userDataDir ? [`--user-data-dir=${path.resolve(userDataDir)}`] : [];
+    electron = spawn(process.execPath, [electronBin, '.', ...electronArgs], { stdio: 'inherit', cwd: root, env: { ...process.env, VANTILO_DEV_SERVER_URL: url } });
     electron.on('error', err => { console.error(`Electron failed to start: ${err.message}`); stop(1); });
     electron.on('exit', code => stop(code ?? 1));
   }

@@ -82,17 +82,15 @@ The game has two substantial phases:
 1. **Vocabulary preparation:** select vocabulary, mask a target word in its source sentence, enter it word by word, lock correct positions, retry errors, reveal hints, and use speech/audio.
 2. **Full-screen sentence typing/assembly:** Chinese prompt, word-by-word English input slots, keyboard navigation, submit/retry, lock correct words, correct errors, reveal answer, elapsed time, progress, speech, sound settings, and independent phase progress.
 
-The current components use React portals for the full-screen game. `learning-state.ts` contains the state transitions and a versioned progress contract; UI components should not be treated as the only source of the game rules. `use-game-sounds.ts` states that its playback hook is adapted from Worm's `hooks/useGameSounds.ts`. `public/worm/README.md` states that three MP3 files were copied unchanged and records their hashes.
+The current components use React portals for the full-screen game. `learning-state.ts` contains the state transitions and a versioned progress contract; UI components should not be treated as the only source of the game rules. The owner confirmed that the layout/keyboard-lifecycle code in `assembly-typing-game.tsx` is their copyrighted code from their own Worm project and authorized its public distribution in Vantilo. The former `use-game-sounds.ts` hook's external MP3 dependency has been replaced with original synthesized tones; no Worm MP3 assets are included.
 
 ### Reuse and license status
 
-The Magazine Reader migration audit identifies `pke-course-studio/worm_28-experiment` as the read-only upstream source and records upstream commit `babc41aa1ef3ced46c55d06878d25ef4a98cfee3`. The expected `LICENSE` files at the upstream subdirectory and parent root were not found by the local file-read checks. This does **not** prove that no other license or rights statement exists; it means permission is not yet verified.
+The earlier migration audit identified `pke-course-studio/worm_28-experiment` and could not find its LICENSE files. Since that audit, the project owner explicitly confirmed that the repository is their own project, that the layout/keyboard-lifecycle code in `assembly-typing-game.tsx` is their copyrighted work, and that its use and public distribution in Vantilo are authorized. This confirmation covers that specific source code only; it does not authorize third-party dependencies or other sounds/images/media. The copied MP3 assets were excluded, and Vantilo now synthesizes its own game tones. Do not ask the owner to re-prove the confirmed source-code rights.
 
-Therefore:
-- do not copy the Worm source components or the three MP3 files into Vantilo until the applicable rights are confirmed;
-- first review the upstream repository's full license/history and asset provenance;
-- if rights remain unclear, implement equivalent behavior from the observed product contract without copying source code or audio;
-- keep the game domain logic independent of React UI so it can be exposed both as user-facing game actions and Agent tools.
+- Preserve the source attribution and the scope of the owner's confirmation.
+- Review third-party dependency notices and any independently sourced assets/services separately.
+- Keep game domain logic independent of React UI so it can be exposed both as user-facing game actions and Agent tools.
 
 ## 4. BaoCut license boundary
 
@@ -164,12 +162,12 @@ Acceptance:
 
 - [x] Actual Codex CLI install/version/login status on the Mac was verified later; see the implementation roadmap's protocol/environment record.
 - The exact current BaoCut CLI/MCP command contract and the locally installed BaoCut version (BaoCut was not listed as a local project; source was reviewed remotely).
-- Full rights status for Worm game source and audio assets.
+- Audit third-party dependency notices and independently sourced media/services; the owner's Worm source-code confirmation does not extend to those materials.
 - Local code signing/notarization and packaging requirements for a distributable Mac app.
 - User data directory and backup/restore contract for Vantilo.
 
 ## 9. Conclusion
 
-The remote and local source audit supports this direction: **BaoCut/Codex-style Agent workspace + independent local Runtime + Codex app-server Driver + one tool catalog**. Magazine Reader's two-stage English typing game is a high-value domain capability, but its upstream source and sound assets need a rights check before reuse. Video integration should begin as an adapter, not an embedded BaoCut engine.
+The remote and local source audit supports this direction: **BaoCut/Codex-style Agent workspace + independent local Runtime + Codex app-server Driver + one tool catalog**. Magazine Reader's two-stage English typing game is a high-value domain capability. Its owner-confirmed source code is authorized for Vantilo distribution; separately sourced assets and third-party dependencies still require their own review. Video integration should begin as an adapter, not an embedded BaoCut engine.
 
-This is an architecture audit, not an implementation or runtime verification report. The local Codex state and game-source rights remain unverified.
+This is an architecture audit, not an implementation or runtime verification report. The game-source ownership and distribution permission described above are confirmed by the project owner; local Codex state and third-party rights remain subject to their separately documented verification.
