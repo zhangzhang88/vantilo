@@ -89,9 +89,17 @@ function formatMacDictionaryReply(word, payload) {
   // own presentation language. Preserve its wording; never AI-translate it or
   // present English-only content as a Chinese definition.
   const chunks = raw.split(/\s+\|\s+/);
-  const lemma = chunks.length >= 2 ? chunks[0] : word;
+  // Some installed dictionaries put the first POS heading before the first
+  // pipe (e.g. "suffix A. noun | BrE ... | ..."). Keep that heading in the
+  // entry body instead of misidentifying the whole prefix as the lemma.
+  const structuredHead = chunks[0]?.match(/(?:^|\s)[A-F]\.\s+(?=(?:to\s+|(?:in)?transitive\b|reflexive\b|noun\b|verb\b|adjective\b|adverb\b|phrasal\b|pronoun\b|preposition\b|interjection\b|exclamation\b|conjunction\b|determiner\b|article\b|auxiliary\b|modal\b|numeral\b|number\b|abbreviation\b|prefix\b|suffix\b))/iu);
+  const lemma = chunks.length >= 2
+    ? (structuredHead ? chunks[0].slice(0, structuredHead.index).trim() : chunks[0]) || word
+    : word;
   const head = chunks.length >= 3 ? chunks[1] : '';
-  const body = chunks.length >= 3 ? chunks.slice(2).join(' | ') : chunks.length >= 2 ? chunks.slice(1).join(' | ') : raw;
+  const body = chunks.length >= 3
+    ? [structuredHead ? chunks[0].slice(structuredHead.index).trim() : '', ...chunks.slice(2)].filter(Boolean).join(' | ')
+    : chunks.length >= 2 ? chunks.slice(1).join(' | ') : raw;
   const containsChinese = /[\u3400-\u9fff]/u.test(body);
   const quickGloss = containsChinese ? quickChineseGloss(body) : '';
   const lemmaPrefix = lemma.toLocaleLowerCase('en-US') !== word ? lemma + '（原形） ·' : '';

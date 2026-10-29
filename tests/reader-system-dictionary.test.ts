@@ -68,6 +68,16 @@ describe('macOS system dictionary provider', () => {
     }
   });
 
+  it('keeps a first POS heading embedded in a Dictionary Services head field out of the lemma', () => {
+    const raw = 'suffix A. noun | BrE ˈsʌfɪks, AmE ˈsəfɪks | 后缀 hòuzhuì B. transitive verb | BrE ˈsʌfɪks | 在末尾附加 zài';
+    const result = formatMacDictionaryReply('suffix', { word: 'suffix', definition: raw });
+    expect(result.definitionsZh[0].definition).toBe('A. noun\n后缀\nB. transitive verb\n在末尾附加');
+    expect(result.definitionsZh[0].definition).not.toContain('（原形）');
+    expect(result.definitionsZh[1].definition).toContain('B. transitive verb');
+    expect(result.definitionsZh[1].definition).toContain('BrE ˈsʌfɪks');
+    expect(result.definitionsZh[1].definition).toContain('zài');
+  });
+
   it('maps a synthetic inflected entry to its lemma and keeps every part of speech readable', () => {
     const raw = [
       'purr | BrE /pɜːr/, AmE /pɝːr/ |',
