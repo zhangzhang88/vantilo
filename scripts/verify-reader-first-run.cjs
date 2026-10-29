@@ -100,7 +100,7 @@ app.whenReady().then(async()=>{
   if(!frame||!await frame.executeJavaScript("Boolean(document.querySelector('#setup'))"))throw Error('Settings destination did not reach Reader frame');
   await frame.executeJavaScript("document.querySelector('#setup').click()");
   if(!await until("Boolean(document.querySelector('[role=dialog][aria-labelledby=reader-setup-title]'))"))throw Error('Reopened setup dialog did not appear');
-  if(!await win.webContents.executeJavaScript("(()=>{const button=[...document.querySelectorAll('.reader-onboarding-footer button')].find(x=>x.textContent==='进入 Vantilo');button?.click();return Boolean(button)})()"))throw Error('Finish action missing');
+  if(!await win.webContents.executeJavaScript("(()=>{const button=[...document.querySelectorAll('.reader-onboarding-footer button')].find(x=>x.textContent==='完成');button?.click();return Boolean(button)})()"))throw Error('Finish action missing');
   if(!await until("!document.querySelector('[role=dialog][aria-labelledby=reader-setup-title]')"))throw Error('Finish action did not close the setup dialog');
   if((await setup.getState()).show)throw Error('Finished state did not persist');
   await win.loadFile(path.join(fixtureDist,'index.html'));
