@@ -1,0 +1,30 @@
+{
+  "abstract-logging@2.0.1": {
+    "license": "MIT",
+    "file": "licenses/npm-overrides/abstract-logging-2.0.1.txt",
+    "source": [
+      "https://registry.npmjs.org/abstract-logging/2.0.1 (published package metadata and gitHead 80dfaef91ee87008f4ed2b6e78921d383bccd406)",
+      "https://github.com/jsumners/abstract-logging/blob/80dfaef91ee87008f4ed2b6e78921d383bccd406/Readme.md (links to the author's MIT license)",
+      "https://jsumners.mit-license.org/ (author-linked full MIT text)"
+    ],
+    "reason": "The exact npm package archive declares MIT and links to the author's license page but does not contain a license file."
+  },
+  "boolbase@1.0.0": {
+    "license": "ISC",
+    "file": "licenses/npm-overrides/boolbase-1.0.0.txt",
+    "source": [
+      "https://registry.npmjs.org/boolbase/1.0.0 (published package metadata and author)",
+      "https://github.com/fb55/boolbase/blob/master/LICENSE (upstream ISC text and copyright attribution)"
+    ],
+    "reason": "The exact npm package archive declares ISC and identifies Felix Boehm but omits a license file."
+  },
+  "isarray@1.0.0": {
+    "license": "MIT",
+    "file": "licenses/npm-overrides/isarray-1.0.0.txt",
+    "source": [
+      "https://registry.npmjs.org/isarray/1.0.0 (published package metadata; the pinned package README contains the complete MIT text)",
+      "https://github.com/juliangruber/isarray/commit/2a23a281f369e9ae06394c0fb4d2381355a6ba33 (published gitHead)"
+    ],
+    "reason": "The exact npm package archive declares MIT and contains the complete license text in README.md but omits a separate license file."
+  }
+}

@@ -11,7 +11,7 @@ import parcelMacros from 'unplugin-parcel-macros';
 import {sharedReaderComposerPlugin} from './reader-assistant-adapter.mjs';
 import { adaptReaderSource, readerVariantPlugin } from './reader-variant.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
-import {findPackageRoot} from './package-root-resolution.mjs';
+import {collectPackageRootsFromModules, packageRecordsFromRoots, renderThirdPartyNotices} from './third-party-notices.mjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = readerSourceRoot;
 const output = path.join(repo, 'build/reader');
@@ -28,8 +28,15 @@ if (readerPackage.name !== '@vantilo/reader') throw new Error('Not Vantilo\'s em
 await fs.mkdir(output, { recursive: true });
 const { build: buildWeb } = await import(pathToFileURL(requireReader.resolve('vite')).href);
 const { default: react } = await import(pathToFileURL(requireReader.resolve('@vitejs/plugin-react')).href);
+const readerWebModules = new Set();
+const readerInventoryPlugin = {
+  name: 'vantilo-reader-runtime-module-inventory',
+  generateBundle(_options, bundle) {
+    for (const item of Object.values(bundle)) if (item.type === 'chunk') for (const id of Object.keys(item.modules)) readerWebModules.add(id);
+  },
+};
 await buildWeb({ root: source, configFile: false, envFile: false, publicDir: false,
-  cacheDir: path.join(repo, 'build/reader-vite-cache'), resolve:{dedupe:['react','react-dom']}, plugins: [sharedReaderComposerPlugin(), parcelMacros.vite(), readerVariantPlugin(), react()], base: '/',
+  cacheDir: path.join(repo, 'build/reader-vite-cache'), resolve:{dedupe:['react','react-dom']}, plugins: [sharedReaderComposerPlugin(), parcelMacros.vite(), readerVariantPlugin(), react(), readerInventoryPlugin], base: '/',
   build: { outDir: path.join(output, 'web'), emptyOutDir: true, sourcemap: false },
 });
 const api = await build({ stdin: {
@@ -49,34 +56,21 @@ const provenance = { sourceProject: readerPackage.sourceProject, version: reader
   sourceCommit: readerPackage.sourceCommit,
   sourceFiles: {}, builtAt: new Date().toISOString(),
 };
-const packages = new Set();
 for (const input of inputs) {
   const filename = path.resolve(repo, input);
   if (filename.startsWith(source + '/src/')) provenance.sourceFiles[path.relative(source, filename)] = createHash('sha256').update(await fs.readFile(filename)).digest('hex');
-  if (filename.includes(`${path.sep}node_modules${path.sep}`)) {
-    const packageRoot = await findPackageRoot(filename);
-    if (!packageRoot) throw new Error(`Unable to identify bundled third-party package: ${path.relative(repo, filename)}`);
-    packages.add(packageRoot);
-  }
 }
-// Frontend production dependencies also need attribution.
-for (const name of Object.keys(readerPackage.dependencies)) {
-  let dir = path.dirname(requireReader.resolve(name));
-  while (dir !== path.dirname(dir)) {
-    try { const pkg = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')); if (pkg.name === name) { packages.add(dir); break; } } catch {}
-    dir = path.dirname(dir);
-  }
-}
-let notices = 'Compiled Reader code attribution. Offline reading content is inventoried separately by seed/manifest.json. Personal records, credentials and local provider settings are excluded.\n';
-for (const dir of [...packages].sort()) {
-  const pkg = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8'));
-  if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string') throw new Error(`Third-party package identity is incomplete: ${dir}`);
-  notices += `\n===== ${pkg.name}@${pkg.version} (${pkg.license || 'see notice'}) =====\n`;
-  for (const name of await fs.readdir(dir)) if (/^(licen[cs]e|copying|notice)(\.|$)/i.test(name)) {
-    const file = path.join(dir, name);
-    if ((await fs.stat(file)).isFile()) notices += await fs.readFile(file, 'utf8') + '\n';
-  }
-}
+const packageRoots = await collectPackageRootsFromModules(repo, [...readerWebModules, ...inputs]);
+const packageRecords = await packageRecordsFromRoots(repo, packageRoots);
+const codexManifest = JSON.parse(await fs.readFile(requireReader.resolve('@openai/codex-darwin-arm64/package.json'), 'utf8'));
+const codexVersion = /^(\d+\.\d+\.\d+)-darwin-arm64$/.exec(codexManifest.version)?.[1];
+if (!codexVersion) throw new Error(`Unable to identify the bundled Codex runtime version: ${codexManifest.version}`);
+const binaryDocuments = [
+  { name: 'OpenAI Codex', version: codexVersion, license: 'Apache-2.0', label: 'licenses/OpenAI-Codex/LICENSE', text: await fs.readFile(path.join(repo, 'licenses/OpenAI-Codex/LICENSE'), 'utf8') },
+  { name: 'OpenAI Codex', version: codexVersion, license: 'Apache-2.0', label: 'licenses/OpenAI-Codex/NOTICE.md', text: await fs.readFile(path.join(repo, 'licenses/OpenAI-Codex/NOTICE.md'), 'utf8') },
+];
+const notices = await renderThirdPartyNotices({ repoRoot: repo, appVersion: JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8')).version, packageRecords, binaryDocuments });
+await fs.writeFile(path.join(output, 'runtime-package-roots.json'), JSON.stringify(packageRecords, null, 2) + '\n');
 await fs.writeFile(path.join(output, 'provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
 await fs.writeFile(path.join(output, 'THIRD_PARTY_NOTICES.txt'), notices);
 console.log('Reader production assets built without modifying the source project.');

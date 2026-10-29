@@ -30,6 +30,8 @@ const sourceCodex=JSON.parse(await fs.readFile(sourceCodexPath,'utf8'));
 const codexVersion=/^(\d+\.\d+\.\d+)-darwin-arm64$/.exec(sourceCodex.version)?.[1];
 if(!codexVersion)throw new Error('无法确认 ARM Codex 运行时版本');
 
+const stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
+const buildDir=await fs.realpath(path.join(repo,'build'));
 const inputRoot=path.join(repo,'build/universal-inputs');
 const electronRoot=path.join(inputRoot,'electron-x64');
 const codexRoot=path.join(inputRoot,'codex-x64');
@@ -107,9 +109,33 @@ if(!(await fs.stat(x64Dictionary).then(()=>true,()=>false))){
 function arches(file){return execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/);}
 for(const name of ['codex','codex-code-mode-host'])if(!arches(path.join(x64CodexBin,name)).includes('x86_64'))throw new Error('Intel Codex 架构验证失败: '+name);
 if(!arches(x64Dictionary).includes('x86_64'))throw new Error('Intel 系统词典程序架构验证失败');
+const dictionarySource=path.join(repo,'scripts/reader-system-dictionary.swift');
+const freshDictionary=path.join(buildDir,`native-helper-source-check-x64-${metadata.version}-${stamp}-${process.pid}`);
+try{await fs.lstat(freshDictionary);throw new Error(`为保护已有文件，拒绝覆盖: ${freshDictionary}`);}catch(error){if(error.code!=='ENOENT')throw error;}
+const verificationSdk=execFileSync('/usr/bin/xcrun',['--sdk','macosx','--show-sdk-path'],{encoding:'utf8'}).trim();
+execFileSync('/usr/bin/xcrun',['swiftc','-target','x86_64-apple-macosx12.0','-sdk',verificationSdk,'-O',dictionarySource,'-o',freshDictionary],{cwd:repo,stdio:'inherit',timeout:120000});
+if(!arches(freshDictionary).includes('x86_64'))throw new Error('Freshly compiled Intel Dictionary helper architecture verification failed');
+function uuidOffset(bytes){
+  if(bytes.readUInt32LE(0)!==0xfeedfacf)throw new Error('Expected a thin little-endian 64-bit Mach-O Dictionary helper');
+  const commands=bytes.readUInt32LE(16);let cursor=32,found=-1;
+  for(let index=0;index<commands;index++){
+    if(cursor+8>bytes.length)throw new Error('Malformed Mach-O load-command table');
+    const command=bytes.readUInt32LE(cursor),size=bytes.readUInt32LE(cursor+4);
+    if(size<8||cursor+size>bytes.length)throw new Error('Malformed Mach-O load command');
+    if(command===0x1b){if(size!==24||found!==-1)throw new Error('Unexpected LC_UUID load command');found=cursor+8;}
+    cursor+=size;
+  }
+  if(found===-1)throw new Error('Mach-O Dictionary helper has no LC_UUID');
+  return found;
+}
+function normalizeUuid(bytes){const copy=Buffer.from(bytes);const offset=uuidOffset(copy);const uuid=copy.subarray(offset,offset+16).toString('hex');copy.fill(0,offset,offset+16);return{copy,uuid};}
+const preparedBytes=await fs.readFile(x64Dictionary),freshBytes=await fs.readFile(freshDictionary);
+const preparedNormalized=normalizeUuid(preparedBytes),freshNormalized=normalizeUuid(freshBytes);
+if(!preparedNormalized.copy.equals(freshNormalized.copy))throw new Error('Prepared Intel Dictionary helper differs from a fresh current-source build beyond Mach-O LC_UUID');
+const sha256Bytes=bytes=>createHash('sha256').update(bytes).digest('hex');
+const nativeDictionaryVerification={sourceSha256:sha256Bytes(await fs.readFile(dictionarySource)),preparedIntelSha256:sha256Bytes(preparedBytes),freshIntelSha256:sha256Bytes(freshBytes),
+  preparedIntelUuid:preparedNormalized.uuid,freshIntelUuid:freshNormalized.uuid,preparedMatchesFreshExceptUuid:true};
 
-const stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
-const buildDir=await fs.realpath(path.join(repo,'build'));
 const candidates=process.env.VANTILO_UNIVERSAL_CANDIDATES?path.resolve(process.env.VANTILO_UNIVERSAL_CANDIDATES):path.join(buildDir,`universal-candidates-${metadata.version}-${stamp}`);
 const candidateReal=await fs.realpath(candidates).catch(()=>null);
 if(process.env.VANTILO_UNIVERSAL_CANDIDATES){
@@ -153,6 +179,16 @@ await stripSignatures(armApp);
 const mergeDir=path.join(candidates,'universal');await fs.mkdir(mergeDir,{recursive:true});
 const universalApp=path.join(mergeDir,'Vantilo Beta.app');
 await makeUniversalApp({x64AppPath:x64App,arm64AppPath:armApp,outAppPath:universalApp});
+const runtimeInventory=path.join(candidates,'runtime-inventory');
+const noticeInventoryNames=['all-runtime','main-renderer','reader-runtime','electron-main'];
+const noticeInventoryPaths=noticeInventoryNames.map(name=>path.join(runtimeInventory,`${name}-package-roots.json`));
+execFileSync(process.execPath,[path.join(repo,'scripts/verify-third-party-notices.cjs'),universalApp,...noticeInventoryPaths],{stdio:'inherit'});
+const thirdPartyNoticeText=await fs.readFile(path.join(universalApp,'Contents/Resources/app/licenses/THIRD_PARTY_NOTICES.txt'),'utf8');
+const thirdPartyNotices={sha256:createHash('sha256').update(thirdPartyNoticeText).digest('hex'),bytes:Buffer.byteLength(thirdPartyNoticeText),
+  packageCount:JSON.parse(await fs.readFile(noticeInventoryPaths[0],'utf8')).length,
+  mainRendererPackages:JSON.parse(await fs.readFile(noticeInventoryPaths[1],'utf8')).length,
+  readerRuntimePackages:JSON.parse(await fs.readFile(noticeInventoryPaths[2],'utf8')).length,
+  electronMainPackages:JSON.parse(await fs.readFile(noticeInventoryPaths[3],'utf8')).length};
 
 // Sign every Mach-O leaf explicitly before signing its containing bundles.
 // codesign --deep alone does not sign loose framework dylibs such as Electron's
@@ -189,6 +225,7 @@ const appExecutable=path.join(universalApp,'Contents/MacOS/Vantilo Beta');
 for(const file of [appExecutable,path.join(universalApp,'Contents/Resources/app/reader/codex'),path.join(universalApp,'Contents/Resources/app/reader/codex-code-mode-host'),path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary')]){
   const found=arches(file);if(!found.includes('arm64')||!found.includes('x86_64'))throw new Error(`通用架构验证失败: ${path.basename(file)} (${found.join(',')})`);
 }
+nativeDictionaryVerification.universalAppSha256=createHash('sha256').update(await fs.readFile(path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary'))).digest('hex');
 
 const configuredOutputRoot=process.env.VANTILO_UNIVERSAL_OUTPUT_ROOT;
 if(configuredOutputRoot&&!path.isAbsolute(configuredOutputRoot))throw new Error('VANTILO_UNIVERSAL_OUTPUT_ROOT 必须是绝对路径');
@@ -206,11 +243,15 @@ await assertNoEpubFiles(universalApp);
 execFileSync('/usr/bin/ditto',['-c','-k','--sequesterRsrc','--keepParent',universalApp,zip],{stdio:'inherit'});
 const zipEntries=execFileSync('/usr/bin/unzip',['-Z1',zip],{encoding:'utf8',maxBuffer:64*1024*1024}).split(/\r?\n/).filter(Boolean);
 const bundledEpubCount=assertNoEpubEntries(zipEntries);
+const noticeEntry='Vantilo Beta.app/Contents/Resources/app/licenses/THIRD_PARTY_NOTICES.txt';
+if(!zipEntries.includes(noticeEntry))throw new Error('Universal ZIP is missing the merged third-party notices');
+const zipNoticeText=execFileSync('/usr/bin/unzip',['-p',zip,noticeEntry],{encoding:'utf8',maxBuffer:16*1024*1024});
+if(createHash('sha256').update(zipNoticeText).digest('hex')!==thirdPartyNotices.sha256)throw new Error('Universal ZIP third-party notices differ from the verified app bundle');
 const hash=createHash('sha256');for await(const chunk of (await import('node:fs')).createReadStream(zip))hash.update(chunk);
 const sha256=hash.digest('hex');await fs.writeFile(checksumPath,sha256+'  '+path.basename(zip)+'\n',{flag:'wx'});
 const report={version:metadata.version,architecture:'arm64+x86_64',artifact:path.basename(zip),sha256,bytes:(await fs.stat(zip)).size,
   sourceCommit,sourceTreeClean:true,packageLockSha256:packageLockHash,readerSourceCommit:readerPackage.sourceCommit,
-  defaultMagazineSeedIncluded:false,bundledEpubCount,
+  nativeDictionary:nativeDictionaryVerification,defaultMagazineSeedIncluded:false,bundledEpubCount,thirdPartyNotices,
   modelProviders:'configured cloud or LAN APIs',signature:'ad-hoc; not notarized',intelHardwareTest:'NOT RUN'};
 await fs.writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
 console.log('UNIVERSAL_APP='+universalApp);

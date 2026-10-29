@@ -7,17 +7,19 @@ import parcelMacros from 'unplugin-parcel-macros';
 import {sharedReaderComposerPlugin} from './reader-assistant-adapter.mjs';
 import {readerVariantPlugin} from './reader-variant.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
+import {runtimeModuleInventoryPlugin} from './runtime-module-inventory.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.env.VANTILO_QWEN_READER_PREVIEW=process.env.VANTILO_RELEASE_READER==='1'?'0':'1';
 const original=readerSourceRoot;
 const fromReader=createRequire(path.join(original,'package.json'));
 const {build}=await import(pathToFileURL(fromReader.resolve('vite')).href);
 const {default:react}=await import(pathToFileURL(fromReader.resolve('@vitejs/plugin-react')).href);
+const moduleInventoryPath=path.resolve(process.env.VANTILO_QWEN_WEB_MODULES_OUTPUT||path.join(repo,'build/reader-qwen-translation-stage/web-modules.json'));
 await build({
   root:original,configFile:false,envFile:false,publicDir:false,
   cacheDir:path.resolve(process.env.VANTILO_QWEN_VITE_CACHE||path.join(repo,'build/reader-vite-cache')),
   resolve:{dedupe:['react','react-dom']},
-  plugins:[sharedReaderComposerPlugin(),parcelMacros.vite(),readerVariantPlugin(),react()],
+  plugins:[sharedReaderComposerPlugin(),parcelMacros.vite(),readerVariantPlugin(),react(),runtimeModuleInventoryPlugin(moduleInventoryPath)],
   base:'/',
   build:{outDir:path.resolve(process.env.VANTILO_QWEN_WEB_OUTPUT || path.join(repo,'build/reader-qwen-translation-stage/web')),emptyOutDir:true,sourcemap:false},
 });
