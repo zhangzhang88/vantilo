@@ -68,13 +68,21 @@
 .theme-night .vantilo-dictionary-secondary > summary { color: #dec483; }
 
 /* Vantilo-only, compact Apple Dictionary word popover */
+.word-lookup-dictionary-summary .vantilo-dictionary-phonetic {
+  color: #82796c;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .word-lookup-dictionary-summary .vantilo-dictionary-quick {
   display: block;
   max-width: 100%;
   color: #37332d;
-  font-size: 15px;
-  line-height: 1.65;
-  font-weight: 650;
+  font-size: 13px;
+  line-height: 1.7;
+  font-weight: 550;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .word-lookup-dictionary-summary .vantilo-dictionary-source {
@@ -117,6 +125,14 @@
 .word-lookup-dictionary-summary .vantilo-dictionary-full-body > p + p {
   padding-left: 10px;
   border-left: 2px solid #e4d8bd;
+}
+.word-lookup-dictionary-summary .vantilo-dict-sense-text,
+.word-lookup-dictionary-summary .vantilo-dict-example-en,
+.word-lookup-dictionary-summary .vantilo-dict-example-zh {
+  white-space: pre-wrap;
+}
+.theme-night .word-lookup-dictionary-summary .vantilo-dictionary-phonetic {
+  color: #aaa398;
 }
 .theme-night .word-lookup-dictionary-summary .vantilo-dictionary-quick {
   color: #f1eee7;
@@ -220,6 +236,11 @@
 }
 .word-lookup-dictionary-summary .vantilo-dict-text-other {
   color: var(--vantilo-dict-heading);
+}
+.word-lookup-dictionary-summary .vantilo-dict-text-phonetic {
+  color: var(--vantilo-dict-muted);
+  font-size: 0.92em;
+  font-style: italic;
 }
 .word-lookup-dictionary-summary .vantilo-dict-example {
   position: relative;

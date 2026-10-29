@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
@@ -44,6 +44,29 @@ describe('Native Reader dictionary cache', () => {
       const restored = createDictionaryCache({ dataDir: root, lookup: next });
       expect((await restored.lookup('imposed')).definitionsZh[0].definition).toContain('中文释义');
       expect(next).not.toHaveBeenCalled();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('retains complete long definitions in the new cache without loading lossy v2 previews', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'vantilo-dictionary-long-entry-'));
+    try {
+      const legacy = path.join(root, 'vantilo-system-dictionary-cache-v2.json');
+      await writeFile(legacy, JSON.stringify({
+        version: 1,
+        entries: [{ word: 'purred', result: { ...definition('purred'), definitionsZh: [{ definition: 'legacy truncated', source: 'macos-dictionary' }] } }],
+      }));
+      const complete = 'Synthetic complete system definition: ' + '长释义。'.repeat(1200) + ' END-OF-ENTRY';
+      const lookup = vi.fn(async (word: string) => ({
+        ...definition(word),
+        definitionsZh: [{ definition: complete, partOfSpeech: null, source: 'macos-dictionary-full' }],
+        definitionsEn: [],
+      }));
+      const first = createDictionaryCache({ dataDir: root, lookup });
+      expect((await first.lookup('purred')).definitionsZh[0].definition).toBe(complete);
+      const restored = createDictionaryCache({ dataDir: root, lookup: vi.fn() });
+      expect((await restored.lookup('purred')).definitionsZh[0].definition).toBe(complete);
+      expect(lookup).toHaveBeenCalledOnce();
+      expect(CACHE_FILENAME).toBe('vantilo-system-dictionary-cache-v3.json');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

@@ -7,7 +7,7 @@ type NativeDictionarySection = { letter: string; heading: string; senses: Native
 type NativeDictionaryLayout = { lemma: string; sections: NativeDictionarySection[]; fallback: string };
 
 export function parseVantiloNativeDictionary(fullText: string): NativeDictionaryLayout {
-  const input = fullText.trim().slice(0, 4000);
+  const input = fullText.trim();
   const lemmaMatch = input.match(/^([A-Za-z][A-Za-z '-]{0,90})（原形）\s*·\s*/u);
   const lemma = lemmaMatch?.[1]?.trim() ?? '';
   const body = lemmaMatch ? input.slice(lemmaMatch[0].length) : input;
@@ -32,7 +32,7 @@ export function parseVantiloNativeDictionary(fullText: string): NativeDictionary
       return;
     }
     if (kind === 'group') {
-      const header = text.match(/^(.*?(?:transitive verb|intransitive verb|reflexive verb|phrasal verb|adjective|adverb|noun|verb|pronoun|preposition|interjection))(?:\s+(.+))?$/iu);
+      const header = text.match(/^(.*?(?:transitive verb|intransitive verb|reflexive verb|phrasal verb|auxiliary verb|modal verb|adjective|adverb|noun|verb|pronoun|preposition|interjection|exclamation|conjunction|determiner|article|numeral|number|abbreviation|prefix|suffix))(?:\s+(.+))?$/iu);
       section = { letter: marker, heading: header?.[1]?.trim() || '', senses: [] };
       sections.push(section);
       sense = null;
@@ -63,7 +63,7 @@ export function parseVantiloNativeDictionary(fullText: string): NativeDictionary
     }
   };
 
-  const marker = /▸|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|(?:^|\s)([A-F])\.\s+(?=(?:to\s+|(?:in)?transitive\b|reflexive\b|noun\b|verb\b|adjective\b|adverb\b|phrasal\b|pronoun\b|interjection\b))/gu;
+  const marker = /▸|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|(?:^|\s)([A-F])\.\s+(?=(?:to\s+|(?:in)?transitive\b|reflexive\b|noun\b|verb\b|adjective\b|adverb\b|phrasal\b|pronoun\b|preposition\b|interjection\b|exclamation\b|conjunction\b|determiner\b|article\b|auxiliary\b|modal\b|numeral\b|number\b|abbreviation\b|prefix\b|suffix\b))/gu;
   let active: { kind: 'preamble' | 'group' | 'sense' | 'example'; label: string } = { kind: 'preamble', label: '' };
   let offset = 0;
   for (const match of body.matchAll(marker)) {
@@ -94,11 +94,12 @@ export function parseVantiloNativeDictionary(fullText: string): NativeDictionary
 function VantiloDictionaryRichText({ text }: { text: string }) {
   // Plain text only. Chinese translation, grammatical notes, and dictionary
   // usage brackets get their own visual hierarchy.
-  const parts = text.split(/(‹[^›]*›|\([^)]*\)|[\p{Script=Han}]+)/gu).filter(Boolean);
+  const parts = text.split(/(‹[^›]*›|\([^)]*\)|[\p{Script=Han}]+|[\p{Script=Latin}\p{M}]+(?:['’][\p{Script=Latin}\p{M}]+)*)/gu).filter(Boolean);
+  const pinyinTone = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜńňḿ]/iu;
   return <>
     {parts.map((part, i) => {
       const kind = part.startsWith('‹') ? 'usage' : part.startsWith('(') ? 'note' :
-        /[\p{Script=Han}]/u.test(part) ? 'han' : 'other';
+        /[\p{Script=Han}]/u.test(part) ? 'han' : pinyinTone.test(part) ? 'phonetic' : 'other';
       return <span className={'vantilo-dict-text-' + kind} lang={kind === 'han' ? 'zh-CN' : undefined} key={i}>{part}</span>;
     })}
   </>;
@@ -144,17 +145,33 @@ export function VantiloDictionaryExpanded({
   );
 }
 
+// Compact preview for the inline word card. The query text stays in App's
+// heading; this renders the system-provided lemma/phonetics/gloss separately.
+export function VantiloDictionaryQuickSummary({ dictionary }: { dictionary: VantiloDictionaryRecord }) {
+  const hasChinese = dictionary.definitionsZh.length > 0;
+  const language = hasChinese ? 'zh' : 'en';
+  const definitions = hasChinese ? dictionary.definitionsZh : dictionary.definitionsEn;
+  const quick = definitions.find(item => item.source === 'macos-dictionary') ?? definitions[0];
+  return <>
+    {dictionary.phonetic && <div className="vantilo-dictionary-phonetic" lang="en">{dictionary.phonetic}</div>}
+    {quick && <div className="vantilo-dictionary-quick" lang={language === 'en' ? 'en' : undefined}>{quick.definition}</div>}
+    <VantiloDictionaryDisclosure dictionary={dictionary} language={language} />
+  </>;
+}
+
 // Reuse the same native entry renderer in the inline word popup and in the
 // vocabulary detail pane. Keep full text out of the ordinary meaning list.
+type VantiloDictionaryRecord = {
+  word: string;
+  phonetic?: string | null;
+  definitionsZh: Array<{ definition: string; source: string; partOfSpeech?: string | null }>;
+  definitionsEn: Array<{ definition: string; source: string; partOfSpeech?: string | null }>;
+};
+
 export function VantiloDictionaryDisclosure({
   dictionary, language,
 }: {
-  dictionary: {
-    word: string;
-    phonetic?: string | null;
-    definitionsZh: Array<{ definition: string; source: string }>;
-    definitionsEn: Array<{ definition: string; source: string }>;
-  };
+  dictionary: VantiloDictionaryRecord;
   language: 'zh' | 'en';
 }) {
   const definitions = language === 'zh' ? dictionary.definitionsZh : dictionary.definitionsEn;

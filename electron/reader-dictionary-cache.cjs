@@ -6,8 +6,9 @@ const { randomUUID } = require('node:crypto');
 
 const MAX_ENTRIES = 1000;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
-// Do not load previous AI-generated dictionary glosses as if they were Apple entries.
-const CACHE_FILENAME = 'vantilo-system-dictionary-cache-v2.json';
+const MAX_DEFINITION_CHARS = 1_000_000;
+// Do not reuse v2 previews, which could contain lossy/truncated dictionary formatting.
+const CACHE_FILENAME = 'vantilo-system-dictionary-cache-v3.json';
 
 function validEntry(value) {
   if (!value || typeof value !== 'object' || typeof value.word !== 'string' ||
@@ -16,7 +17,7 @@ function validEntry(value) {
   if (!result || typeof result !== 'object' || typeof result.word !== 'string') return false;
   const validDefinitions = items => Array.isArray(items) && items.length <= 8 &&
     items.every(item => item && typeof item.definition === 'string' &&
-      item.definition.length > 0 && item.definition.length <= 3500);
+      item.definition.length > 0 && item.definition.length <= MAX_DEFINITION_CHARS);
   return validDefinitions(result.definitionsZh) &&
     validDefinitions(result.definitionsEn) &&
     (result.definitionsZh.length + result.definitionsEn.length > 0);

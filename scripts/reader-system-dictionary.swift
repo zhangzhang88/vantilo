@@ -28,6 +28,5 @@ func definition(for term: String) -> String? {
 }
 _ = definition(for: "hello")
 let raw = definition(for: word)
-let trimmed = raw.map { String($0.prefix(8000)) }
-let json = try JSONEncoder().encode(DefinitionReply(word: word, definition: trimmed))
+let json = try JSONEncoder().encode(DefinitionReply(word: word, definition: raw))
 FileHandle.standardOutput.write(json)

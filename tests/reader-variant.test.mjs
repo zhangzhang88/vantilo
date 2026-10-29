@@ -149,6 +149,13 @@ it('renders the Apple Dictionary card as a compact gloss with an expandable full
   expect(result).toContain('className="vantilo-dictionary-full-body"');
   expect(result).toContain('VantiloDictionaryExpanded');
   expect(result).toContain('VantiloDictionaryDisclosure');
+  expect(result).toContain('<VantiloDictionaryQuickSummary dictionary={dictionary}/>');
+  const dictionaryBlockStart = result.indexOf('className="word-lookup-dictionary-summary"');
+  const contextBlockStart = result.indexOf('<div className="word-lookup-context">', dictionaryBlockStart);
+  const dictionaryBlock = result.slice(dictionaryBlockStart, contextBlockStart);
+  expect(dictionaryBlock).toContain('<VantiloDictionaryQuickSummary dictionary={dictionary}/>');
+  expect(dictionaryBlock).not.toContain('contextStatus');
+  expect(result.slice(contextBlockStart, contextBlockStart + 700)).toContain('lookup.contextStatus === "error"');
   expect(result).toContain('vantilo-dict-section-title');
   expect(result).toContain('parseVantiloNativeDictionary');
   expect(result).not.toContain('.definition.split("▸")');

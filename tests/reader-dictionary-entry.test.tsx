@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { parseVantiloNativeDictionary, VantiloDictionaryExpanded, VantiloDictionaryDisclosure } from '../scripts/reader-dictionary-entry';
+import { parseVantiloNativeDictionary, VantiloDictionaryExpanded, VantiloDictionaryDisclosure, VantiloDictionaryQuickSummary } from '../scripts/reader-dictionary-entry';
 
 const fullEntry = [
   'impose（原形） · A. transitive verb ① (enforce) 强制实行 qiángzhì shíxíng ‹restriction, penalty, sanctions›;',
@@ -72,6 +72,7 @@ describe('macOS Dictionary semantic entry presentation', () => {
     expect(html).toContain('class="vantilo-dict-example-zh"');
     expect(html).toContain('class="vantilo-dict-text-han" lang="zh-CN">强制实行</span>');
     expect(html).toContain('class="vantilo-dict-text-usage">‹restriction, penalty, sanctions›</span>');
+    expect(html).toContain('class="vantilo-dict-text-phonetic">qiángzhì</span>');
   });
 
   it('never invents a meaning and renders unrecognized entries as plain text', () => {
@@ -82,7 +83,48 @@ describe('macOS Dictionary semantic entry presentation', () => {
     const html = renderToStaticMarkup(
       <VantiloDictionaryExpanded definition={entry} phonetic={null} word="hello" />,
     );
-    expect(html).toContain('Used as a greeting.');
+    expect(html.replace(/<[^>]*>/gu, '')).toContain('Used as a greeting.');
+  });
+
+  it('parses abbreviation, prefix, suffix, number and numeral sections without cross-group content', () => {
+    const entry = 'A. abbreviation ① short form B. prefix ① beginning element C. suffix ① ending element D. number ① quantity E. numeral ① number word F. noun ① separate noun';
+    const tree = parseVantiloNativeDictionary(entry);
+    expect(tree.sections.map(section => section.heading)).toEqual(['abbreviation', 'prefix', 'suffix', 'number', 'numeral', 'noun']);
+    expect(tree.sections.map(section => section.senses[0].description)).toEqual([
+      'short form', 'beginning element', 'ending element', 'quantity', 'number word', 'separate noun',
+    ]);
+  });
+
+  it('keeps synthetic long multiline entries intact in the parser and expanded renderer', () => {
+    const longEntry = 'A. noun ① ' + '合成释义，包含多种标点；并保留原始内容。'.repeat(300) + '\nEND-OF-SYNTHETIC-ENTRY';
+    const tree = parseVantiloNativeDictionary(longEntry);
+    expect(tree.fallback).toBe(longEntry);
+    expect(tree.sections[0].senses[0].description.length).toBeGreaterThan(4000);
+    const html = renderToStaticMarkup(
+      <VantiloDictionaryExpanded definition={longEntry} phonetic={null} word="synthetic" />,
+    );
+    expect(html.replace(/<[^>]*>/gu, '')).toContain('END-OF-SYNTHETIC-ENTRY');
+  });
+
+  it('renders the native dictionary preview independently of a context-meaning error', () => {
+    const dictionary = {
+      word: 'purred',
+      phonetic: 'BrE /pɜːr/, AmE /pɝːr/',
+      definitionsZh: [
+        { source: 'macos-dictionary', definition: 'purr（原形） ·\nA. intransitive verb\n发出柔和的低鸣声' },
+        { source: 'macos-dictionary-full', definition: 'purr（原形） ·\nA. intransitive verb ① 发出柔和的低鸣声。' },
+      ],
+      definitionsEn: [],
+    };
+    const html = renderToStaticMarkup(<div>
+      <VantiloDictionaryQuickSummary dictionary={dictionary} />
+      <div className="word-lookup-context"><p role="alert">语境释义暂不可用</p></div>
+    </div>);
+    expect(html).toContain('purr（原形）');
+    expect(html).toContain('BrE /pɜːr/, AmE /pɝːr/');
+    expect(html).toContain('查看完整词条与例句');
+    expect(html).toContain('word-lookup-context');
+    expect(html).toContain('语境释义暂不可用');
   });
 
   it('treats untrusted dictionary input only as text, never HTML or script', () => {
@@ -91,7 +133,7 @@ describe('macOS Dictionary semantic entry presentation', () => {
       <VantiloDictionaryExpanded definition={entry} phonetic={null} word="test" />,
     );
     expect(html).not.toContain('<img');
-    expect(html).toContain('&lt;img');
+    expect(html).toContain('&lt;');
     expect(html).not.toContain('onerror="');
   });
 
@@ -121,6 +163,32 @@ describe('macOS Dictionary semantic entry presentation', () => {
     expect(renderToStaticMarkup(
       <VantiloDictionaryDisclosure dictionary={withoutNativeFull} language="zh" />,
     )).toBe('');
+  });
+
+  it('shows a concise English-only preview and keeps long multi-POS examples in the collapsed full entry', () => {
+    const raw = 'A. noun ① A long first meaning that remains whole. ▸ A long illustrative sentence.' + ' additional source wording.'.repeat(80) + ' B. verb ① A separate second meaning.';
+    const dictionary = {
+      word: 'synthetic', phonetic: null, definitionsZh: [],
+      definitionsEn: [
+        { source: 'macos-dictionary', definition: 'A. noun\n① A long first meaning that remains whole.' },
+        { source: 'macos-dictionary-full', definition: raw },
+      ],
+    };
+    const html = renderToStaticMarkup(<VantiloDictionaryQuickSummary dictionary={dictionary} />);
+    expect(html).toContain('A long first meaning that remains whole.');
+    expect(html.slice(0, html.indexOf('<details'))).not.toContain('additional source wording.');
+    expect(html).toContain('<details');
+    expect(html).toContain('separate');
+    expect(html).toContain('second');
+    expect(html).toContain('A long illustrative sentence.');
+  });
+
+  it('prompts expansion when no reliable English summary is available', () => {
+    const result = createRequire(import.meta.url)('../electron/reader-system-dictionary.cjs').formatMacDictionaryReply('test', {
+      word: 'test', definition: 'test | noun | ▸ example-only unstructured entry',
+    });
+    expect(result.definitionsEn[0].definition).toBe('展开查看完整词条');
+    expect(result.definitionsEn[1].definition).toContain('example-only unstructured entry');
   });
 
   it('supports an English-only native word detail without falsely adding a Chinese definition', () => {

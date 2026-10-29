@@ -329,9 +329,10 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
     return () => document.removeEventListener("pointerdown", closeWordDetailOnOutsidePointer, true);
   }, [wordDetailLookup]);
 `);
-    const before = '{firstZh && <strong>{firstZh}</strong>}';
-    if (!source.includes(before)) throw new Error('Reader dictionary card seam changed');
-    source = source.replace(before, "{\n  firstZh && <strong className=\"vantilo-dictionary-quick\">{firstZh}</strong>\n}\n{dictionary?.definitionsZh.some((item) => (item.source as string) === \"macos-dictionary-full\") && (\n  <>\n    <details className=\"vantilo-dictionary-full\">\n      <summary>查看完整词条与例句</summary>\n      <div className=\"vantilo-dictionary-full-body\">\n        <VantiloDictionaryExpanded\n          definition={dictionary.definitionsZh.find((item) => (item.source as string) === \"macos-dictionary-full\")?.definition ?? \"\"}\n          phonetic={dictionary.phonetic}\n          word={dictionary.word}\n        />\n      </div>\n    </details>\n  </>\n)}");
+    const before = `              {firstZh && <strong>{firstZh}</strong>}
+              {firstEn && <p><em>{firstEn.partOfSpeech}</em>{firstEn.definition}</p>}`;
+    if (source.split(before).length !== 2) throw new Error('Reader dictionary card seam changed');
+    source = source.replace(before, '<VantiloDictionaryQuickSummary dictionary={dictionary} />');
     const pronunciationStart = source.indexOf('function playWordPronunciation(');
     const pronunciationEnd = source.indexOf('\nfunction WordLookupCard(', pronunciationStart);
     if (pronunciationStart < 0 || pronunciationEnd < 0) {
