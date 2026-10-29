@@ -12,7 +12,7 @@ const setup=createReaderOnboarding({userData:temp,assetsDir:path.resolve(__dirna
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let win;
 let fixtureServer,fixtureOrigin;
-let dictionaryOpenAttempts=0, modelInfoAttempts=0, dictionaryChecks=0;
+let dictionaryOpenAttempts=0, dictionaryChecks=0;
 const blockedNetwork=[];
 const timeout=setTimeout(()=>{console.error('FAIL: isolated first-run smoke timeout');app.exit(1);},20000);
 async function until(expression, limit=70) {
@@ -46,7 +46,6 @@ app.whenReady().then(async()=>{
   ipcMain.handle('reader:setup-finish',(_event,decision)=>setup.finish(decision));
   // Stub system application launches and outbound pages, not the local Dictionary Services lookup.
   ipcMain.handle('reader:setup-dictionary',()=>{dictionaryOpenAttempts++;return {opened:false,error:'测试模式不会实际打开系统词典'}});
-  ipcMain.handle('reader:setup-model-info',()=>{modelInfoAttempts++;});
   // A Reader host UI fixture: opening an iframe is not evidence that the Reader API is running.
   ipcMain.handle('magazine-reader:start',()=>({ready:true}));
   ipcMain.handle('magazine-reader:status',()=>({status:'ready',error:null}));
@@ -64,7 +63,7 @@ app.whenReady().then(async()=>{
   if(!await until("!document.querySelector('.reader-onboarding-step-title small')?.textContent?.includes('检测中')"))throw Error('Dictionary probe stayed pending');
   const detected=await win.webContents.executeJavaScript("document.querySelector('.reader-onboarding-step-title small')?.textContent");
   if(!['已检测到中文释义','只有英文释义','未检测到可用词条'].includes(detected))throw Error('No actual Dictionary Services readiness status');
-  if(!await win.webContents.executeJavaScript("document.body.innerText.includes('应用内安装尚未开放')"))throw Error('Model not-ready state hidden');
+  if(!await win.webContents.executeJavaScript("document.body.innerText.includes('自定义兼容 API')&&document.body.innerText.includes('已登录的 ChatGPT 模型')&&!document.body.innerText.includes('Qwen')"))throw Error('Reader translation setup guidance is missing or advertises an unavailable local model');
   // Check that the dialog is neither clipped nor loses its action footer at compact Mac window dimensions.
   win.setSize(800,600);
   await delay(150);
@@ -80,9 +79,6 @@ app.whenReady().then(async()=>{
   win.setSize(1150,820);
   await delay(120);
 
-  if(!await win.webContents.executeJavaScript("document.body.innerText.includes('非安装')"))throw Error('Model detail action is not clearly labelled');
-  if(!await win.webContents.executeJavaScript("(()=>{const b=[...document.querySelectorAll('.reader-onboarding-actions button')].find(x=>x.textContent==='查看 Qwen 模型详情（非安装）');b?.click();return Boolean(b)})()"))throw Error('Model info action missing');
-  if(!await until("Boolean(window.vantilo?.viewLocalModelInfo)") || modelInfoAttempts !== 1)throw Error('Model info action did not invoke IPC safely');
   if(!await win.webContents.executeJavaScript("(()=>{const b=[...document.querySelectorAll('.reader-onboarding-actions button')].find(x=>x.textContent==='打开系统词典');b?.click();return Boolean(b)})()"))throw Error('Dictionary action missing');
   if(!await until("document.body.innerText.includes('测试模式不会实际打开系统词典')") || dictionaryOpenAttempts !== 1)throw Error('Dictionary-open failure feedback missing');
   if(!await win.webContents.executeJavaScript("(()=>{const b=[...document.querySelectorAll('.reader-onboarding-actions button')].find(x=>x.textContent==='重新检测');b?.click();return Boolean(b)})()"))throw Error('Recheck action missing');
@@ -111,7 +107,7 @@ app.whenReady().then(async()=>{
   await delay(500);
   if(await win.webContents.executeJavaScript("Boolean(document.querySelector('[role=dialog][aria-labelledby=reader-setup-title]'))"))throw Error('Completed onboarding returned after app reload');
   if(blockedNetwork.length)throw Error('Unexpected external network attempted');
-  console.log('PASS: isolated Electron profile, actual native Dictionary probe ('+detected+'), model not-installed messaging, model page action mocked safely, Dictionary open error feedback, recheck, skip persistence, reload, Reader settings re-entry and completion persistence. Reader API and external network not accessed; no real Codex or private user data.');
+  console.log('PASS: isolated Electron profile, actual native Dictionary probe ('+detected+'), current custom-API/ChatGPT setup guidance without unavailable local-model claims, Dictionary open error feedback, recheck, skip persistence, reload, Reader settings re-entry and completion persistence. Reader API and external network not accessed; no real Codex or private user data.');
 }).then(()=>{clearTimeout(timeout);win?.destroy();fixtureServer?.close();app.quit();}).catch(error=>{console.error(error.stack||String(error));clearTimeout(timeout);win?.destroy();fixtureServer?.close();app.exit(1);});
 app.on('before-quit',()=>{fs.rmSync(temp,{recursive:true,force:true})});
 app.on('window-all-closed',()=>{});
