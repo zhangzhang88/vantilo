@@ -2,7 +2,7 @@
 
 Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、杂志阅读、翻译、词汇学习和 Codex 工作台放在一个界面中，帮助你阅读英文内容，并使用自定义 API 或 ChatGPT 辅助理解。
 
-> **项目状态：0.1.11 Beta 预发布。** Universal ZIP 与 SHA-256 校验文件见 [GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.11)。该版本包含本地 macOS Dictionary Services 点词释义和有道英式/美式发音接入；有道 `dictvoice` 接口用于公开分发桌面应用的授权尚未取得书面确认，本项目不声称已获授权。项目所有者已确认拥有 Magazine Reader 与集成 Reader 源码的版权；这不自动涵盖第三方代码、依赖、媒体、杂志或在线服务。
+> **项目状态：0.1.12 Beta 预发布。** Universal ZIP 与 SHA-256 校验文件见 [GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.12)。该版本包含本地 macOS Dictionary Services 点词释义和有道英式/美式发音接入；有道 `dictvoice` 接口用于公开分发桌面应用的授权尚未取得书面确认，本项目不声称已获授权。项目所有者已确认拥有 Magazine Reader 与集成 Reader 源码的版权；这不自动涵盖第三方代码、依赖、媒体、杂志或在线服务。
 
 ## 功能介绍
 
@@ -15,13 +15,13 @@ Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、�
 - **听书**：在支持的阅读页面播放中文朗读，使用 Ciallo TTS 的“晓辰多语言”音色。朗读文本会发送至该第三方服务，连续播放会预生成后续音频；服务可用性取决于网络和第三方服务状态。阅读中的英文单词发音是独立功能。
 - **Codex 工作台**：登录 ChatGPT 后，可以在独立工作台与 Codex 对话、选择可用模型，并在应用的权限边界内处理所选工作区内容。
 
-## 当前版本：0.1.11 macOS Universal Beta
+## 当前版本：0.1.12 macOS Universal Beta
 
 Universal ZIP 面向 Apple Silicon `arm64` 与 Intel `x86_64`。本次构建包内 Mach-O 架构已逐项检查；Intel 实机安装和功能测试 **NOT RUN**。候选包不包含内置本地 Qwen 模型；阅读功能使用用户配置的云端或局域网 API。签名为 ad-hoc，尚未 Developer ID 签名或 Apple 公证。
 
 ### 下载
 
-从 [v0.1.11 GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.11) 下载 Universal ZIP；对应 SHA-256 sidecar 随 Release 提供。发布只包含 ZIP 与 sidecar，不生成或上传 DMG。本地构建报告保存在独立的 Vantilo 外置发布工作区。
+从 [v0.1.12 GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.12) 下载 Universal ZIP；[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.12/Vantilo-Beta-0.1.12-universal.zip)；[下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.12/Vantilo-Beta-0.1.12-universal.zip.sha256)。发布只包含 ZIP 与 sidecar，不生成或上传 DMG。本地构建报告保存在独立的 Vantilo 外置发布工作区。
 
 ## 安装说明与已知限制
 
@@ -33,9 +33,9 @@ Intel 实机安装测试尚未完成。项目所有者已确认 Reader 源码版
 
 ## 杂志与更新
 
-应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.11 Universal ZIP 不包含 EPUB 文件**；用户可在应用中导入自己有权使用的电子书和期刊。
+应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.12 Universal ZIP 不包含 EPUB 文件**；用户可在应用中导入自己有权使用的电子书和期刊。
 
-应用内的**软件更新检查**与杂志新刊检查是两件事。软件更新检查用于发现 GitHub Releases 上的新稳定版本并打开发布页面；当前不会自动下载安装。预发布版本与正式稳定版本的提示行为可能不同。
+应用内的**软件更新检查**与杂志新刊检查是两件事。软件更新检查用于发现 GitHub Releases 上的新稳定版本并打开发布页面；当前不会自动下载安装。当前更新器只检查稳定版，不会发现 Beta Pre-release；Beta 请通过上方 Release 下载。
 
 项目所有者曾表示拥有或已取得四种默认杂志随应用分发及获取新刊的权利，但未提供书面依据，也未经独立核验。该声明不构成已确认的再分发授权。发布准备仍需核对第三方资源使用范围。用户导入的个人电子书和期刊不应被提交到公开仓库。
 
@@ -87,6 +87,6 @@ npm run test:reader:auth
 
 ## 第三方组件与许可
 
-项目使用 Electron、React Spectrum、Codex 等第三方组件，相关声明保存在 [`licenses/`](licenses/)。0.1.11 从干净发行提交构建；随包完整第三方 notices 与 Electron/Chromium/Codex 许可文件已核验。Apple Silicon 本地千问使用的模型与 MLX 组件有各自的许可证和来源要求；本候选不包含模型权重。杂志和电子书的版权不因应用开源而自动转移。
+项目使用 Electron、React Spectrum、Codex 等第三方组件，相关声明保存在 [`licenses/`](licenses/)。0.1.12 从干净发行提交构建；随包完整第三方 notices 与 Electron/Chromium/Codex 许可文件已核验。Apple Silicon 本地千问使用的模型与 MLX 组件有各自的许可证和来源要求；本候选不包含模型权重。杂志和电子书的版权不因应用开源而自动转移。
 
 项目所有者已确认 Reader 自有源码版权；这不等于为 Vantilo 选择了开源许可证，也不授予任何第三方组件、贡献、媒体、杂志内容或在线服务的额外权利。发布前须检查最终包内实际包含的组件与 notices；不得仅凭本 README 推定第三方内容可自由再分发。

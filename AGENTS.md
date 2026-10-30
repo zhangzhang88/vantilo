@@ -36,6 +36,10 @@
 - Do not reset, clean, commit, or push as part of packaging unless the user explicitly requests that exact action. Do not overwrite existing 0.1.9/0.1.10 or other artifacts; use `/Volumes/Workspace/Development/Vantilo/out/<version>/` and fail closed if a target already exists. Legacy compatibility symlinks may be kept only when they point to canonical versioned files and contain no duplicate data.
 - Before any macOS packaging task, read [`docs/release/macos-universal-build.md`](docs/release/macos-universal-build.md), then inspect the current scripts and actual workspace state. Distinguish measured results from script-derived expectations and unverified steps; Universal slices do not prove Intel hardware acceptance, and an ad-hoc signature is not notarization.
 
+## Release workflow
+
+- For “开始发布 Vantilo 新版本”, read [`docs/release/RELEASING.md`](docs/release/RELEASING.md) and verify the current version, commit, artifact, remote and authorization before each release.
+
 ## Product principles
 
 - The primary interaction is a BaoCut/Codex-like Agent workspace, not a reading app with a background Codex helper.
