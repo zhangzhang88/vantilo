@@ -59,6 +59,7 @@ export interface BuildServerOptions {
   selectionAssistProvider?: SelectionAssistProvider | null;
   readingAssistantProvider?: ReadingAssistantProvider | null;
   translationProvider?: TranslationProvider | null;
+  getTranslationCacheIdentity?: () => { profileId: string | null; model: string | null };
   wordContextProvider?: WordContextProvider | null;
   dictionaryProvider?: DictionaryProvider | null;
   aiProviderEnv?: NodeJS.ProcessEnv;
@@ -208,6 +209,10 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   }));
 
   app.get("/api/ai-settings", async () => aiSettingsService.getPublicSettings());
+  app.get("/api/translation-cache-identity", async () => {
+    const active = options.getTranslationCacheIdentity?.() ?? (() => { const profile = aiSettingsService.getActiveProfile(); return { profileId: profile?.id ?? null, model: profile?.model ?? null }; })();
+    return active;
+  });
 
   app.get("/api/prep/auth", async () => codexAuth.status());
   app.post<{ Body: { text?: unknown; language?: unknown } }>("/api/prep/tts", async (request, reply) => {
@@ -434,10 +439,14 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   });
 
   app.post<{
-    Body: { text?: string; contextBefore?: string; contextAfter?: string; mode?: "paragraph" | "sentence"; paragraphContext?: string; paragraphTranslationReference?: string };
+    Body: { text?: string; contextBefore?: string; contextAfter?: string; mode?: "paragraph" | "sentence"; paragraphContext?: string; paragraphTranslationReference?: string; expectedProfileId?: string; expectedModel?: string };
   }>("/api/translate", async (request, reply) => {
     if (typeof request.body?.text !== "string") return reply.code(400).send({ error: "Translation text is required" });
     if (request.body.mode !== undefined && request.body.mode !== "paragraph" && request.body.mode !== "sentence") return reply.code(400).send({ error: "Invalid translation mode" });
+    if ((request.body.expectedProfileId !== undefined && (typeof request.body.expectedProfileId !== "string" || request.body.expectedProfileId.length > 200)) || (request.body.expectedModel !== undefined && (typeof request.body.expectedModel !== "string" || request.body.expectedModel.length > 200))) return reply.code(400).send({ error: "Invalid expected translation profile" });
+    const activeTranslationIdentity = options.getTranslationCacheIdentity?.() ?? (() => { const profile = aiSettingsService.getActiveProfile(); return { profileId: profile?.id ?? null, model: profile?.model ?? null }; })();
+    if (request.body.expectedProfileId && request.body.expectedProfileId !== activeTranslationIdentity.profileId) return reply.code(409).send({ error: "Translation profile changed; retry with the active profile" });
+    if (request.body.expectedModel && request.body.expectedModel !== activeTranslationIdentity.model) return reply.code(409).send({ error: "Translation model changed; retry with the active model" });
     for (const value of [request.body.contextBefore, request.body.contextAfter, request.body.paragraphContext, request.body.paragraphTranslationReference]) {
       if (value !== undefined && (typeof value !== "string" || value.length > 12000)) return reply.code(400).send({ error: "Invalid translation context" });
     }
@@ -451,7 +460,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     }
 
     try {
-      return await translationProvider.translate({
+      const translated = await translationProvider.translate({
         text,
         contextBefore: request.body.contextBefore,
         contextAfter: request.body.contextAfter,
@@ -459,6 +468,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
         ...(request.body.paragraphContext ? { paragraphContext: request.body.paragraphContext } : {}),
         ...(request.body.paragraphTranslationReference ? { paragraphTranslationReference: request.body.paragraphTranslationReference } : {}),
       });
+      if (request.body.expectedProfileId && translated.profileId !== request.body.expectedProfileId) return reply.code(409).send({ error: "Translation provider profile did not match the requested profile" });
+      if (request.body.expectedModel && translated.model !== request.body.expectedModel) return reply.code(409).send({ error: "Translation provider model did not match the requested model" });
+      return translated;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Translation request failed";
       return reply.code(502).send({ error: message });

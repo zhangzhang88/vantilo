@@ -20,7 +20,7 @@ import type { SentenceExpression } from "../shared/types";
 import { isChapterNumberParagraph, isTranslatableText } from "../shared/translation-text";
 import { articleReadingDocumentIdentity, bookChapterReadingDocumentIdentity, bookLessonReadingDocumentIdentity } from "../shared/reading-document-identity";
 import { lessonParagraphs, type BookLesson } from "../shared/book-lesson";
-import { deleteBookLesson, deleteScienceArticle, fetchBookLessons, fetchContentDiscovery, fetchScienceArticles, importScienceArticle, refreshContentDiscovery, refreshScienceArticle, updateBookCategory } from "./api";
+import { deleteBookLesson, deleteScienceArticle, fetchActiveTranslationProfile, fetchBookLessons, fetchContentDiscovery, fetchScienceArticles, importScienceArticle, refreshContentDiscovery, refreshScienceArticle, updateBookCategory } from "./api";
 import { loadLessonReaderState, saveLessonReaderState } from "./lesson-reader-state";
 import { loadIssueRecords, type IssueLoadFailure } from "./issue-loading";
 import { getReaderStorage } from "./reader-storage";
@@ -158,10 +158,12 @@ import { DataManagementPanel } from "./data-management-panel";
 import {
   findParagraphTranslation,
   headingTranslationTarget,
+  titleTranslationTarget,
   loadParagraphTranslations,
   paragraphTranslationTarget,
   saveParagraphTranslations,
   upsertParagraphTranslation,
+  translationCacheMetadata,
   type ParagraphTranslationRecord,
 } from "./paragraph-translation-state";
 import { copyTextToClipboard } from "./clipboard";
@@ -195,11 +197,14 @@ function freshIssueTocViewState(issueId = ""): IssueTocViewState {
 interface ParagraphTranslationState {
   status: "loading" | "ready" | "error";
   expanded: boolean;
+  sourceText?: string;
   translation?: string;
   error?: string;
   profileId?: string;
   model?: string;
   generatedAt?: string;
+  configFingerprint?: string;
+  contextFingerprint?: string;
 }
 
 type GuideUiState = GuidePreparationStatus;
@@ -2848,14 +2853,21 @@ function ReaderPage({
   const canTranslateParagraph = useCallback((text: string, index: number) =>
     isTranslatableText(text) && !isChapterNumber(text, index)
       && !(article.visuals ?? []).some(visual => visual.coveredParagraphIndexes.includes(index) || visual.captionParagraphIndexes.includes(index)), [isChapterNumber, article.visuals]);
-  const fullArticleTranslationTargets = useMemo(
-    () => article.paragraphs.map((sourceText, paragraphIndex) => paragraphTranslationTarget({
-      document: article.identity,
-      paragraphIndex,
-      sourceText,
-    })).filter((target) => canTranslateParagraph(target.sourceText, target.paragraphIndex)),
-    [article.identity.documentId, article.paragraphs, canTranslateParagraph],
-  );
+  const articleTitleTranslationTarget = useMemo(() => titleTranslationTarget({ document: article.identity, sourceText: article.title }), [article.identity.documentId, article.title]);
+  const fullArticleTranslationTargets = useMemo(() => {
+    const targets = [
+      ...(!article.titleZh && isTranslatableText(article.title) ? [titleTranslationTarget({ document: article.identity, sourceText: article.title })] : []),
+      ...(() => { let headingIndex = 0; return article.blocks.flatMap(block => {
+        if (block.kind !== "heading") return [];
+        const currentIndex = headingIndex++;
+        return isTranslatableText(block.text) && block.text.trim() !== article.title.trim()
+          ? [headingTranslationTarget({ document: article.identity, headingIndex: currentIndex, sourceText: block.text })] : [];
+      }); })(),
+      ...article.paragraphs.flatMap((sourceText, paragraphIndex) => canTranslateParagraph(sourceText, paragraphIndex)
+        ? [paragraphTranslationTarget({ document: article.identity, paragraphIndex, sourceText })] : []),
+    ];
+    return [...new Map(targets.map(target => [target.key, target])).values()];
+  }, [article.identity.documentId, article.title, article.blocks, article.paragraphs, canTranslateParagraph]);
   const fullArticleTranslatedCount = useMemo(
     () => fullArticleTranslationTargets.filter((target) => findParagraphTranslation(paragraphTranslationRecords, target)).length,
     [fullArticleTranslationTargets, paragraphTranslationRecords],
@@ -4441,27 +4453,33 @@ function ReaderPage({
   ): Promise<boolean> {
     if (!isTranslatableText(text)) return false;
     const key = target.key;
+    const config = await fetchActiveTranslationProfile();
+    const cacheContext = { ...config, provider: "easycliproxy", targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter };
+    const cacheMetadata = translationCacheMetadata(cacheContext);
     const current = translations[key];
 
     if (!force && current?.status === "loading") return false;
 
-    if (!force && current?.status === "ready") {
+    if (!force && current?.status === "ready" && current.sourceText === target.sourceText && (!config.profileId || current.profileId === config.profileId) && (!config.model || current.model === config.model) && current.configFingerprint === cacheMetadata.configFingerprint && current.contextFingerprint === cacheMetadata.contextFingerprint) {
       setTranslations((items) => ({ ...items, [key]: { ...current, expanded, error: undefined } }));
       return true;
     }
 
     if (!force) {
-      const cached = findParagraphTranslation(paragraphTranslationRecords, target);
+      const cached = findParagraphTranslation(paragraphTranslationRecords, target, cacheContext);
       if (cached) {
         setTranslations((items) => ({
           ...items,
           [key]: {
             status: "ready",
             expanded,
+            sourceText: cached.sourceText,
             translation: cached.translationZh,
             profileId: cached.profileId,
             model: cached.model,
             generatedAt: cached.generatedAt,
+            configFingerprint: cached.configFingerprint,
+            contextFingerprint: cached.contextFingerprint,
           },
         }));
         return true;
@@ -4483,12 +4501,13 @@ function ReaderPage({
         text,
         contextBefore,
         contextAfter,
-      });
+      }, undefined, config);
       const record: ParagraphTranslationRecord = {
         ...target,
         translationZh: result.translation,
         ...(result.profileId ? { profileId: result.profileId } : {}),
         model: result.model,
+        ...cacheMetadata,
         provider: result.provider,
         generatedAt: new Date().toISOString(),
       };
@@ -4502,10 +4521,13 @@ function ReaderPage({
         [key]: {
           status: "ready",
           expanded,
+          sourceText: record.sourceText,
           translation: record.translationZh,
           profileId: record.profileId,
           model: record.model,
           generatedAt: record.generatedAt,
+          configFingerprint: record.configFingerprint,
+          contextFingerprint: record.contextFingerprint,
         },
       }));
       return true;
@@ -4531,7 +4553,7 @@ function ReaderPage({
     const target = paragraphTranslationTarget({ document: article.identity, paragraphIndex: index, sourceText: paragraph });
     const current = translations[target.key];
     if (!force && current?.status === "loading") return;
-    if (!force && current?.status === "ready") {
+    if (!force && current?.status === "ready" && current.sourceText === paragraph) {
       setFullArticleTranslationExpanded(false);
       setTranslations((items) => ({ ...items, [target.key]: { ...current, expanded: !current.expanded, error: undefined } }));
       return;
@@ -4544,7 +4566,7 @@ function ReaderPage({
     const target = headingTranslationTarget({ document: article.identity, headingIndex, sourceText: heading });
     const current = translations[target.key];
     if (!force && current?.status === "loading") return;
-    if (!force && current?.status === "ready") {
+    if (!force && current?.status === "ready" && current.sourceText === heading) {
       setFullArticleTranslationExpanded(false);
       setTranslations((items) => ({ ...items, [target.key]: { ...current, expanded: !current.expanded, error: undefined } }));
       return;
@@ -4570,32 +4592,44 @@ function ReaderPage({
 
     if (readerMode !== "article") switchReaderMode("article");
     setFullArticleTranslationExpanded(true);
+    const config = await fetchActiveTranslationProfile();
 
-    const missing = article.paragraphs.flatMap((paragraph, index) => {
-      if (!canTranslateParagraph(paragraph, index)) return [];
-      const target = paragraphTranslationTarget({ document: article.identity, paragraphIndex: index, sourceText: paragraph });
+    const missing = fullArticleTranslationTargets.flatMap<{ target: typeof fullArticleTranslationTargets[number]; text: string; contextBefore?: string; contextAfter?: string }>(target => {
       const current = translations[target.key];
-      const cached = findParagraphTranslation(paragraphTranslationRecords, target);
-      return current?.status === "ready" || cached ? [] : [{ index, paragraph }];
+      const contextBefore = target.targetKind ? undefined : article.paragraphs[target.paragraphIndex - 1];
+      const contextAfter = target.targetKind ? undefined : article.paragraphs[target.paragraphIndex + 1];
+      const cacheContext = { ...config, provider: "easycliproxy", targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter };
+      const cacheMetadata = translationCacheMetadata(cacheContext);
+      const cached = findParagraphTranslation(paragraphTranslationRecords, target, cacheContext);
+      if ((current?.status === "ready" && current.sourceText === target.sourceText && (!config.profileId || current.profileId === config.profileId) && (!config.model || current.model === config.model) && current.configFingerprint === cacheMetadata.configFingerprint && current.contextFingerprint === cacheMetadata.contextFingerprint) || cached) return [];
+      if (target.targetKind === "title" || target.targetKind === "heading") return [{ target, text: target.sourceText, contextBefore: undefined, contextAfter: undefined }];
+      return [{ target, text: target.sourceText, contextBefore: article.paragraphs[target.paragraphIndex - 1], contextAfter: article.paragraphs[target.paragraphIndex + 1] }];
     });
 
     setTranslations((items) => {
       const next = { ...items };
       fullArticleTranslationTargets.forEach((target) => {
         const current = items[target.key];
-        if (current?.status === "ready") {
+        const contextBefore = target.targetKind ? undefined : article.paragraphs[target.paragraphIndex - 1];
+        const contextAfter = target.targetKind ? undefined : article.paragraphs[target.paragraphIndex + 1];
+        const cacheContext = { ...config, provider: "easycliproxy", targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter };
+        const cacheMetadata = translationCacheMetadata(cacheContext);
+        if (current?.status === "ready" && current.sourceText === target.sourceText && (!config.profileId || current.profileId === config.profileId) && (!config.model || current.model === config.model) && current.configFingerprint === cacheMetadata.configFingerprint && current.contextFingerprint === cacheMetadata.contextFingerprint) {
           next[target.key] = { ...current, expanded: true, error: undefined };
           return;
         }
-        const cached = findParagraphTranslation(paragraphTranslationRecords, target);
+        const cached = findParagraphTranslation(paragraphTranslationRecords, target, cacheContext);
         if (cached) {
           next[target.key] = {
             status: "ready",
             expanded: true,
+            sourceText: cached.sourceText,
             translation: cached.translationZh,
             profileId: cached.profileId,
             model: cached.model,
             generatedAt: cached.generatedAt,
+            configFingerprint: cached.configFingerprint,
+            contextFingerprint: cached.contextFingerprint,
           };
           return;
         }
@@ -4614,7 +4648,7 @@ function ReaderPage({
       while (cursor < missing.length && fullArticleTranslationRunRef.current === runToken) {
         const item = missing[cursor];
         cursor += 1;
-        await ensureParagraphTranslation(item.index, item.paragraph, false, true);
+        await ensureReadingTextTranslation(item.target, item.text, item.contextBefore, item.contextAfter, false, true);
       }
     };
 
@@ -5410,7 +5444,10 @@ function ReaderPage({
             <header className="reading-header">
               <div className="reading-section"><span>{article.section}</span><small>{article.sectionZh}</small></div>
               <h1>{article.title}</h1>
-              {article.titleZh && <h2 className="reading-title-zh">{article.titleZh}</h2>}
+              {(article.titleZh || translations[articleTitleTranslationTarget.key]?.status === "ready") && <>
+                <h2 className="reading-title-zh">{article.titleZh || translations[articleTitleTranslationTarget.key]?.translation}</h2>
+                {!article.titleZh && fullArticleTranslationExpanded && translations[articleTitleTranslationTarget.key]?.status === "ready" && <button className="text-button" aria-label="重新翻译文章标题" onClick={() => void ensureReadingTextTranslation(articleTitleTranslationTarget, article.title, undefined, undefined, true, true)}>重新翻译标题</button>}
+              </>}
               {article.subtitle && <p className="reading-deck">{article.subtitle}</p>}
               {article.subtitleZh && <p className="reading-deck-zh">{article.subtitleZh}</p>}
               {article.summaryZh && <div className="reading-summary-zh"><strong>这篇讲什么</strong><p>{article.summaryZh}</p></div>}

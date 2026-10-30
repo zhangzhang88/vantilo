@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { bookChapterReadingDocumentIdentity } from "../shared/reading-document-identity.js";
 import {
   findParagraphTranslation,
+  inspectParagraphTranslation,
   headingTranslationTarget,
+  titleTranslationTarget,
+  translationCacheMetadata,
   loadParagraphTranslations,
   PARAGRAPH_TRANSLATIONS_KEY,
   paragraphTranslationTarget,
@@ -67,9 +70,19 @@ describe("paragraph translation state", () => {
     expect(findParagraphTranslation([item], target)).toEqual(item);
   });
 
-  it("refuses stale cache when the source paragraph changed", () => {
+  it("restores a completed translation from persistent storage for another reading mode", () => {
+    const storage = new MemoryStorage();
+    const item = record();
+    saveParagraphTranslations(storage, [item]);
+    const restored = loadParagraphTranslations(storage);
+    expect(findParagraphTranslation(restored, paragraphTranslationTarget(item))?.translationZh).toBe("目标段落。");
+  });
+
+  it("reports cache miss reasons without exposing source text", () => {
     const item = record();
     const changed = paragraphTranslationTarget({ ...item, sourceText: "Changed paragraph." });
+    expect(inspectParagraphTranslation([item], changed)).toEqual({ hit: false, reason: "source-changed" });
+    expect(inspectParagraphTranslation([], paragraphTranslationTarget(item))).toEqual({ hit: false, reason: "document-or-location-miss" });
     expect(findParagraphTranslation([item], changed)).toBeUndefined();
   });
 
@@ -79,6 +92,16 @@ describe("paragraph translation state", () => {
     expect(target.key).toBe(`${document.documentId}:4`);
     expect(target.issueId).toBeUndefined();
     expect(target.articleId).toBeUndefined();
+  });
+
+  it("persists an article title under a stable independent translation identity", () => {
+    const storage = new MemoryStorage();
+    const target = titleTranslationTarget({ issueId: "economist:2026-09-19", articleId: "article-1", sourceText: "A Stable Title" });
+    const item: ParagraphTranslationRecord = { ...target, translationZh: "稳定的标题", model: "gpt-6-luna", provider: "easycliproxy", generatedAt: "2026-09-27T08:00:00.000Z" };
+    expect(target.key).toBe("reading:article:economist:2026-09-19:article-1:title");
+    saveParagraphTranslations(storage, [item]);
+    expect(findParagraphTranslation(loadParagraphTranslations(storage), target)).toEqual(item);
+    expect(target.key).not.toBe(headingTranslationTarget({ document: target.document, headingIndex: 0, sourceText: "A Stable Title" }).key);
   });
 
   it("persists heading translations under the same book translation cache", () => {
@@ -102,7 +125,18 @@ describe("paragraph translation state", () => {
     expect(storage.getItem(PARAGRAPH_TRANSLATIONS_KEY)).toContain("Why Research Matters");
   });
 
-  it("manual retranslation replaces the cached record at the same paragraph location", () => {
+  it("keeps model-specific translations independently and resolves the requested model", () => {
+    const target = paragraphTranslationTarget(record());
+    const modelA = record({ ...translationCacheMetadata({ profileId: "profile-a", model: "model-a", contextBefore: "before", contextAfter: "after" }), profileId: "profile-a", model: "model-a" });
+    const modelB = record({ ...translationCacheMetadata({ profileId: "profile-b", model: "model-b", contextBefore: "before", contextAfter: "after" }), profileId: "profile-b", model: "model-b", translationZh: "模型 B 译文" });
+    const records = upsertParagraphTranslation(upsertParagraphTranslation([], modelA), modelB);
+    expect(records).toHaveLength(2);
+    expect(findParagraphTranslation(records, target, { profileId: "profile-a", model: "model-a", contextBefore: "before", contextAfter: "after" })).toMatchObject({ translationZh: "目标段落。" });
+    expect(findParagraphTranslation(records, target, { profileId: "profile-b", model: "model-b", contextBefore: "before", contextAfter: "after" })).toMatchObject({ translationZh: "模型 B 译文" });
+    expect(inspectParagraphTranslation(records, target, { profileId: "profile-b", model: "model-b", contextBefore: "different", contextAfter: "after" })).toMatchObject({ hit: false, reason: "context-mismatch" });
+  });
+
+  it("manual retranslation replaces the cached record at the same paragraph location and model", () => {
     const original = record();
     const gemini = record({
       translationZh: "Gemini 的新翻译。",
@@ -112,7 +146,7 @@ describe("paragraph translation state", () => {
     });
     const next = upsertParagraphTranslation([original], gemini);
 
-    expect(next).toHaveLength(1);
+    expect(next).toHaveLength(2);
     expect(next[0]).toMatchObject({
       translationZh: "Gemini 的新翻译。",
       profileId: "gemini-profile",

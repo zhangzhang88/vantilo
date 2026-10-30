@@ -15,6 +15,12 @@ describe('plain translation and existing cache repair',()=>{
   for(const bad of ['{"source":12}','{"source":""}','{"source":"文章","extra":"x"}','{"source":','["文章"]'])expect(normalizeTranslation(bad,'Title')).toBeNull();
   expect(normalizeTranslation('{"source":"文章"}','{"source":"Article"}')).toBe('{"source":"文章"}');
  });
+ it('adapts the current profile-aware paragraph request for the packaged translation preview',()=>{
+  const filename=`${readerSourceRoot}/src/frontend/App.tsx`;
+  const adapted=adaptTranslationPreview(readFileSync(filename,'utf8'),filename);
+  expect(adapted).toContain("fetch('/api/vantilo-translation/translate'");
+  expect(adapted).not.toContain('Translate request seam changed');
+ });
  it('repairs a cached title without discarding a successful paragraph or changing storage',()=>{
   const filename=`${readerSourceRoot}/src/frontend/paragraph-translation-state.ts`;
   const adapted=adaptTranslationPreview(readFileSync(filename,'utf8'),filename);

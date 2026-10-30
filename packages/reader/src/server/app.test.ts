@@ -1302,13 +1302,15 @@ describe("Fastify app", () => {
 
   it("routes contextual sentence requests and rejects invalid or oversized context before calling the provider", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "mr-sentence-translation-")); roots.push(root);
-    const translate = vi.fn(async () => ({ translation: "自然句译", expressions: [{ text: "world", explanationZh: "生活环境" }], model: "fixture", provider: "easycliproxy" as const }));
-    const app = await buildServer({ projectRoot: root, serveFrontend: false, translationProvider: { translate } });
+    const translate = vi.fn(async () => ({ translation: "自然句译", expressions: [{ text: "world", explanationZh: "生活环境" }], profileId: "profile-a", model: "model-a", provider: "easycliproxy" as const }));
+    const app = await buildServer({ projectRoot: root, serveFrontend: false, translationProvider: { translate }, getTranslationCacheIdentity: () => ({ profileId: "profile-a", model: "model-a" }) });
     try {
-      const payload = { text: "Our world.", mode: "sentence", paragraphContext: "Before. Our world. After." };
+      const payload = { text: "Our world.", mode: "sentence", paragraphContext: "Before. Our world. After.", expectedProfileId: "profile-a", expectedModel: "model-a" };
       const response = await app.inject({ method: "POST", url: "/api/translate", payload });
       expect(response.statusCode).toBe(200); expect(response.json().expressions).toHaveLength(1);
-      expect(translate).toHaveBeenCalledWith(expect.objectContaining(payload));
+      expect(translate).toHaveBeenCalledWith(expect.objectContaining({ text: payload.text, mode: payload.mode, paragraphContext: payload.paragraphContext }));
+      const wrongProfile = await app.inject({ method: "POST", url: "/api/translate", payload: { ...payload, expectedProfileId: "profile-b" } });
+      expect(wrongProfile.statusCode).toBe(409);
       for (const change of [{ text: 7 }, { mode: "invalid" }, { paragraphContext: "Other sentence." }, { paragraphContext: "a".repeat(12001) }, { contextBefore: {} }]) {
         const invalid = await app.inject({ method: "POST", url: "/api/translate", payload: { ...payload, ...change } });
         expect(invalid.statusCode).toBe(400);

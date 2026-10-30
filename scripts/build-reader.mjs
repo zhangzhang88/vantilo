@@ -14,7 +14,9 @@ import {readerSourceRoot} from './reader-source-path.mjs';
 import {collectPackageRootsFromModules, packageRecordsFromRoots, renderThirdPartyNotices} from './third-party-notices.mjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = readerSourceRoot;
-const output = path.join(repo, 'build/reader');
+const output = process.env.VANTILO_READER_BUILD_OUTPUT
+  ? path.resolve(process.env.VANTILO_READER_BUILD_OUTPUT)
+  : path.join(repo, 'build/reader');
 const legacySeedPath = path.join(output, 'seed');
 try {
   await fs.lstat(legacySeedPath);

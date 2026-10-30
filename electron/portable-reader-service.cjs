@@ -17,7 +17,7 @@ function hasReaderSession(cookieHeader, sessionToken) {
   const expected=Buffer.from(sessionToken,'hex'), received=Buffer.from(value,'hex');
   return expected.length===received.length && timingSafeEqual(expected,received);
 }
-async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
+async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, translationProvider, getTranslationCacheIdentity, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
   if(!/^[a-f0-9]{64}$/.test(sessionToken))throw new Error('Reader session token is invalid');
   for (const folder of ['issues', 'books', 'data', 'config']) await fs.mkdir(path.join(libraryRoot, folder), { recursive: true, mode: 0o700 });
   if (seedDir) await initializeReaderLibrary({ seedDir, libraryRoot });
@@ -30,6 +30,8 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
     reasoningEffort:readerPreferences?.reasoningMode === 'manual' ? readerPreferences.reasoningEffort : null,
   })) : undefined;
   const api = await buildServer({ projectRoot: libraryRoot, serveFrontend: false, aiProviderEnv: {},
+    ...(translationProvider ? { translationProvider } : {}),
+    ...(getTranslationCacheIdentity ? { getTranslationCacheIdentity } : {}),
     // Never resume queued AI preparation merely by starting the packaged library.
     aiFetchImpl: aiFetch,
     vantiloAccountStatus: getAccountStatus,
@@ -223,6 +225,9 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
     lifetime.abort();
     ownedQwen?.close(); // Reclaim resident MLX memory when leaving Reader.
     await sync.stop();
+    // Release idle Chromium keep-alive connections before awaiting server close.
+    api.server.closeIdleConnections?.();
+    web.closeIdleConnections?.();
     await Promise.all([api.close(), new Promise(resolve => web.close(resolve))]);
   } };
 }

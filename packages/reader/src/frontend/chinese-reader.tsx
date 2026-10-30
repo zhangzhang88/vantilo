@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { renderBookLayout, tableParagraphIndexes } from "./book-table";
 import type { ReaderDocumentView } from "./reading-document-view";
-import { translateParagraph } from "./api";
+import { fetchActiveTranslationProfile, translateParagraph } from "./api";
 import { getReaderStorage } from "./reader-storage";
-import { findParagraphTranslation, headingTranslationTarget, loadParagraphTranslations, paragraphTranslationTarget, saveParagraphTranslations, upsertParagraphTranslation, type ParagraphTranslationRecord, type ParagraphTranslationTarget } from "./paragraph-translation-state";
+import { findParagraphTranslation, headingTranslationTarget, titleTranslationTarget, loadParagraphTranslations, paragraphTranslationTarget, saveParagraphTranslations, translationCacheMetadata, upsertParagraphTranslation, type ParagraphTranslationRecord, type ParagraphTranslationTarget } from "./paragraph-translation-state";
 import { isChapterNumberParagraph, isTranslatableText } from "../shared/translation-text";
 import { ChineseAudioPlayer, type SpeechCursor, type SpeechPhase } from "./chinese-audio-player";
 import { loadChineseListeningRecords, resolveChineseListeningPosition, saveChineseListeningPosition, type ChineseListeningPosition } from "./chinese-listening-state";
@@ -14,14 +14,17 @@ function entriesFor(article: ReaderDocumentView): Entry[] {
   const inTable = new Set((article.tables ?? []).flatMap(tableParagraphIndexes));
   const originalOnly = new Set((article.visuals ?? []).flatMap(visual => [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]));
   let headingIndex = 0;
+  const titleTarget = titleTranslationTarget({ document: article.identity, sourceText: article.title });
   const before = new Map<number, Entry[]>();
   let pending: Entry[] = [];
   for (const block of article.blocks) {
     if (block.kind === "heading") {
-      pending.push({ target: headingTranslationTarget({ document: article.identity, headingIndex: headingIndex++, sourceText: block.text }), kind: "heading", index: -1, level: block.level });
+      const target = block.text.trim() === article.title.trim() ? titleTarget : headingTranslationTarget({ document: article.identity, headingIndex, sourceText: block.text });
+      pending.push({ target, kind: "heading", index: -1, level: block.level });
+      headingIndex++;
     } else if (pending.length) { before.set(block.paragraphIndex, pending); pending = []; }
   }
-  entries.push({ target: headingTranslationTarget({ document: article.identity, headingIndex, sourceText: article.title }), kind: "title", index: -1 });
+  entries.push({ target: titleTarget, kind: "title", index: -1 });
   article.paragraphs.forEach((sourceText, index) => {
     entries.push(...before.get(index) ?? []);
     if (originalOnly.has(index)) return;
@@ -54,11 +57,9 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
   const initialIndex = saved?.paragraphIndex ?? (paragraphs.some(entry => entry.index === initialParagraph) ? initialParagraph : paragraphs[0]?.index ?? 0);
   const entryIndex = paragraphs.some(entry => entry.index === initialParagraph) ? initialParagraph : initialIndex;
   const [texts, setTexts] = useState<Record<string, string>>(() => {
-    const records = loadParagraphTranslations(getReaderStorage());
     return Object.fromEntries(entries.flatMap(entry => {
       const text = entry.kind === "title" ? article.titleZh : undefined;
-      const cached = findParagraphTranslation(records, entry.target)?.translationZh;
-      const ready = text || cached || (!/\p{Script=Latin}/u.test(entry.target.sourceText) ? entry.target.sourceText : "");
+      const ready = text || (!/\p{Script=Latin}/u.test(entry.target.sourceText) ? entry.target.sourceText : "");
       return ready ? [[entry.target.key, ready]] : [];
     }));
   });
@@ -83,21 +84,26 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
 
   useEffect(() => {
     const lifetime = new AbortController();
+    const activeProfile = fetchActiveTranslationProfile();
     const pending = new Map<string, Promise<string>>();
-    const ensure = (entry: Entry): Promise<string> => {
+    const ensure = async (entry: Entry): Promise<string> => {
       const key = entry.target.key;
       if (textsRef.current[key]) return Promise.resolve(textsRef.current[key]);
-      const cached = findParagraphTranslation(loadParagraphTranslations(getReaderStorage()), entry.target);
+      const config = await activeProfile;
+      const contextBefore = entry.kind === "paragraph" ? article.paragraphs[entry.index - 1] : undefined;
+      const contextAfter = entry.kind === "paragraph" ? article.paragraphs[entry.index + 1] : undefined;
+      const cacheContext = { ...config, provider: "easycliproxy", targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter };
+      const cached = findParagraphTranslation(loadParagraphTranslations(getReaderStorage()), entry.target, cacheContext);
       if (cached) { textsRef.current = { ...textsRef.current, [key]: cached.translationZh }; setTexts(textsRef.current); return Promise.resolve(cached.translationZh); }
       if (pending.has(key)) return pending.get(key)!;
       const request = (async () => {
         try {
           setErrors(current => { const next = { ...current }; delete next[key]; return next; });
           const result = await translateParagraph({ text: entry.target.sourceText,
-            ...(entry.kind === "paragraph" ? { contextBefore: article.paragraphs[entry.index - 1], contextAfter: article.paragraphs[entry.index + 1] } : {}) }, lifetime.signal);
+            ...(entry.kind === "paragraph" ? { contextBefore, contextAfter } : {}) }, lifetime.signal, config);
           if (lifetime.signal.aborted) throw new DOMException("Cancelled", "AbortError");
           if (!result.translation.trim()) throw new Error("这段译文为空，请重试。");
-          const record: ParagraphTranslationRecord = { ...entry.target, translationZh: result.translation, model: result.model, provider: result.provider, profileId: result.profileId, generatedAt: new Date().toISOString() };
+          const record: ParagraphTranslationRecord = { ...entry.target, translationZh: result.translation, model: result.model, provider: result.provider, profileId: result.profileId, ...translationCacheMetadata({ profileId: result.profileId, model: result.model, provider: result.provider, targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter }), generatedAt: new Date().toISOString() };
           saveParagraphTranslations(getReaderStorage(), upsertParagraphTranslation(loadParagraphTranslations(getReaderStorage()), record));
           textsRef.current = { ...textsRef.current, [key]: record.translationZh }; setTexts(textsRef.current);
           callbacks.current.onTranslation(record);

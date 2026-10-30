@@ -157,6 +157,8 @@ export interface TranslationRequest {
   mode?: "paragraph" | "sentence";
   paragraphContext?: string;
   paragraphTranslationReference?: string;
+  expectedProfileId?: string;
+  expectedModel?: string;
   text: string;
   contextBefore?: string;
   contextAfter?: string;

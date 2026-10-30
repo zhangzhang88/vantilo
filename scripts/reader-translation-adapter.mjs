@@ -157,7 +157,7 @@ export function adaptTranslationPreview(source,filename) {
   if(start<0||end<0)throw new Error('Translation boundaries changed');
   let part=source.slice(start,end);
   part=part.replace('    if (!isTranslatableText(text)) return false;','    if (!isTranslatableText(text) || vantiloBusy.current) return false;\n    const epoch=vantiloEpoch.current;\n    const ctl=new AbortController();\n    const requestEngineId=vantiloEngine;');
-  part=part.replace('    try {\n      const result = await translateParagraph({\n        text,\n        contextBefore,\n        contextAfter,\n      });',`    vantiloBusy.current=true;vantiloRequests.current.add(ctl);
+  part=part.replace('    try {\n      const result = await translateParagraph({\n        text,\n        contextBefore,\n        contextAfter,\n      }, undefined, config);',`    vantiloBusy.current=true;vantiloRequests.current.add(ctl);
     const timer=window.setTimeout(()=>ctl.abort(),vantiloEngine.startsWith('qwen:')?600000:115000);
     const progressPoll=vantiloEngine.startsWith('qwen:')?window.setInterval(()=>{
       fetch('/api/vantilo-translation/progress',{signal:ctl.signal}).then(r=>r.ok?r.json():null).then(value=>{
@@ -256,7 +256,7 @@ export function adaptTranslationPreview(source,filename) {
   if(!source.includes(oldActions))throw new Error('Sentence bottom actions seam changed');
   source=source.replace(oldActions,'');
   source=source.replace('{currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。"}','{currentSentenceTranslationRequest.error || (currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。")}');
-  exact('        await ensureParagraphTranslation(item.index, item.paragraph, false, true);','        if(!await ensureParagraphTranslation(item.index, item.paragraph, false, true)) break;');
+  exact('        await ensureReadingTextTranslation(item.target, item.text, item.contextBefore, item.contextAfter, false, true);','        if(!await ensureReadingTextTranslation(item.target, item.text, item.contextBefore, item.contextAfter, false, true)) break;');
   exact('Math.min(3, missing.length)','Math.min(1, missing.length)');
   exact('          <div className="reader-mode-switch" aria-label="阅读模式">', `          <details className="vantilo-translation-menu" onMouseLeave={event => { if (event.relatedTarget) event.currentTarget.open = false; }}>
         <summary title="选择阅读翻译模型">翻译模型 ▾</summary>

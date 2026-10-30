@@ -30,6 +30,7 @@
     "test:reader:growth-navigation": "node node_modules/electron/cli.js scripts/verify-reader-growth-navigation.cjs",
     "test:reader:packaged": "node node_modules/electron/cli.js scripts/verify-packaged-reader.cjs",
     "test:reader:host": "node node_modules/electron/cli.js scripts/verify-reader-host.cjs",
+    "test:reader:translation-reuse": "node node_modules/electron/cli.js scripts/verify-reader-translation-reuse.cjs",
     "test:reader:auth": "node node_modules/electron/cli.js scripts/verify-reader-session-auth.cjs",
     "test:reader:first-run": "node node_modules/electron/cli.js scripts/verify-reader-first-run.cjs",
     "prepare:reader-library": "node scripts/prepare-reader-library.mjs"

@@ -47,6 +47,25 @@ describe("API request content type", () => {
     expect(await fetchBooks()).toEqual([]);
   });
 
+  it("coalesces identical concurrent translation requests and isolates different inputs", async () => {
+    let requests = 0;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      requests++;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return new Response(JSON.stringify({ translation: "你好。", model: "fixture", provider: "easycliproxy" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const [first, second] = await Promise.all([translateParagraph({ text: "Hello." }), translateParagraph({ text: "Hello." })]);
+    expect(first).toEqual(second);
+    expect(requests).toBe(1);
+    await translateParagraph({ text: "Hello.", contextBefore: "Different context." });
+    expect(requests).toBe(2);
+    await Promise.all([
+      translateParagraph({ text: "Hello." }, undefined, { profileId: "profile-a", model: "model-a" }),
+      translateParagraph({ text: "Hello." }, undefined, { profileId: "profile-b", model: "model-b" }),
+    ]);
+    expect(requests).toBe(4);
+  });
+
   it("still supplies JSON content type and parses the body for translation POST", async () => {
     const app = realParserTransport();
     app.post("/api/translate", async (request) => {

@@ -101,6 +101,14 @@ export function fetchAiProviderSettings(): Promise<AiProviderSettingsPublic> {
   return request<AiProviderSettingsPublic>("/api/ai-settings");
 }
 
+let activeTranslationProfileRequest: Promise<{ profileId?: string; model?: string }> | undefined;
+export function fetchActiveTranslationProfile(): Promise<{ profileId?: string; model?: string }> {
+  if (activeTranslationProfileRequest) return activeTranslationProfileRequest;
+  const pending = request<{ profileId: string | null; model: string | null }>("/api/translation-cache-identity").then(active => ({ profileId: active.profileId ?? undefined, model: active.model ?? undefined })).finally(() => { if (activeTranslationProfileRequest === pending) activeTranslationProfileRequest = undefined; });
+  activeTranslationProfileRequest = pending;
+  return pending;
+}
+
 export function saveAiProviderProfile(profile: AiProviderProfileDraft, activate = true): Promise<AiProviderSaveResponse> {
   return request<AiProviderSaveResponse>("/api/ai-settings/profile", {
     method: "PUT",
@@ -271,12 +279,25 @@ export function setArticleStatus(
   );
 }
 
-export function translateParagraph(input: TranslationRequest, signal?: AbortSignal): Promise<TranslationResponse> {
-  return request<TranslationResponse>("/api/translate", {
+const inFlightTranslations = new Map<string, Promise<TranslationResponse>>();
+
+export function translateParagraph(input: TranslationRequest, signal?: AbortSignal, cacheProfile?: { profileId?: string; model?: string }): Promise<TranslationResponse> {
+  // Reading modes can ask for the same uncached paragraph while a full-article
+  // batch is still running. Coalesce identical requests, but keep provider/model
+  // identity in the request key so different configurations never share work.
+  const requestBody = { ...input, ...(cacheProfile?.profileId ? { expectedProfileId: cacheProfile.profileId } : {}), ...(cacheProfile?.model ? { expectedModel: cacheProfile.model } : {}) };
+  const key = JSON.stringify(requestBody);
+  const existing = inFlightTranslations.get(key);
+  if (existing) return existing;
+  const requestPromise = request<TranslationResponse>("/api/translate", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: key,
     signal,
+  }).finally(() => {
+    if (inFlightTranslations.get(key) === requestPromise) inFlightTranslations.delete(key);
   });
+  inFlightTranslations.set(key, requestPromise);
+  return requestPromise;
 }
 
 export function assistSelection(input: SelectionAssistRequest): Promise<SelectionAssistResponse> {
