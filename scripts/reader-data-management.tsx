@@ -32,7 +32,7 @@ export function DataManagementPanel() {
   const activeBackupRef = useRef<string | null>(null);
   const releaseBackupFreezeRef = useRef<(() => void) | null>(null);
   const releaseRestoreFreezeRef = useRef<(() => void) | null>(null);
-  const token = (window as Window & { __vantiloGrowthToken?: string }).__vantiloGrowthToken;
+  const [token, setToken] = useState<string | null>(() => (window as Window & { __vantiloGrowthToken?: string }).__vantiloGrowthToken ?? null);
   const [vocabularyCount, setVocabularyCount] = useState(() => {
     try { return currentVocabularySummary(window.localStorage).vocabularyCount; } catch { return null; }
   });
@@ -58,6 +58,13 @@ export function DataManagementPanel() {
   const [error, setError] = useState<string | null>(null);
   const [recoveryRequired, setRecoveryRequired] = useState(() => Boolean((window as Window & { __vantiloVocabularyRecoveryRequired?: string }).__vantiloVocabularyRecoveryRequired));
   const busy = Boolean(requestId) || Boolean(releaseRestoreFreezeRef.current);
+
+  useEffect(() => {
+    const refreshToken = () => setToken((window as Window & { __vantiloGrowthToken?: string }).__vantiloGrowthToken ?? null);
+    window.addEventListener("vantilo:growth-token", refreshToken);
+    refreshToken();
+    return () => window.removeEventListener("vantilo:growth-token", refreshToken);
+  }, []);
 
   useEffect(() => {
     if (window.parent === window || !token) return;

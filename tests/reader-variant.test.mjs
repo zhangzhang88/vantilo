@@ -106,6 +106,14 @@ describe('Reader build adaptation', () => {
     expect(result).not.toContain('parseUserDataBackup');
     expect(ts.createSourceFile('vocabulary-data-management.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
   });
+  it('refreshes the vocabulary backup host token when the Reader bridge initializes after mount', () => {
+    const source = readFileSync(new URL('../scripts/reader-data-management.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('useState<string | null>(() => (window as Window & { __vantiloGrowthToken?: string }).__vantiloGrowthToken ?? null)');
+    expect(source).toContain('const refreshToken = () => setToken((window as Window & { __vantiloGrowthToken?: string }).__vantiloGrowthToken ?? null);');
+    expect(source).toContain('window.addEventListener("vantilo:growth-token", refreshToken);');
+    expect(source).toContain('return () => window.removeEventListener("vantilo:growth-token", refreshToken);');
+    expect(ts.createSourceFile('reader-data-management.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  });
 
 });
 
