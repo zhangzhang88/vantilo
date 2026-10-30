@@ -194,6 +194,11 @@ async function runCase({ mode, profileName }) {
     xdgCache: path.join(testRoot, `xdg-cache-${mode}`),
   };
   for (const directory of Object.values(directories)) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  // Keep a packaged acceptance run offline: first-run Reader magazine sync is
+  // a real network feature and is unrelated to vocabulary backup coverage.
+  const readerData = path.join(profile, 'reader-library', 'data');
+  await fs.mkdir(readerData, { recursive: true, mode: 0o700 });
+  await fs.writeFile(path.join(readerData, 'vantilo-magazine-sync.json.preferences.json'), JSON.stringify({ version: 1, automatic: false }), { flag: 'wx', mode: 0o600 });
   const resultPath = path.join(testRoot, `result-${mode}.json`);
   const port = await availableLoopbackPort();
   const env = buildEnvironment(mode, profile, directories, resultPath);

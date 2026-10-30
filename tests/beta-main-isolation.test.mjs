@@ -31,6 +31,8 @@ describe('packaged Beta E2E data isolation', () => {
   it('waits for Electron readiness and the persisted isolation proof before driving the packaged app', () => {
     expect(universalE2E).toContain('async function waitForIsolationReady(inspector, child, tail)');
     expect(universalE2E).toContain("return app.isReady()&&global.__vocabularyIsolationProof?.status==='PASS'");
+    expect(universalE2E).toContain("path.join(profile, 'reader-library', 'data')");
+    expect(universalE2E).toContain("JSON.stringify({ version: 1, automatic: false })");
     expect(universalE2E.indexOf('await waitForIsolationReady(inspector, child, tail)')).toBeLessThan(
       universalE2E.indexOf('const proofExpression ='),
     );
