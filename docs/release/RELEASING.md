@@ -28,7 +28,7 @@ Any feature source change after an older artifact was built requires a new versi
 - **Outdated Intel dictionary helper (resolved automatically by current scripts):** the old shared helper retained `prefix(8000)` removed from current source. It was preserved; a current-source helper was manually added for 0.1.12 at `universal-inputs/native-x64-0.1.12-4e7bc51/vantilo-dictionary`, SHA-256 `f9ed5c8b3754ad5d4e385045c50539840c3803f4ec0443466c3031e3ccd3064f`. The build scripts now automate this preparation for future versions. This historical 0.1.12 manual recovery did not rebuild or replace its published package.
 - **Reader test cleanup:** `ENOTEMPTY` occurred while a background preparation job still wrote its temporary directory. The test now waits for the job's terminal error state before cleanup; the complete suite was also verified serially.
 - **Signing:** the 0.1.12 app is ad-hoc signed, has no Developer ID and is not notarized; local Gatekeeper assessment rejected it. Future ordinary distribution requires a valid Developer ID, hardened runtime and entitlement review, Apple notarization, stapling, and actual Gatekeeper acceptance. Do not describe ad-hoc verification as notarization.
-- **Beta updates:** the in-app updater checks stable releases and does not discover GitHub pre-releases. Provide a direct Beta download link; design a separate Beta channel in future work.
+- **0.1.12 历史更新器限制：** 该版本仅检查稳定版，不能发现 Beta 预发布。0.1.13 已加入 Beta 更新通道；历史用户仍可使用直接下载链接。
 
 ## Publishing, only when explicitly authorized
 
@@ -78,3 +78,10 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 5. `## 五、安装与更新说明`：安装、更新步骤和注意事项。
 
 完整技术记录及必要风险披露继续保留在 GitHub Release，并在应用内折叠展示。用户摘要不包含内部构建日志或技术测试报告。
+
+## 0.1.13 发布记录与流程改进
+
+- 使用版本化的 Intel helper 自动准备机制，保留原输入并通过严格完整性门禁；外置 APFS 构建工作副本及 ZIP 报告均记录在 `0.1.13-build` 和 `out/0.1.13/`。
+- 最终安装包在隔离用户数据下启动并确认当前版本、Beta 通道和最新版本状态。未发布的更高版本使用注入合成响应与合成文件验证中文摘要、折叠、下载、取消、重试、SHA-256 和访达定位；不得将该场景记为真实 GitHub 新版下载。
+- 根测试 525 项通过；Reader 离线测试 547 项通过、7 项跳过。Intel 真机未验收，签名为 ad-hoc，未公证；门禁和局限见 [0.1.13 发布记录](0.1.13-beta.md)。
+- 新版发布说明必须按本文中文格式编写；历史英文说明保留原样，应用在没有简体中文说明时提供 GitHub 原文入口。
