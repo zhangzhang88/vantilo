@@ -371,18 +371,33 @@ async function detachCapacityLimitedApfsVolume(volume) {
   volume.attached = false;
 }
 
+async function removeCapacityLimitedApfsVolume(volume) {
+  const expectedPrefix = `${testRoot}${path.sep}`;
+  for (const target of [volume.image, volume.mount]) {
+    const resolved = path.resolve(target);
+    if (!resolved.startsWith(expectedPrefix)) throw new Error(`拒绝清理隔离测试目录之外的 APFS 测试路径：${target}`);
+  }
+  await detachCapacityLimitedApfsVolume(volume);
+  await fs.rmdir(volume.mount);
+  await fs.rm(volume.image, { force: false });
+  volume.removed = true;
+}
+
 console.log(`UNIVERSAL_E2E_TEST_ROOT=${testRoot}`);
 console.log(`UNIVERSAL_E2E_APP=${appPath}`);
 let capacityVolume;
 for (const item of cases) {
   if (item.mode === 'disk-full') {
     capacityVolume = await createCapacityLimitedApfsVolume();
+    let passed = false;
     try {
       const diskBackupPath = path.join(capacityVolume.mount, 'Vantilo-Vocabulary-Disk-Full.json');
       summaries.push(await runCase({ mode: item.mode, profileName: item.profile, backupPath: diskBackupPath }));
+      passed = true;
     } finally {
-      await detachCapacityLimitedApfsVolume(capacityVolume);
+      if (!passed) await detachCapacityLimitedApfsVolume(capacityVolume);
     }
+    await removeCapacityLimitedApfsVolume(capacityVolume);
   } else if (item.mode === 'unwritable') {
     const unwritableDirectory = path.join(testRoot, 'unwritable-directory');
     await fs.mkdir(unwritableDirectory, { recursive: false, mode: 0o700 });
@@ -418,7 +433,7 @@ const summary = {
   backupBytes: Buffer.byteLength(backupText),
   backupSha256,
   counts: backupDoc.counts,
-  capacityLimitedApfs: capacityVolume ? { image: capacityVolume.image, writtenBytesBeforeEnospc: capacityVolume.written, availableBytesAtEnospc: capacityVolume.freeBytes, enospcObserved: capacityVolume.enospcObserved, detached: !capacityVolume.attached } : null,
+  capacityLimitedApfs: capacityVolume ? { image: capacityVolume.image, writtenBytesBeforeEnospc: capacityVolume.written, availableBytesAtEnospc: capacityVolume.freeBytes, enospcObserved: capacityVolume.enospcObserved, detached: !capacityVolume.attached, imageRemoved: Boolean(capacityVolume.removed) } : null,
   syntheticSecretsExcluded: true,
   modes: summaries,
 };
