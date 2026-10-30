@@ -49,7 +49,7 @@ await viteBuild({root:repo,configFile:false,envFile:false,base:'./',cacheDir:pat
   plugins:[parcelMacros.vite(),react(),runtimeModuleInventoryPlugin(path.join(runtimeInventory,'main-renderer-modules.json'))],build:{outDir:dist,emptyOutDir:true,sourcemap:false}});
 
 const nativeArm=path.join(repo,'build/reader/native/vantilo-dictionary');
-const nativeIntel=path.join(inputs,'native-x64/vantilo-dictionary');
+const nativeIntel=process.env.VANTILO_NATIVE_X64_HELPER?path.resolve(process.env.VANTILO_NATIVE_X64_HELPER):path.join(inputs,'native-x64/vantilo-dictionary');
 // Prepared separately from the pinned official b11904 archive; no model weights.
 const codexArm=path.join(path.dirname(requireReader.resolve('@openai/codex-darwin-arm64/package.json')),'vendor/aarch64-apple-darwin/bin');
 const codexIntel=path.join(inputs,'codex-x64/package/vendor/x86_64-apple-darwin/bin');

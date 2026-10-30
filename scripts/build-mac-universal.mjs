@@ -14,6 +14,7 @@ import {makeUniversalApp} from '@electron/universal';
 import {readerSourceRoot} from './reader-source-path.mjs';
 import {universalOutputDirectory} from './universal-output-path.mjs';
 import {assertNoEpubEntries,assertNoEpubFiles} from './package-artifact-policy.mjs';
+import {helperBuildIdentity,prepareIntelDictionaryHelper,readSwiftCompilerVersion} from './intel-dictionary-helper.mjs';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const require=createRequire(import.meta.url);
@@ -37,6 +38,20 @@ const electronRoot=path.join(inputRoot,'electron-x64');
 const codexRoot=path.join(inputRoot,'codex-x64');
 const nativeRoot=path.join(inputRoot,'native-x64');
 await Promise.all([inputRoot,electronRoot,codexRoot,nativeRoot,path.join(inputRoot,'npm-cache')].map(folder=>fs.mkdir(folder,{recursive:true})));
+
+// Resolve helper freshness before large downloads or candidate builds. The
+// versioned input is immutable and the strict comparison is always required.
+const dictionarySource=path.join(repo,'scripts/reader-system-dictionary.swift');
+const verificationSdk=execFileSync('/usr/bin/xcrun',['--sdk','macosx','--show-sdk-path'],{encoding:'utf8'}).trim();
+const verificationSdkVersion=execFileSync('/usr/bin/xcrun',['--sdk','macosx','--show-sdk-version'],{encoding:'utf8'}).trim();
+const dictionaryTarget='x86_64-apple-macosx12.0',dictionaryOptimization='-O';
+const dictionaryCompileArguments=['swiftc','-target',dictionaryTarget,'-sdk',verificationSdk,dictionaryOptimization,'<source>','-o','<output>'];
+const dictionaryIdentity=helperBuildIdentity({sourceSha256:createHash('sha256').update(await fs.readFile(dictionarySource)).digest('hex'),
+  swiftCompiler:readSwiftCompilerVersion(),sdkPath:verificationSdk,sdkVersion:verificationSdkVersion,target:dictionaryTarget,optimization:dictionaryOptimization,compileArguments:dictionaryCompileArguments});
+const nativeDictionaryVerification=await prepareIntelDictionaryHelper({nativeRoot,buildDir,version:metadata.version,sourcePath:dictionarySource,identity:dictionaryIdentity,
+  compile:({sourcePath,outputPath})=>execFileSync('/usr/bin/xcrun',dictionaryCompileArguments.map(argument=>argument==='<source>'?sourcePath:argument==='<output>'?outputPath:argument),{cwd:repo,stdio:'inherit',timeout:120000}),
+  architectureOf:file=>execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/)});
+const x64Dictionary=nativeDictionaryVerification.helperPath;
 
 // Resolve the official release checksum through GitHub's API, then use a
 // bandwidth-friendly mirror for the archive and verify SHA-256 before extraction.
@@ -98,43 +113,13 @@ if(!(await fs.stat(path.join(x64CodexBin,'codex')).then(()=>true,()=>false))){
 }
 for(const name of ['codex','codex-code-mode-host'])await fs.access(path.join(x64CodexBin,name));
 
-// Build Vantilo's small macOS Dictionary Services bridge for Intel. No dictionary
-// data is bundled; macOS continues to provide the user's enabled dictionaries.
-const x64Dictionary=path.join(nativeRoot,'vantilo-dictionary');
-if(!(await fs.stat(x64Dictionary).then(()=>true,()=>false))){
-  const sdk=execFileSync('/usr/bin/xcrun',['--sdk','macosx','--show-sdk-path'],{encoding:'utf8'}).trim();
-  execFileSync('/usr/bin/xcrun',['swiftc','-target','x86_64-apple-macosx12.0','-sdk',sdk,'-O',path.join(repo,'scripts/reader-system-dictionary.swift'),'-o',x64Dictionary],{cwd:repo,stdio:'inherit',timeout:120000});
-  await fs.chmod(x64Dictionary,0o755);
-}
 function arches(file){return execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/);}
 for(const name of ['codex','codex-code-mode-host'])if(!arches(path.join(x64CodexBin,name)).includes('x86_64'))throw new Error('Intel Codex 架构验证失败: '+name);
 if(!arches(x64Dictionary).includes('x86_64'))throw new Error('Intel 系统词典程序架构验证失败');
-const dictionarySource=path.join(repo,'scripts/reader-system-dictionary.swift');
-const freshDictionary=path.join(buildDir,`native-helper-source-check-x64-${metadata.version}-${stamp}-${process.pid}`);
-try{await fs.lstat(freshDictionary);throw new Error(`为保护已有文件，拒绝覆盖: ${freshDictionary}`);}catch(error){if(error.code!=='ENOENT')throw error;}
-const verificationSdk=execFileSync('/usr/bin/xcrun',['--sdk','macosx','--show-sdk-path'],{encoding:'utf8'}).trim();
-execFileSync('/usr/bin/xcrun',['swiftc','-target','x86_64-apple-macosx12.0','-sdk',verificationSdk,'-O',dictionarySource,'-o',freshDictionary],{cwd:repo,stdio:'inherit',timeout:120000});
-if(!arches(freshDictionary).includes('x86_64'))throw new Error('Freshly compiled Intel Dictionary helper architecture verification failed');
-function uuidOffset(bytes){
-  if(bytes.readUInt32LE(0)!==0xfeedfacf)throw new Error('Expected a thin little-endian 64-bit Mach-O Dictionary helper');
-  const commands=bytes.readUInt32LE(16);let cursor=32,found=-1;
-  for(let index=0;index<commands;index++){
-    if(cursor+8>bytes.length)throw new Error('Malformed Mach-O load-command table');
-    const command=bytes.readUInt32LE(cursor),size=bytes.readUInt32LE(cursor+4);
-    if(size<8||cursor+size>bytes.length)throw new Error('Malformed Mach-O load command');
-    if(command===0x1b){if(size!==24||found!==-1)throw new Error('Unexpected LC_UUID load command');found=cursor+8;}
-    cursor+=size;
-  }
-  if(found===-1)throw new Error('Mach-O Dictionary helper has no LC_UUID');
-  return found;
-}
-function normalizeUuid(bytes){const copy=Buffer.from(bytes);const offset=uuidOffset(copy);const uuid=copy.subarray(offset,offset+16).toString('hex');copy.fill(0,offset,offset+16);return{copy,uuid};}
-const preparedBytes=await fs.readFile(x64Dictionary),freshBytes=await fs.readFile(freshDictionary);
-const preparedNormalized=normalizeUuid(preparedBytes),freshNormalized=normalizeUuid(freshBytes);
-if(!preparedNormalized.copy.equals(freshNormalized.copy))throw new Error('Prepared Intel Dictionary helper differs from a fresh current-source build beyond Mach-O LC_UUID');
 const sha256Bytes=bytes=>createHash('sha256').update(bytes).digest('hex');
-const nativeDictionaryVerification={sourceSha256:sha256Bytes(await fs.readFile(dictionarySource)),preparedIntelSha256:sha256Bytes(preparedBytes),freshIntelSha256:sha256Bytes(freshBytes),
-  preparedIntelUuid:preparedNormalized.uuid,freshIntelUuid:freshNormalized.uuid,preparedMatchesFreshExceptUuid:true};
+nativeDictionaryVerification.sourceSha256=dictionaryIdentity.sourceSha256;
+nativeDictionaryVerification.preparedIntelSha256=nativeDictionaryVerification.binarySha256;
+nativeDictionaryVerification.preparedMatchesFreshExceptUuid=true;
 
 const candidates=process.env.VANTILO_UNIVERSAL_CANDIDATES?path.resolve(process.env.VANTILO_UNIVERSAL_CANDIDATES):path.join(buildDir,`universal-candidates-${metadata.version}-${stamp}`);
 const candidateReal=await fs.realpath(candidates).catch(()=>null);
@@ -142,6 +127,7 @@ if(process.env.VANTILO_UNIVERSAL_CANDIDATES){
   if(!candidateReal||!(candidateReal===buildDir||candidateReal.startsWith(buildDir+path.sep)))throw new Error('复用的候选目录必须位于仓库忽略的 build 目录');
 }else{
   const env={...process.env,VANTILO_BETA_ROOT:candidates,VANTILO_BETA_INPUTS:inputRoot};
+  env.VANTILO_NATIVE_X64_HELPER=x64Dictionary;
   execFileSync(process.execPath,[path.join(repo,'scripts/build-mac-beta-candidates.mjs')],{cwd:repo,env,stdio:'inherit'});
 }
 
@@ -175,6 +161,11 @@ async function stripSignatures(app){
 // signed and verified below.
 await stripSignatures(x64App);
 await stripSignatures(armApp);
+const candidateIntelDictionary=path.join(x64App,'Contents/Resources/app/reader/native/vantilo-dictionary');
+nativeDictionaryVerification.candidateIntelSha256=createHash('sha256').update(await fs.readFile(candidateIntelDictionary)).digest('hex');
+// Candidate reuse must still contain the helper that passed this build's gate.
+const candidateIntelBytes=await fs.readFile(candidateIntelDictionary);
+if(!candidateIntelBytes.equals(await fs.readFile(x64Dictionary)))throw new Error('Reused Intel candidate does not contain the currently verified dictionary helper');
 
 const mergeDir=path.join(candidates,'universal');await fs.mkdir(mergeDir,{recursive:true});
 const universalApp=path.join(mergeDir,'Vantilo Beta.app');
