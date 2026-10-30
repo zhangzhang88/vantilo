@@ -252,6 +252,19 @@ describe("vocabulary-only backup and merge", () => {
     expect(captureVocabularyStorageRaw(storage)).toEqual(before);
   });
 
+  it("recovers a request-ID journal left by an interrupted merge", () => {
+    const storage = fixtureStorage(); const before = captureVocabularyStorageRaw(storage); const transactionId = "4a88468d-502d-419e-804c-cc8636fb83a4";
+    let failures = 0;
+    const write = (entries: Record<string, string | null>) => {
+      if (failures < 2) { failures += 1; throw new Error("synthetic interrupted transaction"); }
+      writeEntries(storage, entries);
+    };
+    expect(() => restoreVocabularyDataTransaction(storage, { savedSelections: [selection({ id: "new" })], contextualMeanings: [], reviewSchedules: [] }, write, before, transactionId)).toThrow("自动回滚");
+    expect(JSON.parse(storage.getItem("vantilo-vocabulary-restore-journal-v1") || "null").transactionId).toBe(transactionId);
+    expect(recoverVocabularyRestoreJournal(storage)).toEqual({ status: "rolled-back" });
+    expect(captureVocabularyStorageRaw(storage)).toEqual(before);
+  });
+
   it("cleans a COMMITTED journal without rolling back verified data", () => {
     const storage = fixtureStorage(); const current = captureVocabularyStorageRaw(storage);
     storage.setItem("vantilo-vocabulary-restore-journal-v1", JSON.stringify({ version: 1, phase: "COMMITTED", createdAt: "2026-10-30T00:00:00.000Z", original: current }));

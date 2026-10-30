@@ -18,6 +18,8 @@ type LastBackup = { createdAt: string; name: string; size: number; sha256: strin
 type BackupResult = { name: string; size: number; sha256: string; vocabularyCount: number };
 type PendingRestore = { fileName: string; backup: VocabularyBackupV1; preview: VocabularyMergePreview; expectedRaw: Record<string, string | null>; sourceCheck: { status: "checked"; missingDocumentIds: string[]; documentCount: number } | { status: "unavailable" } };
 const RESTORE_NOTICE_KEY = "vantilo-vocabulary-restore-notice-v1";
+const RESTORE_REQUEST_KEY = "vantilo-vocabulary-restore-request-v1";
+const RESTORE_PHASE_KEY = "vantilo-vocabulary-restore-phase-v1";
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -42,6 +44,14 @@ export function DataManagementPanel() {
   const [backupResult, setBackupResult] = useState<BackupResult | null>(null);
   const [pending, setPending] = useState<PendingRestore | null>(null);
   const [restoreMessage, setRestoreMessage] = useState("");
+  const [restoreConfirmationOpen, setRestoreConfirmationOpen] = useState(false);
+  const [restoreRequestId, setRestoreRequestId] = useState<string | null>(null);
+  const [restorePhase, setRestorePhase] = useState(() => {
+    try { return sessionStorage.getItem(RESTORE_PHASE_KEY) === "COMPLETED" ? "COMPLETED" : "IDLE"; } catch { return "IDLE"; }
+  });
+  const [restoreResultRequestId, setRestoreResultRequestId] = useState(() => {
+    try { return sessionStorage.getItem(RESTORE_REQUEST_KEY) || ""; } catch { return ""; }
+  });
   const [restoreNotice, setRestoreNotice] = useState(() => {
     try { const value = sessionStorage.getItem(RESTORE_NOTICE_KEY); sessionStorage.removeItem(RESTORE_NOTICE_KEY); return value || ""; } catch { return ""; }
   });
@@ -164,30 +174,43 @@ export function DataManagementPanel() {
     finally { if (inputRef.current) inputRef.current.value = ""; }
   }
 
-  function restoreBackup() {
+  function requestRestoreConfirmation() {
     if (!pending || busy || recoveryRequired) return;
-    const summary = pending.preview;
-    const accepted = window.confirm(
-      `将合并“${pending.fileName}”中的词汇。\n\n备份词汇：${summary.backupVocabularyCount} 条\n本机词汇：${summary.currentVocabularyCount} 条\n预计新增：${summary.newVocabularyCount} 条\n已存在并合并：${summary.mergeableRecords} 条记录\n字段冲突：${summary.conflictCount} 处${pending.sourceCheck.status === "checked" ? `\n本机未找到来源：${pending.sourceCheck.missingDocumentIds.length} / ${pending.sourceCheck.documentCount}` : "\n来源目录暂不可用，无法检查原书籍或杂志是否已导入"}\n\n现有词汇、笔记和熟悉度不会被备份覆盖。是否继续？`,
-    );
-    if (!accepted) return;
-    setError(null); setRestoreMessage("正在安全合并词汇…");
+    const nextId = globalThis.crypto?.randomUUID?.();
+    if (!nextId) { setError("无法建立本次恢复请求编号，请重新打开阅读空间后重试。"); return; }
+    setError(null); setRestoreMessage(""); setRestoreRequestId(nextId); setRestorePhase("AWAITING_CONFIRMATION"); setRestoreConfirmationOpen(true);
+  }
+
+  function cancelRestoreConfirmation() {
+    setRestoreConfirmationOpen(false); setRestorePhase("CANCELLED");
+  }
+
+  function commitRestore() {
+    if (!pending || !restoreRequestId || !restoreConfirmationOpen || busy || recoveryRequired) return;
+    const transactionId = restoreRequestId;
+    setRestoreConfirmationOpen(false);
+    setError(null); setRestoreMessage("正在安全合并词汇…"); setRestorePhase("RESTORING");
     try {
       releaseRestoreFreezeRef.current = freezeReaderStorageKeys(VOCABULARY_STORAGE_KEYS);
-      const result = restoreVocabularyDataTransaction(window.localStorage, pending.backup.data, writeFrozenReaderStorageKeys, pending.expectedRaw);
+      const result = restoreVocabularyDataTransaction(window.localStorage, pending.backup.data, writeFrozenReaderStorageKeys, pending.expectedRaw, transactionId);
       // The transaction and verification are synchronous in this Renderer. Once
       // committed, new learning writes are safe and must survive the page reload.
       releaseRestoreFreezeRef.current?.();
+      releaseRestoreFreezeRef.current = null;
       let notice = result.recoveryJournalPending ? "词汇已合并；恢复日志将在重新启动时安全清理。" : `恢复完成：新增 ${result.preview.newVocabularyCount} 条词汇，合并 ${result.preview.mergeableRecords} 条记录。`;
       if (pending.sourceCheck.status === "checked" && pending.sourceCheck.missingDocumentIds.length) notice += ` 本机未找到 ${pending.sourceCheck.missingDocumentIds.length} 个书籍或杂志来源；词汇和关联已保留，可在书库重新导入原文件。`;
       if (pending.sourceCheck.status === "unavailable") notice += " 来源目录未能检查；所有来源关联均已保留，若原书籍或杂志缺失，可在书库重新导入。";
-      try { sessionStorage.setItem(RESTORE_NOTICE_KEY, notice); } catch { /* The completed restore remains committed if a transient notice cannot be stored. */ }
-      setRestoreMessage(`${notice} 正在重新加载…`);
-      window.setTimeout(() => window.location.reload(), 700);
+      let reloadAfterSuccess = true;
+      try { sessionStorage.setItem(RESTORE_NOTICE_KEY, notice); sessionStorage.setItem(RESTORE_REQUEST_KEY, transactionId); sessionStorage.setItem(RESTORE_PHASE_KEY, "COMPLETED"); }
+      catch { reloadAfterSuccess = false; /* Keep the completed state in this view if sessionStorage is unavailable. */ }
+      setRestoreNotice(notice); setRestoreResultRequestId(transactionId);
+      setRestorePhase("COMPLETED");
+      setRestoreMessage(reloadAfterSuccess ? `${notice} 正在重新加载…` : notice);
+      if (reloadAfterSuccess) window.setTimeout(() => window.location.reload(), 700);
     } catch (cause) {
       const recovery = (window as Window & { __vantiloVocabularyRecoveryRequired?: string }).__vantiloVocabularyRecoveryRequired;
-      if (recovery) { setRecoveryRequired(true); setError(`恢复失败且自动回滚未能确认：${recovery}。恢复点已保留，词汇写入已锁定。`); }
-      else { releaseRestoreFreezeRef.current?.(); releaseRestoreFreezeRef.current = null; setRestoreMessage(""); setError(cause instanceof Error ? cause.message : "词汇恢复失败，现有词汇未修改。"); }
+      if (recovery) { setRestorePhase("RECOVERY_REQUIRED"); setRecoveryRequired(true); setError(`恢复失败且自动回滚未能确认：${recovery}。恢复点已保留，词汇写入已锁定。`); }
+      else { setRestorePhase("FAILED"); releaseRestoreFreezeRef.current?.(); releaseRestoreFreezeRef.current = null; setRestoreMessage(""); setError(cause instanceof Error ? cause.message : "词汇恢复失败，现有词汇未修改。"); }
     }
   }
 
@@ -196,7 +219,7 @@ export function DataManagementPanel() {
     PREPARING: "请选择备份保存位置", FREEZING: "正在暂停词汇写入并创建快照", WRITING: "正在写入并校验备份", CANCELLING: "正在取消备份…", COMPLETED: "备份完成，校验通过", FAILED: "备份失败", CANCELLED: "备份已取消",
   }[phase] || message);
 
-  return <section className="settings-card data-management-card" data-testid="vocabulary-backup-panel">
+  return <section className="settings-card data-management-card" data-testid="vocabulary-backup-panel" data-restore-phase={restorePhase} data-restore-request-id={restoreRequestId || restoreResultRequestId || undefined}>
     <div className="settings-card-heading">
       <div><span>Data management</span><h2>词汇备份与恢复</h2></div>
       <small>只备份词汇、保存的语境释义、熟悉度、复习记录和必要来源信息。电子书、EPUB、杂志、文章全文、阅读进度、设置、Agent、Codex、Chromium 数据及 API 凭据均不包含在内。</small>
@@ -224,10 +247,10 @@ export function DataManagementPanel() {
       <code>SHA-256：{backupResult.sha256}</code><button className="text-button" onClick={revealBackup}>在 Finder 中显示</button>
     </div>}
     {restoreMessage && <p role="status" className="muted-text">{restoreMessage}</p>}
-    {restoreNotice && <p role="status" className="muted-text" data-testid="vocabulary-restore-result">{restoreNotice}{/(本机未找到|来源目录)/.test(restoreNotice) && <> <button className="text-button" type="button" onClick={openLibrary}>前往书库重新导入</button></>}</p>}
+    {restoreNotice && <p role="status" className="muted-text" data-testid="vocabulary-restore-result" data-request-id={restoreResultRequestId || undefined}>{restoreNotice}{/(本机未找到|来源目录)/.test(restoreNotice) && <> <button className="text-button" type="button" onClick={openLibrary}>前往书库重新导入</button></>}</p>}
     {pending && preview && <div className="data-backup-preview" data-testid="vocabulary-restore-preview">
       <div className="data-backup-preview-heading"><div><strong>{pending.fileName}</strong><span>已验证 SHA-256 · 备份版本 {pending.backup.backupFormatVersion} · 创建于 {formatDate(pending.backup.createdAt)}</span></div>
-        <button className="primary-button" data-testid="vocabulary-restore-confirm" disabled={busy || recoveryRequired} onClick={restoreBackup}>确认合并恢复</button></div>
+        <button className="primary-button" data-testid="vocabulary-restore-confirm" disabled={busy || recoveryRequired} onClick={requestRestoreConfirmation}>确认合并恢复</button></div>
       <div className="data-backup-preview-grid">
         <div><span>备份词汇</span><strong>{preview.backupVocabularyCount}</strong></div><div><span>当前词汇</span><strong>{preview.currentVocabularyCount}</strong></div><div><span>预计新增</span><strong>{preview.newVocabularyCount}</strong></div>
         <div><span>已有词汇</span><strong>{preview.existingVocabularyCount}</strong></div><div><span>可合并记录</span><strong>{preview.mergeableRecords}</strong></div><div><span>冲突字段（保留本机用户内容）</span><strong>{preview.conflictCount}</strong></div>
@@ -236,6 +259,16 @@ export function DataManagementPanel() {
       {pending.sourceCheck.status === "checked" && pending.sourceCheck.missingDocumentIds.length > 0 && <div className="data-management-error" role="status"><p>本机尚未找到 {pending.sourceCheck.missingDocumentIds.length} / {pending.sourceCheck.documentCount} 个来源。恢复后仍会保留关联词汇；可重新导入原书籍或杂志。</p><button className="text-button" type="button" onClick={openLibrary}>前往书库重新导入</button></div>}
       {pending.sourceCheck.status === "unavailable" && <div className="settings-help" role="status"><p>暂时无法检查本机书库；恢复仍会保留来源名称和内部 ID，不会创建空书籍或删除词汇。</p><button className="text-button" type="button" onClick={openLibrary}>前往书库查看或重新导入</button></div>}
       <p className="settings-help">词汇按来源文档、段落、词形和位置匹配。重复导入不会重复增加学习次数；本机熟悉度和笔记优先保留。找不到原书籍或杂志时，来源记录仍会保留，不会重新创建空书籍。</p>
+    </div>}
+    {restoreConfirmationOpen && pending && preview && <div className="data-backup-confirmation-backdrop">
+      <div className="data-backup-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="vocabulary-restore-dialog-title" aria-describedby="vocabulary-restore-dialog-summary" data-request-id={restoreRequestId || undefined}>
+        <h3 id="vocabulary-restore-dialog-title">确认合并恢复</h3>
+        <p id="vocabulary-restore-dialog-summary">将合并“{pending.fileName}”中的词汇：备份 {preview.backupVocabularyCount} 条，本机 {preview.currentVocabularyCount} 条，预计新增 {preview.newVocabularyCount} 条，可合并 {preview.mergeableRecords} 条记录，字段冲突 {preview.conflictCount} 处。现有笔记和熟悉度优先保留。{pending.sourceCheck.status === "checked" ? ` 本机未找到来源 ${pending.sourceCheck.missingDocumentIds.length} / ${pending.sourceCheck.documentCount} 个；关联记录仍会保留。` : " 来源目录暂不可用，所有来源关联仍会保留。"}</p>
+        <div className="data-backup-confirmation-actions">
+          <button className="text-button" type="button" data-testid="vocabulary-restore-cancel" onClick={cancelRestoreConfirmation}>取消</button>
+          <button className="primary-button" type="button" data-testid="vocabulary-restore-commit" onClick={commitRestore}>开始合并恢复</button>
+        </div>
+      </div>
     </div>}
     {error && <div className="data-management-error" role="alert">{error}</div>}
     <p className="settings-help">来源信息只保留名称、内部 ID、段落位置和最多 320 个字符的短语境。恢复后如果原书籍或杂志不在本机，相关词汇与来源关联仍会保留，可重新导入原文件。</p>

@@ -789,6 +789,50 @@ textarea:focus-visible {
   background: rgba(52, 145, 102, 0.07);
 }
 
+.data-backup-confirmation-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 22, 21, 0.58);
+}
+
+.data-backup-confirmation {
+  display: grid;
+  gap: 12px;
+  width: min(520px, 100%);
+  padding: 22px;
+  border: 1px solid var(--ui-line, #ddd8cc);
+  border-radius: 16px;
+  background: var(--ui-surface-strong, #fffdf8);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.28);
+}
+
+.data-backup-confirmation h3,
+.data-backup-confirmation p {
+  margin: 0;
+}
+
+.data-backup-confirmation h3 {
+  color: var(--ui-ink, #1f1d19);
+  font-size: 15px;
+}
+
+.data-backup-confirmation p {
+  color: var(--ui-muted, #625e57);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.data-backup-confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .data-backup-preview-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

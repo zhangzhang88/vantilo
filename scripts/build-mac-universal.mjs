@@ -140,6 +140,21 @@ async function candidateApp(arch){
 }
 const armApp=await candidateApp('arm64');
 const x64App=await candidateApp('x64');
+const sourceIcon=await fs.readFile(path.join(repo,'resources/vantilo.icns'));
+if(sourceIcon.subarray(0,4).toString('ascii')!=='icns')throw new Error('源 Vantilo 图标不是有效的 ICNS 文件');
+async function verifyVantiloIcon(appPath,label){
+  const infoPlist=path.join(appPath,'Contents/Info.plist');
+  const iconName=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleIconFile',infoPlist],{encoding:'utf8'}).trim();
+  if(iconName!=='electron.icns')throw new Error(`${label} CFBundleIconFile 指向意外资源：${iconName}`);
+  const iconPath=path.join(appPath,'Contents/Resources',iconName);
+  const stat=await fs.lstat(iconPath);
+  if(!stat.isFile()||stat.isSymbolicLink())throw new Error(`${label} 应用图标不是普通文件`);
+  const bytes=await fs.readFile(iconPath);
+  if(bytes.subarray(0,4).toString('ascii')!=='icns'||!bytes.equals(sourceIcon))throw new Error(`${label} Vantilo 专用图标缺失、格式错误或与源图标不一致`);
+  return {file:iconName,bytes:stat.size,sha256:sha256Bytes(bytes)};
+}
+const armIcon=await verifyVantiloIcon(armApp,'arm64 候选应用');
+const x64Icon=await verifyVantiloIcon(x64App,'x86_64 候选应用');
 async function stripSignatures(app){
   async function visit(folder){
     for(const entry of await fs.readdir(folder,{withFileTypes:true})){
@@ -170,6 +185,7 @@ if(!candidateIntelBytes.equals(await fs.readFile(x64Dictionary)))throw new Error
 const mergeDir=path.join(candidates,'universal');await fs.mkdir(mergeDir,{recursive:true});
 const universalApp=path.join(mergeDir,'Vantilo Beta.app');
 await makeUniversalApp({x64AppPath:x64App,arm64AppPath:armApp,outAppPath:universalApp});
+const universalIcon=await verifyVantiloIcon(universalApp,'Universal 合并应用');
 const runtimeInventory=path.join(candidates,'runtime-inventory');
 const noticeInventoryNames=['all-runtime','main-renderer','reader-runtime','electron-main'];
 const noticeInventoryPaths=noticeInventoryNames.map(name=>path.join(runtimeInventory,`${name}-package-roots.json`));
@@ -236,13 +252,17 @@ const zipEntries=execFileSync('/usr/bin/unzip',['-Z1',zip],{encoding:'utf8',maxB
 const bundledEpubCount=assertNoEpubEntries(zipEntries);
 const noticeEntry='Vantilo Beta.app/Contents/Resources/app/licenses/THIRD_PARTY_NOTICES.txt';
 if(!zipEntries.includes(noticeEntry))throw new Error('Universal ZIP is missing the merged third-party notices');
+const iconEntry='Vantilo Beta.app/Contents/Resources/electron.icns';
+if(!zipEntries.includes(iconEntry))throw new Error('Universal ZIP 未包含 Info.plist 指定的 Vantilo 专用图标');
+const zippedIcon=execFileSync('/usr/bin/unzip',['-p',zip,iconEntry],{maxBuffer:8*1024*1024});
+if(!zippedIcon.equals(sourceIcon))throw new Error('Universal ZIP 内图标与源 Vantilo 专用图标不一致');
 const zipNoticeText=execFileSync('/usr/bin/unzip',['-p',zip,noticeEntry],{encoding:'utf8',maxBuffer:16*1024*1024});
 if(createHash('sha256').update(zipNoticeText).digest('hex')!==thirdPartyNotices.sha256)throw new Error('Universal ZIP third-party notices differ from the verified app bundle');
 const hash=createHash('sha256');for await(const chunk of (await import('node:fs')).createReadStream(zip))hash.update(chunk);
 const sha256=hash.digest('hex');await fs.writeFile(checksumPath,sha256+'  '+path.basename(zip)+'\n',{flag:'wx'});
 const report={version:metadata.version,architecture:'arm64+x86_64',artifact:path.basename(zip),sha256,bytes:(await fs.stat(zip)).size,
   sourceCommit,sourceTreeClean:true,packageLockSha256:packageLockHash,readerSourceCommit:readerPackage.sourceCommit,
-  nativeDictionary:nativeDictionaryVerification,defaultMagazineSeedIncluded:false,bundledEpubCount,thirdPartyNotices,
+  nativeDictionary:nativeDictionaryVerification,icon:{sourceSha256:sha256Bytes(sourceIcon),arm64:armIcon,x86_64:x64Icon,universal:universalIcon,zipEntry:iconEntry,zipMatchesSource:true},defaultMagazineSeedIncluded:false,bundledEpubCount,thirdPartyNotices,
   modelProviders:'configured cloud or LAN APIs',signature:'ad-hoc; not notarized',intelHardwareTest:'NOT RUN'};
 await fs.writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});
 console.log('UNIVERSAL_APP='+universalApp);

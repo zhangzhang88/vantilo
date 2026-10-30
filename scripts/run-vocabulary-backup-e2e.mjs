@@ -7,12 +7,14 @@ import crypto from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-const base = await fs.mkdtemp(path.join(os.tmpdir(), `vantilo-vocabulary-backup-e2e-${stamp}-`));
+const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `vantilo-vocabulary-backup-e2e-${stamp}-`)));
 const dirs = {
   reader: path.join(base, 'reader-assets'),
   tmp: path.join(base, 'tmp'),
   home: path.join(base, 'home'),
   codex: path.join(base, 'codex-home'),
+  xdgConfig: path.join(base, 'xdg-config'),
+  xdgCache: path.join(base, 'xdg-cache'),
   downloadsA: path.join(base, 'downloads-a'),
   downloadsB: path.join(base, 'downloads-b'),
   profileA: path.join(base, 'user-data-a'),
@@ -50,7 +52,8 @@ async function waitForVite(child, ready, timeoutMs = 30000) {
 
 function electronEnv(mode, profile, downloads, resultPath, { backupPath = backup, expectedRawPath = expectedRecovery } = {}) {
   return {
-    ...process.env,
+    PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin',
+    LANG: process.env.LANG || 'en_US.UTF-8',
     HOME: dirs.home,
     CODEX_HOME: dirs.codex,
     XDG_CONFIG_HOME: path.join(base, 'xdg-config'),
@@ -58,6 +61,7 @@ function electronEnv(mode, profile, downloads, resultPath, { backupPath = backup
     TMPDIR: dirs.tmp,
     VANTILO_DEV_SERVER_URL: 'http://127.0.0.1:5173',
     VANTILO_DEV_READER_ASSETS: dirs.reader,
+    VANTILO_VOCABULARY_E2E_ROOT: base,
     VANTILO_VOCABULARY_E2E_MODE: mode,
     VANTILO_VOCABULARY_E2E_USER_DATA: profile,
     VANTILO_VOCABULARY_E2E_DOWNLOADS: downloads,
@@ -69,8 +73,14 @@ function electronEnv(mode, profile, downloads, resultPath, { backupPath = backup
 }
 
 async function runElectron(mode, profile, downloads, options = {}) {
+  for (const [label, candidate] of [['userData', profile], ['downloads', downloads]]) {
+    const relative = path.relative(base, path.resolve(candidate));
+    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`${label} 必须位于本次新建的 E2E 根目录：${candidate}`);
+  }
+  await fs.mkdir(profile, { recursive: true, mode: 0o700 });
+  await fs.mkdir(downloads, { recursive: true, mode: 0o700 });
   const resultPath = path.join(base, `result-${mode}.json`);
-  const child = spawn(process.execPath, [path.join(root, 'node_modules/electron/cli.js'), path.join(root, 'scripts/vocabulary-backup-e2e-main.cjs'), `--user-data-dir=${profile}`], {
+  const child = spawn(process.execPath, [path.join(root, 'node_modules/electron/cli.js'), `--user-data-dir=${profile}`, path.join(root, 'scripts/vocabulary-backup-e2e-main.cjs')], {
     cwd: root, env: electronEnv(mode, profile, downloads, resultPath, options), stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '', stderr = '';
@@ -161,14 +171,14 @@ try {
   console.log(`E2E isolation root: ${base}`);
   console.log('Building Reader production assets into a fresh temporary directory.');
   await run(process.execPath, [path.join(root, 'scripts/build-reader.mjs')], {
-    env: { ...process.env, VANTILO_READER_BUILD_OUTPUT: dirs.reader, VANTILO_SWIFT_MODULE_CACHE_PATH: path.join(base, 'swift-module-cache') },
+    env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, LANG: process.env.LANG || 'en_US.UTF-8', VANTILO_READER_BUILD_OUTPUT: dirs.reader, VANTILO_SWIFT_MODULE_CACHE_PATH: path.join(base, 'swift-module-cache') },
   });
 
   let resolveReady, rejectReady;
   const ready = { promise: new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; }), resolve: null, reject: null };
   ready.resolve = resolveReady;
   ready.reject = rejectReady;
-  vite = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } });
+  vite = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, LANG: process.env.LANG || 'en_US.UTF-8' } });
   await waitForVite(vite, ready);
   const results = [];
   const only = process.env.VANTILO_VOCABULARY_E2E_ONLY;
@@ -214,7 +224,7 @@ try {
   const summary = {
     status: 'PASS', base, backup, raceBackup,
     capacityLimitedApfs: capacityVolume ? { imageSizeBytes: 128 * 1024 * 1024, bytesWrittenBeforeEnospc: capacityVolume.written, availableBytesAtEnospc: capacityVolume.freeBytes, enospcObserved: capacityVolume.hitEnospc, detached: !capacityVolume.attached } : null,
-    modes: results.map(item => ({ mode: item.mode, pid: item.pid, evidence: item.evidence })),
+    modes: results.map(item => ({ mode: item.mode, pid: item.pid, isolationProof: item.isolationProof, evidence: item.evidence })),
   };
   await fs.writeFile(path.join(base, 'summary.json'), JSON.stringify(summary, null, 2) + '\n', { mode: 0o600 });
   console.log(`VOCABULARY_BACKUP_E2E_PASS ${JSON.stringify(summary)}`);

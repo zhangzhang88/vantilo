@@ -16,6 +16,7 @@ const STORAGE = {
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const failures = [];
 const evidence = [];
+global.__vocabularyE2EEvidence = evidence;
 function mark(stage, details) { global.__vocabularyE2EStage = { stage, at: new Date().toISOString(), ...(details || {}) }; console.log(`VOCABULARY_E2E_STAGE ${JSON.stringify(global.__vocabularyE2EStage)}`); }
 
 async function until(read, predicate, label, timeout = 30000) {
@@ -82,6 +83,29 @@ async function readData(frame) {
 
 async function getTestId(frame, id) { return frame.executeJavaScript(`document.querySelector('[data-testid="${id}"]')?.innerText||null`); }
 async function clickTestId(frame, id) { return frame.executeJavaScript(`(()=>{const element=document.querySelector('[data-testid="${id}"]');if(!element)throw new Error('缺少界面元素 ${id}');element.click();return true})()`); }
+
+async function openRestoreConfirmation(frame) {
+  await clickTestId(frame, 'vocabulary-restore-confirm');
+  const dialog = await until(() => frame.executeJavaScript(`(()=>{const dialog=document.querySelector('[role="alertdialog"][data-request-id]');const panel=document.querySelector('[data-testid="vocabulary-backup-panel"]');return dialog&&panel?{requestId:dialog.dataset.requestId,phase:panel.dataset.restorePhase}:null})()`), value => Boolean(value), '应用内合并确认界面');
+  assert.match(dialog.requestId, /^[0-9a-f-]{36}$/i, '恢复确认必须带唯一请求 ID');
+  assert.equal(dialog.phase, 'AWAITING_CONFIRMATION', '显示恢复确认时不能已经写入词汇数据');
+  return dialog.requestId;
+}
+
+async function commitRestore(frame) {
+  const requestId = await openRestoreConfirmation(frame);
+  await clickTestId(frame, 'vocabulary-restore-commit');
+  await until(() => frame.executeJavaScript(`document.querySelector('[data-testid="vocabulary-backup-panel"]')?.dataset.restorePhase||''`), value => ['COMPLETED', 'FAILED', 'RECOVERY_REQUIRED'].includes(value), '恢复事务终态');
+  return requestId;
+}
+
+async function cancelRestore(frame) {
+  const requestId = await openRestoreConfirmation(frame);
+  await clickTestId(frame, 'vocabulary-restore-cancel');
+  const phase = await until(() => frame.executeJavaScript(`document.querySelector('[data-testid="vocabulary-backup-panel"]')?.dataset.restorePhase||''`), value => value === 'CANCELLED', '取消恢复确认');
+  assert.equal(phase, 'CANCELLED');
+  return requestId;
+}
 
 async function setRestoreFile(frame, filename, contents) {
   const serialized = JSON.stringify(contents);
@@ -223,7 +247,6 @@ async function runRaceSource() {
 }
 
 async function loadRestorePreview(frame, backupPath = process.env.VANTILO_VOCABULARY_E2E_BACKUP) {
-  await frame.executeJavaScript(`window.confirm=()=>true`);
   const serialized = await fs.readFile(backupPath, 'utf8');
   await setRestoreFile(frame, path.basename(backupPath), serialized);
   await until(() => frame.executeJavaScript(`Boolean(document.querySelector('[data-testid="vocabulary-restore-preview"]'))`), Boolean, '安全测试恢复预览');
@@ -248,7 +271,7 @@ async function runRollbackFailure() {
     }});
     window.__e2eRollbackDoubleFailure={descriptor,get failures(){return failures}};
   })()`);
-  await clickTestId(frame, 'vocabulary-restore-confirm');
+  const requestId = await commitRestore(frame);
   await delay(150);
   const failureState = await frame.executeJavaScript(`({failures:window.__e2eRollbackDoubleFailure?.failures||0,alerts:[...document.querySelectorAll('[role="alert"]')].map(node=>node.innerText),restoreText:[...document.querySelectorAll('[role="status"]')].map(node=>node.innerText),journal:localStorage.getItem('vantilo-vocabulary-restore-journal-v1'),result:Boolean(document.querySelector('[data-testid="vocabulary-restore-result"]'))})`);
   const alert = failureState.alerts.join('\n');
@@ -257,6 +280,7 @@ async function runRollbackFailure() {
   assert.match(alert, /自动回滚未能确认/, `界面必须显示恢复保护状态：${JSON.stringify(failureState)}`);
   const journal = await frame.executeJavaScript(`JSON.parse(localStorage.getItem('vantilo-vocabulary-restore-journal-v1')||'null')`);
   assert.equal(journal?.phase, 'PREPARED', '回滚再次失败时必须保留未完成事务日志');
+  assert.equal(journal?.transactionId, requestId, '持久化事务日志必须对应界面恢复请求 ID');
   assert.deepEqual(journal.original, expectedRaw, '持久化恢复点必须保持原始词汇数据');
   const beforeClose = await readData(frame);
   assert.equal(await frame.executeJavaScript(`Boolean(document.querySelector('[data-testid="vocabulary-restore-confirm"]')?.disabled)`), true, '恢复不确定时必须阻止新的普通恢复操作');
@@ -347,7 +371,7 @@ async function runRestoreRace() {
   frame = await ensureReader(win, { settings: true });
   await loadRestorePreview(frame, process.env.VANTILO_VOCABULARY_E2E_RACE_BACKUP);
   await frame.executeJavaScript(`window.__e2eRestoreWriteProbe={attempted:false,accepted:false,error:null};window.__e2eRestoreWriteTimer=setInterval(()=>{if(window.__e2eRestoreWriteProbe.attempted||!document.body.innerText.includes('正在重新加载'))return;window.__e2eRestoreWriteProbe.attempted=true;try{const key=${JSON.stringify(STORAGE.selections)};const rows=JSON.parse(localStorage.getItem(key)||'[]');const existing=rows.find(item=>item.id==='target-bank-duplicate');existing.usageExplanationZh='恢复提交后并发保留的本机笔记';existing.familiarity=4;rows.push({...existing,id:'restore-concurrency-added',text:'restore-concurrency-added',startOffset:88888,context:'A synthetic word created immediately after restore commit.',usageExplanationZh:'恢复后新增'});localStorage.setItem(key,JSON.stringify(rows));const contextKey=${JSON.stringify(STORAGE.contexts)};const contexts=JSON.parse(localStorage.getItem(contextKey)||'[]');contexts[0].meaningZh='恢复提交后并发更新';localStorage.setItem(contextKey,JSON.stringify(contexts));const scheduleKey=${JSON.stringify(STORAGE.schedules)};const schedules=JSON.parse(localStorage.getItem(scheduleKey)||'[]');schedules.find(item=>item.key==='bank').familiarity=4;localStorage.setItem(scheduleKey,JSON.stringify(schedules));window.__e2eRestoreWriteProbe.accepted=true;}catch(error){window.__e2eRestoreWriteProbe.error={name:error.name,message:error.message};}clearInterval(window.__e2eRestoreWriteTimer);},5)`);
-  await clickTestId(frame, 'vocabulary-restore-confirm');
+  const requestId = await commitRestore(frame);
   const probe = await until(() => frame.executeJavaScript(`window.__e2eRestoreWriteProbe`), state => state?.attempted, '恢复提交期间排队的实际词汇写入');
   assert.equal(probe.accepted, true, `事务提交后新写入必须成功并保留：${JSON.stringify(probe.error)}`);
   const notice = await until(async () => { frame = readerFrame(win); return frame && frame.executeJavaScript(`Boolean(document.querySelector('[data-testid="vocabulary-restore-result"]'))`); }, Boolean, '并发写入后的恢复完成状态');
@@ -358,7 +382,7 @@ async function runRestoreRace() {
   assert.ok(final.selections.some(item => item.id === 'restore-concurrency-added'));
   assert.equal(final.contexts[0].meaningZh, '恢复提交后并发更新');
   assert.equal(final.schedules.find(item => item.key === 'bank')?.familiarity, 4);
-  evidence.push({ step: 'real-electron-restore-commit-write-race', status: 'PASS', pid: process.pid, userWriteAcceptedAfterVerifiedCommit: true, sourceRowsMerged: final.selections.length, concurrentWordRetained: true, noteAndFamiliarityRetained: true, contextAndScheduleRetained: true, resultVisible: notice });
+  evidence.push({ step: 'real-electron-restore-commit-write-race', status: 'PASS', pid: process.pid, requestId, userWriteAcceptedAfterVerifiedCommit: true, sourceRowsMerged: final.selections.length, concurrentWordRetained: true, noteAndFamiliarityRetained: true, contextAndScheduleRetained: true, resultVisible: notice });
 }
 
 async function runSource() {
@@ -414,7 +438,6 @@ async function runTarget() {
   await seed(frame, initial);
   frame = await ensureReader(win, { settings: true });
   mark('target-settings-ready');
-  await frame.executeJavaScript(`window.confirm=()=>false`);
   const backupText = await fs.readFile(process.env.VANTILO_VOCABULARY_E2E_BACKUP, 'utf8');
 
   await setRestoreFile(frame, 'invalid.json', '{');
@@ -440,13 +463,10 @@ async function runTarget() {
   const preview = await until(async () => frame.executeJavaScript(`document.querySelector('[data-testid="vocabulary-restore-preview"]')?.innerText||''`), text => text.includes('确认合并恢复'), '恢复预览');
   assert.match(preview, /本机尚未找到|来源目录暂不可用|来源/);
   const beforeCancel = await readData(frame);
-  await clickTestId(frame, 'vocabulary-restore-confirm');
-  await delay(200);
+  const cancelledRequestId = await cancelRestore(frame);
   assert.deepEqual(await readData(frame), beforeCancel, '用户取消必须保持本地词汇不变');
   mark('target-confirm-cancelled');
-  evidence.push({ step: 'cancel-restore-confirmation', status: 'PASS' });
-
-  await frame.executeJavaScript(`window.confirm=()=>true`);
+  evidence.push({ step: 'cancel-restore-confirmation', status: 'PASS', requestId: cancelledRequestId, transactionStarted: false });
 
   const beforeInjectedFailure = await readData(frame);
   const failOnce = await frame.executeJavaScript(`(()=>{
@@ -461,15 +481,15 @@ async function runTarget() {
     return true;
   })()`);
   assert.equal(failOnce, true);
-  await clickTestId(frame, 'vocabulary-restore-confirm');
+  const failedRequestId = await commitRestore(frame);
   const rollbackError = await until(async () => frame.executeJavaScript(`document.querySelector('[role="alert"]')?.innerText||''`), text => text.includes('E2E injected isolated storage write failure'), '恢复写入失败提示');
   mark('target-transient-failure-rolled-back');
   assert.deepEqual(await readData(frame), beforeInjectedFailure, '真实 localStorage 写入失败后必须完整回滚所有词汇键');
   assert.equal(await frame.executeJavaScript(`localStorage.getItem('vantilo-vocabulary-restore-journal-v1')`), null, '成功回滚后不得残留 PREPARED 日志');
   assert.equal(await frame.executeJavaScript(`(()=>{const hook=window.__e2eRestoreStorageWriteHook;if(!hook)return false;Object.defineProperty(Storage.prototype,'setItem',hook.descriptor);delete window.__e2eRestoreStorageWriteHook;localStorage.setItem('e2e-after-rollback-write','released');return localStorage.getItem('e2e-after-rollback-write')})()`), 'released', '回滚后必须解除词汇写入冻结');
-  evidence.push({ step: 'injected-real-localstorage-write-failure-rollback', status: 'PASS', message: rollbackError });
+  evidence.push({ step: 'injected-real-localstorage-write-failure-rollback', status: 'PASS', requestId: failedRequestId, message: rollbackError });
 
-  await clickTestId(frame, 'vocabulary-restore-confirm');
+  const successfulRequestId = await commitRestore(frame);
   mark('target-final-restore-clicked');
   await until(async () => {
     const currentFrame = readerFrame(win);
@@ -477,6 +497,9 @@ async function runTarget() {
   }, Boolean, '恢复提交并重新加载', 30000);
   mark('target-final-restore-result-visible');
   frame = readerFrame(win);
+  const completion = await frame.executeJavaScript(`({phase:document.querySelector('[data-testid="vocabulary-backup-panel"]')?.dataset.restorePhase,requestId:document.querySelector('[data-testid="vocabulary-restore-result"]')?.dataset.requestId})`);
+  assert.equal(completion.phase, 'COMPLETED', `重载后必须保留明确完成状态：${JSON.stringify(completion)}`);
+  assert.equal(completion.requestId, successfulRequestId, '恢复完成状态必须与发起操作的请求 ID 对应');
   const final = await readData(frame);
   assert.equal(final.selections.length, 9, '跨设备有字符位置的重复项合并，缺少位置的旧记录和不同来源记录分别保留');
   const mergedDuplicate = final.selections.find(item => item.id === 'target-bank-duplicate');
@@ -495,12 +518,12 @@ async function runTarget() {
   const bankSchedule = final.schedules.find(item => item.key === 'bank');
   assert.equal(bankSchedule.reviewCount, 9, '学习历史合并取较大次数，不重复相加');
   assert.equal(bankSchedule.familiarity, 2, '复习状态采用最近复习记录策略');
-  evidence.push({ step: 'merge-result-in-real-localstorage', status: 'PASS', selections: final.selections.length, contexts: final.contexts.length, schedules: final.schedules.length, bankReviewCount: bankSchedule.reviewCount, bankNote: mergedDuplicate.usageExplanationZh, missingSourceRetained: final.selections.some(item => item.document.bookId === 'synthetic-book') });
+  evidence.push({ step: 'merge-result-in-real-localstorage', status: 'PASS', requestId: successfulRequestId, selections: final.selections.length, contexts: final.contexts.length, schedules: final.schedules.length, bankReviewCount: bankSchedule.reviewCount, bankNote: mergedDuplicate.usageExplanationZh, missingSourceRetained: final.selections.some(item => item.document.bookId === 'synthetic-book') });
 
   frame = await ensureReader(win, { settings: true });
   await setRestoreFile(frame, path.basename(process.env.VANTILO_VOCABULARY_E2E_BACKUP), backupText);
   await until(async () => frame.executeJavaScript(`Boolean(document.querySelector('[data-testid="vocabulary-restore-preview"]'))`), Boolean, '重复导入预览');
-  await clickTestId(frame, 'vocabulary-restore-confirm');
+  const repeatRequestId = await commitRestore(frame);
   await until(async () => {
     const currentFrame = readerFrame(win);
     return currentFrame && currentFrame.executeJavaScript(`Boolean(document.querySelector('[data-testid="vocabulary-restore-result"]'))`);
@@ -509,7 +532,7 @@ async function runTarget() {
   await until(async () => frame && frame.executeJavaScript(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE.selections)})||'[]').length===9`), Boolean, '重复导入后数据加载');
   const afterRepeat = await readData(frame);
   assert.deepEqual(afterRepeat, final, '重复导入不得增加重复记录或改变已有笔记、熟悉度和复习历史');
-  evidence.push({ step: 'repeat-ui-import-idempotency', status: 'PASS', selections: afterRepeat.selections.length, contexts: afterRepeat.contexts.length, bankReviewCount: afterRepeat.schedules.find(item => item.key === 'bank')?.reviewCount });
+  evidence.push({ step: 'repeat-ui-import-idempotency', status: 'PASS', requestId: repeatRequestId, selections: afterRepeat.selections.length, contexts: afterRepeat.contexts.length, bankReviewCount: afterRepeat.schedules.find(item => item.key === 'bank')?.reviewCount });
 
   await frame.executeJavaScript(`(()=>{
     const keys=${JSON.stringify([STORAGE.selections,STORAGE.contexts,STORAGE.schedules])};
@@ -547,7 +570,7 @@ async function run() {
   else if (mode === 'disk-full') await runDiskFull();
   else if (mode === 'unwritable') await runUnwritable();
   else throw new Error(`未知 E2E 模式：${mode}`);
-  const result = { status: 'PASS', mode, pid: process.pid, finishedAt: new Date().toISOString(), evidence };
+  const result = { status: 'PASS', mode, pid: process.pid, isolationProof: global.__vocabularyIsolationProof || null, finishedAt: new Date().toISOString(), evidence };
   await fs.writeFile(process.env.VANTILO_VOCABULARY_E2E_RESULT, JSON.stringify(result, null, 2) + '\n', { flag: 'w', mode: 0o600 });
   console.log(`VOCABULARY_E2E_RESULT ${JSON.stringify(result)}`);
 }

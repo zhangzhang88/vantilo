@@ -492,12 +492,13 @@ export function restoreVocabularyDataTransaction(
   incoming: VocabularyBackupData,
   writeData: (entries: Record<string, string | null>) => void,
   expectedRaw?: Record<string, string | null>,
+  transactionId?: string,
 ): { preview: VocabularyMergePreview; recoveryJournalPending: boolean } {
   const before = captureVocabularyStorageRaw(storage);
   if (expectedRaw && VOCABULARY_STORAGE_KEYS.some(key => before[key] !== expectedRaw[key])) throw new Error("预览后词汇数据已有变化，请重新载入备份预览后再恢复。");
   const current = buildVocabularyBackupData(storage);
   const merged = mergeVocabularyData(current, incoming);
-  const journal = { version: 1, phase: "PREPARED", createdAt: new Date().toISOString(), original: before };
+  const journal = { version: 1, phase: "PREPARED", ...(transactionId ? { transactionId } : {}), createdAt: new Date().toISOString(), original: before };
   storage.setItem(VOCABULARY_RESTORE_JOURNAL_KEY, JSON.stringify(journal));
   const mergedRaw = {
     [SAVED_SELECTIONS_KEY]: JSON.stringify(merged.data.savedSelections),

@@ -430,6 +430,17 @@ ipcMain.handle('gutenberg:request', async (event, request) => {
 });
 
 app.whenReady().then(async () => {
+  if (process.env.VANTILO_VOCABULARY_E2E_MODE && global.__vocabularyIsolatedE2E === true) {
+    try {
+      if (!global.__vocabularyIsolationVerificationPromise) throw new Error('Vocabulary E2E did not install its fail-closed userData verification gate.');
+      await global.__vocabularyIsolationVerificationPromise;
+    } catch (error) {
+      startupAborted = true;
+      console.error('Vocabulary E2E isolation gate rejected startup:', error?.message || error);
+      app.quit();
+      return;
+    }
+  }
   if (!primaryApplicationInstance) { startupAborted = true; app.quit(); return; }
   if (readerDataLockError) {
     startupAborted = true;

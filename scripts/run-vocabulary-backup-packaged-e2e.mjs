@@ -7,9 +7,10 @@ const appPath = process.env.VANTILO_VOCABULARY_E2E_PACKAGE_APP;
 if (!appPath || !path.isAbsolute(appPath) || !appPath.startsWith('/Volumes/Workspace/Development/Vantilo/workspaces/')) {
   throw new Error('请提供位于 Workspace 外置工作副本内的隔离 E2E 应用路径。');
 }
+if (await fs.realpath(appPath) !== path.resolve(appPath)) throw new Error('打包 E2E 应用路径含有符号链接或非规范路径。');
 const appBinary = path.join(appPath, 'Contents/MacOS/Vantilo Vocabulary E2E');
 await fs.access(appBinary);
-const base = await fs.mkdtemp(path.join(os.tmpdir(), `vantilo-vocabulary-packaged-e2e-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-`));
+const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `vantilo-vocabulary-packaged-e2e-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-`)));
 const dirs = {
   home: path.join(base, 'home'),
   tmp: path.join(base, 'tmp'),
@@ -23,24 +24,28 @@ const dirs = {
 };
 for (const directory of Object.values(dirs)) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
 const backup = path.join(base, 'Vantilo-Vocabulary-Packaged-E2E.json');
+const raceBackup = path.join(base, 'Vantilo-Vocabulary-Packaged-Race-E2E.json');
+const expectedRaw = path.join(base, 'expected-recovery-raw.json');
 
 function run(mode, profile, downloads) {
   const resultPath = path.join(base, `result-${mode}.json`);
-  const env = { ...process.env };
-  delete env.VANTILO_DEV_SERVER_URL;
-  delete env.VANTILO_DEV_READER_ASSETS;
-  Object.assign(env, {
+  const env = {
+    PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin',
+    LANG: process.env.LANG || 'en_US.UTF-8',
     HOME: dirs.home,
     CODEX_HOME: dirs.codex,
     XDG_CONFIG_HOME: dirs.xdgConfig,
     XDG_CACHE_HOME: dirs.xdgCache,
     TMPDIR: dirs.tmp,
+    VANTILO_VOCABULARY_E2E_ROOT: base,
     VANTILO_VOCABULARY_E2E_MODE: mode,
     VANTILO_VOCABULARY_E2E_USER_DATA: profile,
     VANTILO_VOCABULARY_E2E_DOWNLOADS: downloads,
     VANTILO_VOCABULARY_E2E_RESULT: resultPath,
     VANTILO_VOCABULARY_E2E_BACKUP: backup,
-  });
+    VANTILO_VOCABULARY_E2E_EXPECTED_RAW: expectedRaw,
+    VANTILO_VOCABULARY_E2E_RACE_BACKUP: raceBackup,
+  };
   return new Promise((resolve, reject) => {
     const child = spawn(appBinary, [`--user-data-dir=${profile}`], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
@@ -67,6 +72,6 @@ const modes = [];
 modes.push(await run('source', dirs.profileA, dirs.downloadsA));
 modes.push(await run('target', dirs.profileB, dirs.downloadsB));
 modes.push(await run('verify', dirs.profileB, dirs.downloadsB));
-const summary = { status: 'PASS', appPath, appBinary, base, backup, modes: modes.map(({ mode, pid, evidence }) => ({ mode, pid, evidence })) };
+const summary = { status: 'PASS', appPath, appBinary, base, backup, modes: modes.map(({ mode, pid, isolationProof, evidence }) => ({ mode, pid, isolationProof, evidence })) };
 await fs.writeFile(path.join(base, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
 console.log(`VOCABULARY_BACKUP_PACKAGED_E2E_PASS ${JSON.stringify(summary)}`);

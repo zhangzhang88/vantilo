@@ -27,8 +27,12 @@ export function recoverVocabularyRestoreJournal(storage: VocabularyJournalStorag
     const raw = storage.getItem(JOURNAL_KEY);
     if (raw === null) return { status: "none" };
     const journal = JSON.parse(raw) as Record<string, unknown>;
+    const keys = Object.keys(journal || {});
+    const hasLegacyShape = exactKeys(journal || {}, ["version", "phase", "createdAt", "original"]);
+    const hasRequestIdShape = exactKeys(journal || {}, ["version", "phase", "transactionId", "createdAt", "original"]);
     if (!journal || typeof journal !== "object" || Array.isArray(journal)
-      || !exactKeys(journal, ["version", "phase", "createdAt", "original"])
+      || (!hasLegacyShape && !hasRequestIdShape)
+      || (keys.includes("transactionId") && (typeof journal.transactionId !== "string" || !/^[0-9a-f-]{36}$/i.test(journal.transactionId)))
       || journal.version !== 1 || !["PREPARED", "COMMITTED"].includes(String(journal.phase))
       || typeof journal.createdAt !== "string" || !Number.isFinite(Date.parse(journal.createdAt))) {
       throw new Error("词汇恢复日志格式无效；日志和原始词汇数据已保留。");
