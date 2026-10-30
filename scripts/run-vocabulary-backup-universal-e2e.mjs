@@ -417,8 +417,10 @@ const backupText = await fs.readFile(backup, 'utf8');
 const backupDoc = JSON.parse(backupText);
 const verify = await import(`file://${verifyService}`);
 const checked = verify.verifyVocabularyBackupDocument(backupDoc, backupText);
-const backupSha256 = await import('node:crypto').then(({ default: crypto }) => crypto.createHash('sha256').update(backupText).digest('hex'));
-if (checked.sha256 !== backupSha256 || backupDoc.integrity.sha256 !== backupSha256) throw new Error('实际词汇备份 JSON SHA-256 与 manifest 不一致');
+const backupFileSha256 = await import('node:crypto').then(({ default: crypto }) => crypto.createHash('sha256').update(backupText).digest('hex'));
+if (checked.sha256 !== backupDoc.integrity.sha256 || backupDoc.integrity.fileBytes !== Buffer.byteLength(backupText)) {
+  throw new Error('词汇备份规范化载荷 SHA-256 或文件长度与 manifest 不一致');
+}
 for (const secret of ['E2E_SYNTHETIC_API_KEY_PLAINTEXT', 'E2E_SYNTHETIC_API_KEY_CIPHERTEXT', 'E2E_SYNTHETIC_OAUTH_TOKEN']) {
   if (backupText.includes(secret)) throw new Error(`敏感标记意外进入词汇备份：${secret}`);
 }
@@ -431,11 +433,12 @@ const summary = {
   testRoot,
   backup,
   backupBytes: Buffer.byteLength(backupText),
-  backupSha256,
+  backupPayloadSha256: checked.sha256,
+  backupFileSha256,
   counts: backupDoc.counts,
   capacityLimitedApfs: capacityVolume ? { image: capacityVolume.image, writtenBytesBeforeEnospc: capacityVolume.written, availableBytesAtEnospc: capacityVolume.freeBytes, enospcObserved: capacityVolume.enospcObserved, detached: !capacityVolume.attached, imageRemoved: Boolean(capacityVolume.removed) } : null,
   syntheticSecretsExcluded: true,
   modes: summaries,
 };
 await fs.writeFile(path.join(testRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-console.log(`UNIVERSAL_VOCABULARY_E2E_PASS ${JSON.stringify({ status: summary.status, appPath, testRoot, backup, backupBytes: summary.backupBytes, backupSha256, counts: summary.counts, modes: summaries.map(item => item.mode) })}`);
+console.log(`UNIVERSAL_VOCABULARY_E2E_PASS ${JSON.stringify({ status: summary.status, appPath, testRoot, backup, backupBytes: summary.backupBytes, backupPayloadSha256: summary.backupPayloadSha256, backupFileSha256, counts: summary.counts, modes: summaries.map(item => item.mode) })}`);
