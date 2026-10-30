@@ -72,6 +72,21 @@ async function waitForInspector(port, child, tail) {
   throw new Error(`打包应用没有开放 loopback Inspector：${tail()}`);
 }
 
+async function waitForIsolationReady(inspector, child, tail) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`打包应用在隔离验证前退出：${tail()}`);
+    try {
+      const response = await inspector.send('Runtime.evaluate', {
+        expression: "(()=>{const {app}=process.mainModule.require('electron');return app.isReady()&&global.__vocabularyIsolationProof?.status==='PASS'})()",
+        returnByValue: true,
+      });
+      if (response.result?.value === true) return;
+    } catch {}
+    await wait(200);
+  }
+  throw new Error(`打包应用未在隔离验收期限内完成 app ready 和隔离证明：${tail()}`);
+}
+
 function connectInspector(webSocketUrl) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(webSocketUrl);
@@ -202,6 +217,7 @@ async function runCase({ mode, profileName }) {
     const webSocketUrl = await waitForInspector(port, child, tail);
     inspector = await connectInspector(webSocketUrl);
     await inspector.send('Runtime.enable');
+    await waitForIsolationReady(inspector, child, tail);
     const proofExpression = `(() => {
       const main = process.mainModule;
       if (!main || typeof main.require !== 'function') throw new Error('Electron main module is unavailable');
