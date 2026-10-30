@@ -37,7 +37,9 @@ function getReaderCustomApiService() {
   if(!readerCustomApiService)readerCustomApiService=createReaderCustomApi({filePath:path.join(app.getPath('userData'),'reader-custom-api-v1.json'),safeStorage});
   return readerCustomApiService;
 }
-const readerAssets = path.join(__dirname, app.isPackaged ? '../reader' : '../build/reader');
+const readerAssets = !app.isPackaged && process.env.VANTILO_DEV_SERVER_URL && process.env.VANTILO_DEV_READER_ASSETS
+  ? path.resolve(process.env.VANTILO_DEV_READER_ASSETS)
+  : path.join(__dirname, app.isPackaged ? '../reader' : '../build/reader');
 // A missing build must fail startup; never fall back to the source project's independent auth/API.
 const usePortableReader = true;
 const readerOnboarding = createReaderOnboarding({ userData: app.getPath('userData'), assetsDir: readerAssets });

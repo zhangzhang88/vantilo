@@ -1110,6 +1110,11 @@ describe("Fastify app", () => {
     expect(issues.statusCode).toBe(200);
     expect(issues.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "economist:2099-01-07" })]));
     expect(await readdir(path.join(root, "issues"))).toEqual([filename]);
+    await vi.waitFor(async () => {
+      const status = await app.inject({ method: "GET", url: "/api/issues/economist%3A2099-01-07/guide-preparation" });
+      expect(status.statusCode).toBe(200);
+      expect(status.json().state).toBe("error");
+    }, { timeout: 20_000, interval: 50 });
     await app.close();
   });
 

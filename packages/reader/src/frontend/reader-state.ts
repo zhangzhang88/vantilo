@@ -1,4 +1,5 @@
 import { canonicalIssueId } from "../shared/publication";
+import type { SentenceReadingPosition } from "./sentence-reading";
 
 export interface ReadingPosition {
   issueId: string;
@@ -33,6 +34,7 @@ export interface ReaderStateData {
   bookProgress: Record<string, number>;
   lastBookPosition: BookLastPosition | null;
   bookPositions: Record<string, BookReadingPosition>;
+  sentencePositions: Record<string, SentenceReadingPosition>;
 }
 
 interface ReadStorage {
@@ -46,7 +48,7 @@ interface WriteStorage extends ReadStorage {
 export const READER_STATE_KEY = "economist-reader-state-v1";
 
 export function emptyReaderState(): ReaderStateData {
-  return { version: 1, progress: {}, lastPosition: null, positions: {}, bookProgress: {}, lastBookPosition: null, bookPositions: {} };
+  return { version: 1, progress: {}, lastPosition: null, positions: {}, bookProgress: {}, lastBookPosition: null, bookPositions: {}, sentencePositions: {} };
 }
 
 export function readingPositionKey(issueId: string, articleId: string): string {
@@ -155,7 +157,29 @@ export function loadReaderState(storage: ReadStorage): ReaderStateData {
         ))
         .map((position) => [bookReadingPositionKey(position.documentId), position]),
     );
-    return { version: 1, progress, lastPosition, positions, bookProgress, lastBookPosition, bookPositions };
+    const sentencePositions = Object.fromEntries(
+      Object.entries((parsed as Partial<ReaderStateData>).sentencePositions ?? {})
+        .filter(([documentId, value]) => Boolean(
+          value
+          && value.documentId === documentId
+          && /^(reading:article:|reading:book:|reading:lesson:).+/.test(documentId)
+          && typeof value.contentFingerprint === "string"
+          && /^\d+:[0-9a-f]{16}$/.test(value.contentFingerprint)
+          && Number.isInteger(value.sentenceIndex)
+          && value.sentenceIndex >= 0
+          && typeof value.sentenceKey === "string"
+          && /^\d+:\d+$/.test(value.sentenceKey)
+          && typeof value.sentenceFingerprint === "string"
+          && /^\d+:[0-9a-f]{16}$/.test(value.sentenceFingerprint)
+          && Number.isInteger(value.paragraphIndex)
+          && value.paragraphIndex >= 0
+          && Number.isInteger(value.startOffset)
+          && value.startOffset >= 0
+          && (value.previousSentenceFingerprint === undefined || /^\d+:[0-9a-f]{16}$/.test(value.previousSentenceFingerprint))
+          && (value.nextSentenceFingerprint === undefined || /^\d+:[0-9a-f]{16}$/.test(value.nextSentenceFingerprint)),
+        )) as Array<[string, SentenceReadingPosition]>,
+    );
+    return { version: 1, progress, lastPosition, positions, bookProgress, lastBookPosition, bookPositions, sentencePositions };
   } catch {
     return emptyReaderState();
   }

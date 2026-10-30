@@ -105,6 +105,7 @@ import {
   type WordContextMeaningRecord,
 } from "./word-context-state";
 import { clickableWordSegments, isDictionaryWord } from "./word-lookup";
+import { firstChineseDictionaryMeaning, selectWordGloss } from "./dictionary-meaning";
 import { PUBLICATIONS } from "../shared/publication";
 import type { PublicationId } from "../shared/types";
 import { buildPublicationShelf } from "./publication-library";
@@ -139,7 +140,7 @@ import {
   upsertSelectionAssistCachedResult,
   type SelectionAssistCacheRecord,
 } from "./selection-assist-cache";
-import { buildReaderSentences, readerSentenceIndexForOffset, readerSentenceProgress } from "./sentence-reading";
+import { buildReaderSentences, createSentenceReadingPosition, readerDocumentContentFingerprint, readerSentenceIndexForOffset, readerSentenceProgress, resolveSentenceReadingPosition, type SentenceReadingPosition } from "./sentence-reading";
 import {
   isVocabularyReviewDue,
   loadVocabularyReviewSchedules,
@@ -316,6 +317,7 @@ function SavedSelectionHighlight({
   text,
   displayText,
   translationZh,
+  translationSource,
   familiarity,
   contextMeaning,
   onResolveContext,
@@ -324,6 +326,7 @@ function SavedSelectionHighlight({
   text: string;
   displayText?: React.ReactNode;
   translationZh?: string;
+  translationSource?: SavedSelection["translationSource"];
   familiarity: FamiliarityLevel;
   contextMeaning?: WordContextMeaningRecord;
   onResolveContext: () => Promise<WordContextMeaningRecord | undefined>;
@@ -376,19 +379,21 @@ function SavedSelectionHighlight({
     onOpenLookup(event);
   }
 
-  const temporaryMeaning = translationZh?.trim().split(/[；;\n]/)[0]?.slice(0, 80);
+  const rawTemporaryMeaning = translationZh?.trim().split(/[；;\n]/)[0]?.slice(0, 80);
+  const temporaryMeaning = rawTemporaryMeaning && (translationSource === "dictionary" || translationSource === "user") && /\p{Script=Han}/u.test(rawTemporaryMeaning) ? rawTemporaryMeaning : undefined;
   const tooltipText = status === "loading"
     ? temporaryMeaning || "正在分析语境…"
     : status === "error"
       ? temporaryMeaning || "暂时无法分析"
       : temporaryMeaning;
 
-  const userContextMeaning = resolvedContext?.meaningSource === "user" ? resolvedContext.meaningZh?.trim() : undefined;
-  const verifiedContextMeaning = resolvedContext?.meaningVersion === 2 ? resolvedContext.meaningZh?.trim() : undefined;
+  const validContextMeaning = selectWordGloss({ cachedAiMeaning: resolvedContext?.meaningZh })?.meaning;
+  const userContextMeaning = resolvedContext?.meaningSource === "user" ? validContextMeaning : undefined;
+  const verifiedContextMeaning = resolvedContext?.meaningVersion === 2 ? validContextMeaning : undefined;
   const inlineMeaning = /\s/.test(text.trim())
-    ? userContextMeaning || verifiedContextMeaning || temporaryMeaning || resolvedContext?.meaningZh?.trim()
-    : userContextMeaning || resolvedContext?.meaningZh?.trim() || temporaryMeaning;
-  if (!inlineMeaning) return <span className="saved-selection-awaiting-meaning" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleClick}>{displayText ?? text}</span>;
+    ? userContextMeaning || verifiedContextMeaning || temporaryMeaning
+    : userContextMeaning || validContextMeaning || temporaryMeaning;
+  if (!inlineMeaning) return <ruby className="saved-selection-ruby"><span className="saved-selection-awaiting-meaning" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleClick}>{displayText ?? text}</span><rt className="saved-selection-inline-meaning">{status === "loading" ? "正在分析…" : "暂无中文释义"}</rt></ruby>;
   return (
     <ruby className="saved-selection-ruby">
       <mark
@@ -456,6 +461,7 @@ function WordLookupCard({
 }) {
   const dictionary = lookup.dictionary;
   const context = lookup.contextMeaning;
+  const fallbackGloss = selectWordGloss({ cachedAiMeaning: context?.meaningZh, dictionaryDefinitions: dictionary?.definitionsZh });
   const [editingContext, setEditingContext] = useState(false);
   const [contextMeaningDraft, setContextMeaningDraft] = useState(context?.meaningZh ?? "");
   const [editingVocabularyMeaning, setEditingVocabularyMeaning] = useState(false);
@@ -532,12 +538,13 @@ function WordLookupCard({
     };
   }, [lookup.key, lookup.left, lookup.placement, lookup.top]);
 
-  const firstZh = dictionary?.definitionsZh[0]?.definition;
+  const firstZh = firstChineseDictionaryMeaning(dictionary?.definitionsZh);
   const firstEn = dictionary?.definitionsEn[0];
   const partOfSpeech = context?.partOfSpeech || firstEn?.partOfSpeech || dictionary?.definitionsZh[0]?.partOfSpeech || "";
   const normalizedVocabularyMeaning = vocabularyMeaning?.trim() ?? "";
   const legacyLooksCustomized = Boolean(
     normalizedVocabularyMeaning
+    && /\p{Script=Han}/u.test(normalizedVocabularyMeaning)
     && vocabularyMeaningSource === undefined
     && firstZh?.trim()
     && normalizedVocabularyMeaning !== firstZh.trim(),
@@ -666,13 +673,13 @@ function WordLookupCard({
 
       <div className="word-lookup-context">
         <div className="word-lookup-context-label-row">
-          <span className="word-lookup-label">{context?.meaningSource === "user" ? "在此语境中 · 已修改" : "在此语境中 · AI"}</span>
+          <span className="word-lookup-label">{context?.meaningSource === "user" ? "在此语境中 · 已修改" : !context && fallbackGloss?.source === "dictionary" ? "词典备用释义" : "在此语境中 · AI"}</span>
           {context && !editingContext && (
             <button className="word-lookup-edit-action" aria-label={`修改“${lookup.text}”当前语境释义`} onClick={() => setEditingContext(true)}>修改</button>
           )}
         </div>
-        {lookup.contextStatus === "loading" && <p>正在结合当前句子分析…</p>}
-        {lookup.contextStatus === "error" && <p className="is-error">语境分析暂时失败，请稍后再试。</p>}
+        {!context && lookup.contextStatus === "loading" && <p>{fallbackGloss?.meaning ?? "正在结合当前句子分析…"}</p>}
+        {!context && lookup.contextStatus === "error" && <p className="is-error">{fallbackGloss?.meaning ?? "语境分析暂时失败，暂无可用中文释义。"}</p>}
         {context && editingContext ? (
           <div className="word-lookup-context-edit">
             <input
@@ -2673,6 +2680,8 @@ function ReaderPage({
   onProgressChange,
   readingPosition,
   onReadingPositionChange,
+  sentencePosition,
+  onSentencePositionChange,
   vocabularyJump,
   onConsumeVocabularyJump,
   noteJump,
@@ -2700,6 +2709,8 @@ function ReaderPage({
   onProgressChange: (progress: number) => void;
   readingPosition?: ReadingPositionAnchor;
   onReadingPositionChange: (position: ReadingPositionAnchor) => void;
+  sentencePosition?: SentenceReadingPosition;
+  onSentencePositionChange: (position: SentenceReadingPosition) => void;
   vocabularyJump: VocabularyJumpTarget | null;
   onConsumeVocabularyJump: (token: number) => void;
   noteJump: NoteJumpTarget | null;
@@ -2728,6 +2739,7 @@ function ReaderPage({
   }, [article.identity.documentId, article.paragraphs.length, onAssistantContext]);
   const chineseParagraphRef = useRef(0);
   const [readerViewDocument, setReaderViewDocument] = useState("");
+  const [sentencePositionReadyDocument, setSentencePositionReadyDocument] = useState("");
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const [pendingSentenceAnchor, setPendingSentenceAnchor] = useState<{ paragraphIndex: number; startOffset: number } | null>(null);
   const [sentenceTranslationVisible, setSentenceTranslationVisible] = useState(false);
@@ -2847,6 +2859,7 @@ function ReaderPage({
     [article.id, article.paragraphs, savedSelections],
   );
   const articleSentences = useMemo(() => buildReaderSentences(article.paragraphs), [article.id, article.paragraphs]);
+  const sentenceContentFingerprint = useMemo(() => readerDocumentContentFingerprint(article.paragraphs), [article.id, article.paragraphs]);
   const isChapterNumber = useCallback((text: string, index: number) =>
     isChapterNumberParagraph(text, index, issue.kind === "book" ? article.title : undefined, article.paragraphs[index + 1]),
   [issue.kind, article.title, article.paragraphs]);
@@ -3203,15 +3216,17 @@ function ReaderPage({
     setFocusedNoteAnchor(null);
     setKeyboardHelpOpen(false);
     const resumedParagraphIndex = resolveArticleReadingPosition(readingPosition, article.paragraphs);
+    const savedSentenceIndex = resolveSentenceReadingPosition(sentencePosition, article.identity.documentId, article.paragraphs, articleSentences);
     const resumedSentenceIndex = resumedParagraphIndex !== null
-      ? readerSentenceIndexForOffset(articleSentences, resumedParagraphIndex, 0)
+      ? articleSentences.findIndex((sentence) => sentence.paragraphIndex === resumedParagraphIndex)
       : -1;
     const savedView = loadReaderView(article.identity.documentId);
     setReaderMode(savedView?.mode ?? "article");
     setReaderLanguage(savedView?.language === "chinese" ? "chinese" : "english");
     chineseParagraphRef.current = resumedParagraphIndex ?? 0;
-    setSentenceIndex(savedView ? Math.min(savedView.sentenceIndex, Math.max(0, articleSentences.length - 1)) : resumedSentenceIndex >= 0 ? resumedSentenceIndex : 0);
+    setSentenceIndex(savedSentenceIndex ?? (resumedSentenceIndex >= 0 ? resumedSentenceIndex : 0));
     setReaderViewDocument(article.identity.documentId);
+    setSentencePositionReadyDocument(`${article.identity.documentId}:${sentenceContentFingerprint}`);
     setSentenceTranslationVisible(false);
     setActiveParagraphCue(null);
     if (activeParagraphCueTimerRef.current !== null) {
@@ -3226,11 +3241,17 @@ function ReaderPage({
       window.clearTimeout(noteAnchorFocusTimerRef.current);
       noteAnchorFocusTimerRef.current = null;
     }
-  }, [article.identity.documentId, articleSentences.length]);
+  }, [article.identity.documentId, articleSentences, article.paragraphs, sentenceContentFingerprint]);
 
   useEffect(() => {
     if (readerViewDocument === article.identity.documentId) saveReaderView(article.identity.documentId, { mode: readerMode, sentenceIndex, language: readerLanguage });
   }, [readerViewDocument, article.identity.documentId, readerMode, sentenceIndex, readerLanguage]);
+
+  useEffect(() => {
+    if (sentencePositionReadyDocument !== `${article.identity.documentId}:${sentenceContentFingerprint}` || readerMode !== "sentence") return;
+    const position = createSentenceReadingPosition(article.identity.documentId, article.paragraphs, articleSentences, sentenceIndex);
+    if (position) onSentencePositionChange(position);
+  }, [sentencePositionReadyDocument, sentenceContentFingerprint, article.identity.documentId, article.paragraphs, articleSentences, sentenceIndex, readerMode, onSentencePositionChange]);
 
   useEffect(() => {
     if (!vocabularyJump || vocabularyJump.documentId !== article.identity.documentId) return;
@@ -3722,7 +3743,7 @@ function ReaderPage({
         setMeaningRepairPending((count) => Math.max(0, count - 1));
         if (result?.meaningZh?.trim() && result.meaningZh.length <= 120) {
           setSavedSelections((current) => {
-            const next = current.map((record) => record.id === item.id && needsContextualMeaningRepair(record) ? { ...record, translationZh: result.meaningZh.trim(), translationSource: "auto" as const, ...(phrase ? { meaningVersion: 2 as const, usageExplanationZh: result.explanationZh } : {}) } : record);
+            const next = current.map((record) => record.id === item.id && needsContextualMeaningRepair(record) ? { ...record, translationZh: result.meaningZh.trim(), translationSource: result.meaningSource === "user" ? "user" as const : "auto" as const, ...(phrase ? { meaningVersion: 2 as const, usageExplanationZh: result.explanationZh } : {}) } : record);
             saveSavedSelections(getReaderStorage(), next); return next;
           });
           setMeaningRepairFailures((current) => current.filter((id) => id !== item.id));
@@ -3765,7 +3786,7 @@ function ReaderPage({
       left,
       placement,
       dictionaryStatus: dictionaryEligible ? "loading" : "idle",
-      contextStatus: cachedContext ? "ready" : "loading",
+      contextStatus: cachedContext && hasEnglishWordContext(cachedContext) ? "ready" : "loading",
       contextMeaning: cachedContext,
     });
     window.getSelection()?.removeAllRanges();
@@ -3776,7 +3797,7 @@ function ReaderPage({
           ? {
               ...current,
               contextStatus: record ? "ready" : "error",
-              contextMeaning: record,
+              contextMeaning: record ?? current.contextMeaning ?? cachedContext,
               contextError: record ? undefined : "语境分析暂时失败",
             }
           : current);
@@ -3784,7 +3805,7 @@ function ReaderPage({
           ? {
               ...current,
               contextStatus: record ? "ready" : "error",
-              contextMeaning: record,
+              contextMeaning: record ?? current.contextMeaning ?? cachedContext,
               contextError: record ? undefined : "语境分析暂时失败",
             }
           : current);
@@ -3799,6 +3820,22 @@ function ReaderPage({
         setWordDetailLookup((current) => current?.key === key
           ? { ...current, dictionaryStatus: "ready", dictionary, dictionaryError: undefined }
           : current);
+        const dictionaryMeaning = firstChineseDictionaryMeaning(dictionary.definitionsZh);
+        if (dictionaryMeaning) setSavedSelections((current) => {
+          let changed = false;
+          const next = current.map((item) => {
+            if (!savedSelectionBelongsToDocument(item, article.identity)
+              || item.text.trim().toLocaleLowerCase("en-US") !== text.trim().toLocaleLowerCase("en-US")
+              || item.paragraphIndex !== paragraphIndex || item.context !== paragraph
+              || item.translationSource === "user") return item;
+            const currentMeaning = item.translationZh?.trim();
+            if (item.translationSource !== "dictionary" && currentMeaning && /\p{Script=Han}/u.test(currentMeaning)) return item;
+            changed = true;
+            return { ...item, translationZh: dictionaryMeaning, translationSource: "dictionary" as const };
+          });
+          if (changed) saveSavedSelections(getReaderStorage(), next);
+          return changed ? next : current;
+        });
         if (preferences.autoPronounceOnWordClick) {
           playWordPronunciation(text, dictionary, preferences.pronunciationAccent);
         }
@@ -3828,10 +3865,20 @@ function ReaderPage({
     setSavedSelections((current) => {
       const normalizedText = lookup.text.trim().toLocaleLowerCase("en-US");
       const existing = current.find((item) => item.text.trim().toLocaleLowerCase("en-US") === normalizedText);
-      const translationZh = existing?.translationZh
-        || lookup.dictionary?.definitionsZh[0]?.definition
-        || lookup.contextMeaning?.meaningZh
-        || undefined;
+      const dictionaryMeaning = firstChineseDictionaryMeaning(lookup.dictionary?.definitionsZh);
+      const existingMeaning = existing?.translationZh?.trim();
+      const existingUserMeaning = existing?.translationSource === "user"
+        || (existing?.translationSource === undefined && existingMeaning && /\p{Script=Han}/u.test(existingMeaning) && existingMeaning !== dictionaryMeaning);
+      const contextMeaning = lookup.contextMeaning?.meaningZh?.trim();
+      const gloss = selectWordGloss({ cachedAiMeaning: contextMeaning, dictionaryDefinitions: lookup.dictionary?.definitionsZh });
+      const translationZh = (existingUserMeaning ? existingMeaning : undefined)
+        || (lookup.contextMeaning?.meaningSource === "user" ? contextMeaning : undefined)
+        || (gloss?.source === "ai" ? gloss.meaning : undefined)
+        || (existing?.translationSource !== "dictionary" && existingMeaning && /\p{Script=Han}/u.test(existingMeaning) ? existingMeaning : undefined)
+        || dictionaryMeaning;
+      const translationSource = existingUserMeaning || lookup.contextMeaning?.meaningSource === "user"
+        ? "user" as const
+        : translationZh === dictionaryMeaning && dictionaryMeaning ? "dictionary" as const : translationZh ? "auto" as const : undefined;
       const next = addSavedSelection(current, {
         document: article.identity,
         articleTitle: article.title,
@@ -3840,7 +3887,7 @@ function ReaderPage({
         paragraphIndex: lookup.paragraphIndex,
         translationZh,
         familiarity,
-        translationSource: existing?.translationSource ?? (existing?.translationZh ? undefined : translationZh ? "auto" : undefined),
+        translationSource,
       });
       saveSavedSelections(getReaderStorage(), next);
       return next;
@@ -4665,8 +4712,11 @@ function ReaderPage({
       const paragraphIndex = chineseParagraphRef.current;
       setPendingSentenceAnchor({ paragraphIndex, startOffset: 0 });
       if (nextMode === "sentence") {
-        const index = readerSentenceIndexForOffset(articleSentences, paragraphIndex, 0);
-        setSentenceIndex(Math.max(0, index)); setReaderMode("sentence");
+        const index = articleSentences.findIndex((sentence) => sentence.paragraphIndex === paragraphIndex);
+        const nextIndex = index >= 0 ? index : 0;
+        setSentenceIndex(nextIndex);
+        persistSentencePosition(nextIndex);
+        setReaderMode("sentence");
       } else {
         setReaderMode("article");
         setFocusedVocabularySentence({ token: ++vocabularyFocusSequenceRef.current, paragraphIndex, sentenceStart: 0, sentenceEnd: article.paragraphs[paragraphIndex]?.length ?? 0, stabilizeLayout: true });
@@ -4697,9 +4747,12 @@ function ReaderPage({
       const resumedParagraphIndex = resolveArticleReadingPosition(readingPosition, article.paragraphs);
       const entryParagraphIndex = visibleParagraphIndex ?? resumedParagraphIndex;
       const resumedIndex = entryParagraphIndex !== null
-        ? readerSentenceIndexForOffset(articleSentences, entryParagraphIndex, 0)
+        ? articleSentences.findIndex((sentence) => sentence.paragraphIndex === entryParagraphIndex)
         : -1;
-      setSentenceIndex(anchoredIndex >= 0 ? anchoredIndex : resumedIndex >= 0 ? resumedIndex : 0);
+      const savedSentenceIndex = resolveSentenceReadingPosition(sentencePosition, article.identity.documentId, article.paragraphs, articleSentences);
+      const nextIndex = anchoredIndex >= 0 ? anchoredIndex : savedSentenceIndex ?? (resumedIndex >= 0 ? resumedIndex : 0);
+      setSentenceIndex(nextIndex);
+      persistSentencePosition(nextIndex);
       setPendingSentenceAnchor(null);
       setReaderMode(nextMode);
       window.requestAnimationFrame(() => readingPageRef.current?.scrollIntoView({ block: "start" }));
@@ -4729,10 +4782,17 @@ function ReaderPage({
     fullArticleTranslationRunRef.current += 1; setFullArticleTranslationRunning(false);
   }
 
+  function persistSentencePosition(index: number) {
+    if (sentencePositionReadyDocument !== `${article.identity.documentId}:${sentenceContentFingerprint}`) return;
+    const position = createSentenceReadingPosition(article.identity.documentId, article.paragraphs, articleSentences, index);
+    if (position) onSentencePositionChange(position);
+  }
+
   function moveSentence(delta: -1 | 1) {
     if (!articleSentences.length) return;
     const nextIndex = Math.max(0, Math.min(articleSentences.length - 1, sentenceIndex + delta));
     if (nextIndex === sentenceIndex) return;
+    persistSentencePosition(nextIndex);
     setSentenceIndex(nextIndex);
     setSentenceTranslationVisible(false);
     setWordDetailLookup(null);
@@ -5245,10 +5305,11 @@ function ReaderPage({
       });
       return (
         <SavedSelectionHighlight
-          key={`${paragraphKey}:saved:${segmentIndex}:${segment.text}`}
+          key={`${article.identity.documentId}:${paragraphKey}:saved:${segmentIndex}:${startOffset}:${paragraph}:${segment.text}`}
           text={segment.text}
           displayText={decorateFindMatches(segment.text, startOffset, `${paragraphKey}:saved:${segmentIndex}`, (piece) => piece)}
           translationZh={segment.translationZh}
+          translationSource={segment.translationSource}
           familiarity={segment.familiarity ?? 1}
           contextMeaning={/\s/.test(segment.text.trim()) && contextMeaning?.meaningVersion !== 2 ? undefined : contextMeaning}
           onResolveContext={() => ensureWordContextMeaning(segment.text, paragraph, paragraphIndex, startOffset, /\s/.test(segment.text.trim()))}
@@ -7413,6 +7474,19 @@ export default function App() {
     });
   }, [selectedIssue?.id, selectedArticle?.id]);
 
+  const updateSentencePosition = useCallback((position: SentenceReadingPosition) => {
+    setReaderState((current) => {
+      const previous = current.sentencePositions[position.documentId];
+      if (previous && JSON.stringify(previous) === JSON.stringify(position)) return current;
+      const next: ReaderStateData = {
+        ...current,
+        sentencePositions: { ...current.sentencePositions, [position.documentId]: position },
+      };
+      saveReaderState(getReaderStorage(), next);
+      return next;
+    });
+  }, []);
+
   const updateSelectedBookProgress = useCallback((progress: number) => {
     if (!selectedBookDocument || selectedBookDocument.identity.kind !== "book-chapter") return;
     const identity = selectedBookDocument.identity;
@@ -7986,6 +8060,8 @@ export default function App() {
             onProgressChange={updateSelectedProgress}
             readingPosition={readerState.positions[readingPositionKey(selectedIssue.id, selectedArticle.id)]}
             onReadingPositionChange={updateSelectedReadingPosition}
+            sentencePosition={readerState.sentencePositions[selectedArticleDocument.identity.documentId]}
+            onSentencePositionChange={updateSentencePosition}
             vocabularyJump={pendingVocabularyJump}
             onConsumeVocabularyJump={(token) => setPendingVocabularyJump((current) => current?.token === token ? null : current)}
             noteJump={pendingNoteJump}
@@ -8017,6 +8093,8 @@ export default function App() {
             onProgressChange={updateSelectedLessonProgress}
             readingPosition={lessonReaderState.positions[selectedLessonDocument.identity.documentId]}
             onReadingPositionChange={updateSelectedLessonPosition}
+            sentencePosition={readerState.sentencePositions[selectedLessonDocument.identity.documentId]}
+            onSentencePositionChange={updateSentencePosition}
             vocabularyJump={pendingVocabularyJump}
             onConsumeVocabularyJump={(token) => setPendingVocabularyJump((current) => current?.token === token ? null : current)}
             noteJump={pendingNoteJump}
@@ -8047,6 +8125,8 @@ export default function App() {
             onProgressChange={updateSelectedBookProgress}
             readingPosition={selectedBookDocument.identity.kind === "book-chapter" ? readerState.bookPositions[selectedBookDocument.identity.documentId] : undefined}
             onReadingPositionChange={updateSelectedBookReadingPosition}
+            sentencePosition={readerState.sentencePositions[selectedBookDocument.identity.documentId]}
+            onSentencePositionChange={updateSentencePosition}
             vocabularyJump={pendingVocabularyJump}
             onConsumeVocabularyJump={(token) => setPendingVocabularyJump((current) => current?.token === token ? null : current)}
             noteJump={pendingNoteJump}

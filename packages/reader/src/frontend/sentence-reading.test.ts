@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReaderSentences, readerSentenceIndexForOffset, readerSentenceProgress } from "./sentence-reading";
+import { buildReaderSentences, createSentenceReadingPosition, readerSentenceIndexForOffset, readerSentenceProgress, resolveSentenceReadingPosition } from "./sentence-reading";
 
 describe("sentence reading", () => {
   it("splits article paragraphs into ordered sentence locations", () => {
@@ -38,5 +38,24 @@ describe("sentence reading", () => {
       { key: "0:2", paragraphIndex: 0, startOffset: 2, endOffset: 8, text: "First." },
       { key: "0:11", paragraphIndex: 0, startOffset: 11, endOffset: 18, text: "Second!" },
     ]);
+  });
+
+  it("restores by document fingerprint and sentence identity, not by index alone", () => {
+    const paragraphs = ["One. Two. Three."];
+    const sentences = buildReaderSentences(paragraphs);
+    const saved = createSentenceReadingPosition("reading:article:issue:a", paragraphs, sentences, 1)!;
+    expect(resolveSentenceReadingPosition(saved, "reading:article:issue:a", paragraphs, sentences)).toBe(1);
+    expect(resolveSentenceReadingPosition(saved, "reading:article:issue:b", paragraphs, sentences)).toBeUndefined();
+    expect(resolveSentenceReadingPosition(saved, "reading:article:issue:a", ["Changed. Two. Three."], buildReaderSentences(["Changed. Two. Three."]))).toBe(1);
+    expect(resolveSentenceReadingPosition(saved, "reading:article:issue:a", ["Changed. Replaced. Three."], buildReaderSentences(["Changed. Replaced. Three."]))).toBeUndefined();
+  });
+
+  it("uses neighboring sentence fingerprints to disambiguate repeated text after edits", () => {
+    const original = ["Before. Repeat. After."];
+    const originalSentences = buildReaderSentences(original);
+    const saved = createSentenceReadingPosition("reading:article:issue:a", original, originalSentences, 1)!;
+    const changed = ["Inserted. Before. Repeat. After. Repeat."];
+    const changedSentences = buildReaderSentences(changed);
+    expect(resolveSentenceReadingPosition(saved, "reading:article:issue:a", changed, changedSentences)).toBe(2);
   });
 });

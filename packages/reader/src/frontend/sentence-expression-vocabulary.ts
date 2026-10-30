@@ -43,5 +43,7 @@ export function saveSentenceExpression(records: SavedSelection[], target: Senten
 }
 
 export function needsContextualMeaningRepair(record: SavedSelection): boolean {
-  return !record.translationZh?.trim() || (/\s/.test(record.text.trim()) && record.translationSource !== "user" && record.meaningVersion !== 2);
+  return !record.translationZh?.trim()
+    || record.translationSource === "dictionary"
+    || (/\s/.test(record.text.trim()) && record.translationSource !== "user" && record.meaningVersion !== 2);
 }

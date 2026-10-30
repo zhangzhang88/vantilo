@@ -1,5 +1,6 @@
 // Vantilo-only presentation of plain-text macOS Dictionary Services entries.
 // The protected source Reader stays unchanged. Never interpret source text as HTML.
+import { dictionaryPreviewMeanings } from '../packages/reader/src/frontend/dictionary-preview';
 
 type NativeDictionaryExample = { english: string; chinese: string };
 type NativeDictionarySense = { number: string; description: string; examples: NativeDictionaryExample[] };
@@ -112,7 +113,7 @@ export function VantiloDictionaryExpanded({
   return (
     <div className="vantilo-dict-article">
       <div className="vantilo-dict-lemma-line">
-        <strong lang="en">{layout.lemma || word}</strong>
+        <strong lang="en">{layout.lemma || word}</strong>{layout.lemma && <span>（原形）</span>}
         {phonetic && <span className="vantilo-dict-phonetic" lang="en">{phonetic}</span>}
       </div>
       {layout.sections.length ? layout.sections.map((group, groupIndex) => (
@@ -150,11 +151,15 @@ export function VantiloDictionaryExpanded({
 export function VantiloDictionaryQuickSummary({ dictionary }: { dictionary: VantiloDictionaryRecord }) {
   const hasChinese = dictionary.definitionsZh.length > 0;
   const language = hasChinese ? 'zh' : 'en';
-  const definitions = hasChinese ? dictionary.definitionsZh : dictionary.definitionsEn;
-  const quick = definitions.find(item => item.source === 'macos-dictionary') ?? definitions[0];
+  const meanings = dictionaryPreviewMeanings(dictionary.definitionsZh);
   return <>
     {dictionary.phonetic && <div className="vantilo-dictionary-phonetic" lang="en">{dictionary.phonetic}</div>}
-    {quick && <div className="vantilo-dictionary-quick" lang={language === 'en' ? 'en' : undefined}>{quick.definition}</div>}
+    {meanings.length > 0 && <div className="vantilo-dictionary-quick" lang="zh-CN">{meanings.map((item, index) =>
+      <div className="vantilo-dictionary-preview-sense" key={index}>
+        {item.partOfSpeech && <span className="vantilo-dictionary-preview-pos">{item.partOfSpeech}</span>}
+        <span>{item.meaning}</span>
+      </div>,
+    )}</div>}
     <VantiloDictionaryDisclosure dictionary={dictionary} language={language} />
   </>;
 }
@@ -179,7 +184,7 @@ export function VantiloDictionaryDisclosure({
   if (!full) return null;
   return (
     <details className="vantilo-dictionary-full vantilo-detail-dictionary-full">
-      <summary>查看完整词条与例句</summary>
+      <summary><span className="vantilo-dictionary-open-label">查看完整词条与例句</span><span className="vantilo-dictionary-close-label">收起完整词条</span></summary>
       <div className="vantilo-dictionary-full-body">
         <VantiloDictionaryExpanded
           definition={full.definition}

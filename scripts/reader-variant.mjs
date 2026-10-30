@@ -311,6 +311,7 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
     source += '\n' + readFileSync(new URL('./reader-sentence-appearance.tsx', import.meta.url), 'utf8');
   }
   if (filename.endsWith('/frontend/App.tsx') && source.includes('function WordLookupCard(')) {
+    source = 'import { dictionaryPreviewMeanings } from "./dictionary-preview";\n' + source;
     const vocabularyPanelSeam = '<aside className={`vocabulary-panel ${panelClassName ?? ""}`.trim()} data-testid="vocabulary-panel">';
     if (source.split(vocabularyPanelSeam).length !== 2) throw new Error('Reader vocabulary panel seam changed');
     source = source.replace(vocabularyPanelSeam,
@@ -426,7 +427,8 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
     } // Only the isolated Qwen preview gets automatic local inference UI.
     source = adaptNativeDictionaryWordDetail(source);
     if (qwenPreview) source = adaptQwenWordDetail(source);
-    source += '\n' + readFileSync(new URL('./reader-dictionary-entry.tsx', import.meta.url), 'utf8');
+    source += '\n' + readFileSync(new URL('./reader-dictionary-entry.tsx', import.meta.url), 'utf8')
+      .replace("import { dictionaryPreviewMeanings } from '../packages/reader/src/frontend/dictionary-preview';", '');
   }
 
   source = source.replaceAll('\"Dictionary\"','\"Agent 释义\"').replaceAll('\"AI fallback\"','\"Agent 语境释义\"').replaceAll('Dictionary · base form','Agent · 词形').replaceAll('请配置 AI 服务', '请登录 ChatGPT').replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。', '阅读辅助与工作台共用 ChatGPT 登录；Reader 独立保存对话与模型选择。这里管理外观、阅读偏好和本机数据备份。').replaceAll('阅读偏好在浏览器 · AI 配置在本机', '阅读偏好保存在本机 · AI 使用统一 Agent').replaceAll('词典：有道 / Free Dictionary API · 语境：EasyCLIProxy', '释义与语境：统一 Agent · AI 生成，请结合原文核对');

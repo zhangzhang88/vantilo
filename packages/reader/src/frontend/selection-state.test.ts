@@ -98,6 +98,15 @@ describe("selection state", () => {
     expect(enriched[0]).toMatchObject({ translationZh: "乘着一波投资热潮", translationSource: "auto" });
   });
 
+  it("preserves dictionary fallback provenance through storage and highlight segments", () => {
+    const storage = new MemoryStorage();
+    const dictionary = addSavedSelection([], { ...input, text: "three", translationZh: "三", translationSource: "dictionary" }, new Date("2026-09-21T12:00:00.000Z"));
+    saveSavedSelections(storage, dictionary);
+    const loaded = loadSavedSelections(storage);
+    expect(loaded[0]).toMatchObject({ translationZh: "三", translationSource: "dictionary" });
+    expect(savedHighlightSegments("three is a number.", loaded).find((segment) => segment.saved)).toMatchObject({ translationZh: "三", translationSource: "dictionary" });
+  });
+
   it("marks a vocabulary translation as user-authored even when the text stays the same", () => {
     const automatic = addSavedSelection([], {
       ...input,

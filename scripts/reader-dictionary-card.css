@@ -85,6 +85,20 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.word-lookup-dictionary-summary .vantilo-dictionary-preview-pos {
+  margin-right: 7px;
+  color: #82796c;
+  font-size: 11px;
+}
+.vantilo-dictionary-full .vantilo-dictionary-close-label,
+.vantilo-dictionary-full[open] .vantilo-dictionary-open-label { display: none; }
+.vantilo-dictionary-full[open] .vantilo-dictionary-close-label { display: inline; }
+.word-lookup-dictionary-summary,
+.word-lookup-dictionary-summary .vantilo-dictionary-full,
+.word-lookup-dictionary-summary .vantilo-dictionary-full-body {
+  max-height: none;
+  overflow: visible;
+}
 .word-lookup-dictionary-summary .vantilo-dictionary-source {
   color: #8a8275;
   font-size: 10px;

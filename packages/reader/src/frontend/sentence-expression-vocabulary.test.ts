@@ -65,6 +65,9 @@ it("rechecks nonempty legacy automatic glosses and preserves manual meanings", a
   expect(needsContextualMeaningRepair(updated)).toBe(false);
   const manual = { ...legacy, translationSource: "user" as const };
   expect(needsContextualMeaningRepair(manual)).toBe(false);
+  const dictionaryFallback = { ...active, translationZh: "三", translationSource: "dictionary" as const };
+  expect(needsContextualMeaningRepair(dictionaryFallback)).toBe(true);
+  expect(needsContextualMeaningRepair({ ...dictionaryFallback, translationZh: "三个", translationSource: "auto" })).toBe(false);
   expect(saveSentenceExpression([manual], target, ready, paragraph, "Title")[0]).toBe(manual);
   await expect(completeSentenceExpressionMeaning(ready, async () => { throw new Error("must reuse verified result"); })).resolves.toEqual(ready);
 });

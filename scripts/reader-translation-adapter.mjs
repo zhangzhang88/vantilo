@@ -139,8 +139,14 @@ export function adaptTranslationPreview(source,filename) {
       if (vantiloEngineRef.current !== result.engineId) return undefined;
       const latest = findWordContextMeaning(wordContextMeaningsRef.current, occurrence);`);
   exact('    if (!cachedContext || !hasEnglishWordContext(cachedContext)) {','    if (!vantiloContextMatches(cachedContext) || !hasEnglishWordContext(cachedContext!)) {');
-  exact('      contextStatus: cachedContext ? "ready" : "loading",\n      contextMeaning: cachedContext,',
-    '      contextStatus: vantiloContextMatches(cachedContext) ? "ready" : "loading",\n      contextMeaning: vantiloContextMatches(cachedContext) ? cachedContext : undefined,');
+  exact('      contextStatus: cachedContext && hasEnglishWordContext(cachedContext) ? "ready" : "loading",\n      contextMeaning: cachedContext,',
+    '      contextStatus: vantiloContextMatches(cachedContext) && hasEnglishWordContext(cachedContext) ? "ready" : "loading",\n      contextMeaning: vantiloContextMatches(cachedContext) ? cachedContext : undefined,');
+  source=source.replaceAll('contextMeaning: record ?? current.contextMeaning ?? cachedContext,',
+    'contextMeaning: record ?? current.contextMeaning ?? (vantiloContextMatches(cachedContext) ? cachedContext : undefined),');
+  exact('contextMeaning={/\\s/.test(segment.text.trim()) && contextMeaning?.meaningVersion !== 2 ? undefined : contextMeaning}',
+    'contextMeaning={!vantiloContextMatches(contextMeaning) || (/\\s/.test(segment.text.trim()) && contextMeaning?.meaningVersion !== 2) ? undefined : contextMeaning}');
+  exact('key={`${article.identity.documentId}:${paragraphKey}:saved:${segmentIndex}:${startOffset}:${paragraph}:${segment.text}`}',
+    'key={`${vantiloEngine}:${article.identity.documentId}:${paragraphKey}:saved:${segmentIndex}:${startOffset}:${paragraph}:${segment.text}`}');
   exact('            <p>{context.explanationZh}</p>', `            <p>{context.explanationZh}</p>
             {(context as any).supplementStatus === 'loading' && <p role="status">正在补充英文释义与例句…</p>}
             {(context as any).supplementStatus === 'error' && <p>英文释义与例句暂未完成，再次点词可重试。</p>}`);

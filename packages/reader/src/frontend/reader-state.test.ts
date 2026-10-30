@@ -9,6 +9,7 @@ import {
   resolveArticleReadingPosition,
   saveReaderState,
 } from "./reader-state";
+import { buildReaderSentences, createSentenceReadingPosition } from "./sentence-reading";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -70,6 +71,7 @@ describe("reader state", () => {
       bookProgress: {},
       lastBookPosition: null,
       bookPositions: {},
+      sentencePositions: {},
     });
   });
 
@@ -95,6 +97,20 @@ describe("reader state", () => {
     } as const;
     saveReaderState(storage, state);
     expect(loadReaderState(storage)).toEqual(state);
+  });
+
+  it("persists validated sentence progress by document without changing v1 storage", () => {
+    const storage = new MemoryStorage();
+    const paragraphs = ["First sentence. The saved sentence."];
+    const sentences = buildReaderSentences(paragraphs);
+    const documentId = "reading:article:economist:2026-09-19:a1";
+    const position = createSentenceReadingPosition(documentId, paragraphs, sentences, 1)!;
+    const state = { ...emptyReaderState(), sentencePositions: { [documentId]: position } };
+    saveReaderState(storage, state);
+    expect(loadReaderState(storage)).toEqual(state);
+
+    storage.setItem(READER_STATE_KEY, JSON.stringify({ ...state, sentencePositions: { invalid: { ...position, documentId: "invalid" } } }));
+    expect(loadReaderState(storage).sentencePositions).toEqual({});
   });
 
   it("keeps old v1 state valid when precise positions do not exist", () => {

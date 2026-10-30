@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createRequire } from 'node:module';
@@ -120,7 +121,18 @@ describe('macOS Dictionary semantic entry presentation', () => {
       <VantiloDictionaryQuickSummary dictionary={dictionary} />
       <div className="word-lookup-context"><p role="alert">语境释义暂不可用</p></div>
     </div>);
-    expect(html).toContain('purr（原形）');
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    const details = container.querySelector('details')!;
+    expect(details.open).toBe(false);
+    expect(container.querySelector('.vantilo-dictionary-quick')?.textContent).toContain('发出柔和的低鸣声');
+    expect(container.querySelector('.vantilo-dictionary-quick')?.textContent).not.toContain('purr');
+    details.querySelector('summary')!.click();
+    expect(details.open).toBe(true);
+    expect(details.querySelector('.vantilo-dict-lemma-line')?.textContent).toContain('purr（原形）');
+    expect(details.querySelector('.vantilo-dict-article')?.textContent).toContain('发出柔和的低鸣声');
+    details.querySelector('summary')!.click();
+    expect(details.open).toBe(false);
     expect(html).toContain('BrE /pɜːr/, AmE /pɝːr/');
     expect(html).toContain('查看完整词条与例句');
     expect(html).toContain('word-lookup-context');
@@ -165,22 +177,33 @@ describe('macOS Dictionary semantic entry presentation', () => {
     )).toBe('');
   });
 
-  it('shows a concise English-only preview and keeps long multi-POS examples in the collapsed full entry', () => {
-    const raw = 'A. noun ① A long first meaning that remains whole. ▸ A long illustrative sentence.' + ' additional source wording.'.repeat(80) + ' B. verb ① A separate second meaning.';
+  it('shows a concise Chinese preview and preserves English definitions and examples in the full entry', () => {
+    const raw = 'A. noun ① A long first meaning that remains whole. 合成释义 ▸ A long illustrative sentence.' + ' additional source wording.'.repeat(80) + ' B. verb ① A separate second meaning.';
     const dictionary = {
-      word: 'synthetic', phonetic: null, definitionsZh: [],
-      definitionsEn: [
-        { source: 'macos-dictionary', definition: 'A. noun\n① A long first meaning that remains whole.' },
+      word: 'synthetic', phonetic: null,
+      definitionsZh: [
+        { source: 'macos-dictionary', definition: 'A. noun\n① 合成释义' },
         { source: 'macos-dictionary-full', definition: raw },
       ],
+      definitionsEn: [],
     };
     const html = renderToStaticMarkup(<VantiloDictionaryQuickSummary dictionary={dictionary} />);
-    expect(html).toContain('A long first meaning that remains whole.');
-    expect(html.slice(0, html.indexOf('<details'))).not.toContain('additional source wording.');
-    expect(html).toContain('<details');
-    expect(html).toContain('separate');
-    expect(html).toContain('second');
-    expect(html).toContain('A long illustrative sentence.');
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    const preview = container.querySelector('.vantilo-dictionary-quick')!;
+    expect(preview.textContent).toContain('合成释义');
+    expect(preview.textContent).not.toContain('A long first meaning');
+    expect(preview.textContent).not.toContain('additional source wording.');
+    const details = container.querySelector('details')!;
+    expect(details.open).toBe(false);
+    details.querySelector('summary')!.click();
+    expect(details.open).toBe(true);
+    const fullText = details.querySelector('.vantilo-dict-article')!.textContent!.replace(/\s+/gu, ' ');
+    expect(fullText).toContain('A long first meaning that remains whole.');
+    expect(fullText).toContain('A separate second meaning.');
+    expect(fullText).toContain('A long illustrative sentence.' + ' additional source wording.'.repeat(80));
+    details.querySelector('summary')!.click();
+    expect(details.open).toBe(false);
   });
 
   it('prompts expansion when no reliable English summary is available', () => {

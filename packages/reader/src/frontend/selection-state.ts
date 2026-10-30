@@ -1,7 +1,7 @@
 import { readingDocumentIdentityForInput, type ReadingDocumentIdentity, type ReadingDocumentIdentityInput } from "../shared/reading-document-identity.js";
 
 export type FamiliarityLevel = 0 | 1 | 2 | 3 | 4 | 5;
-export type SavedSelectionTranslationSource = "auto" | "user";
+export type SavedSelectionTranslationSource = "auto" | "dictionary" | "user";
 
 export interface SavedSelection {
   id: string;
@@ -45,6 +45,7 @@ export interface SavedHighlightSegment {
   saved: boolean;
   startOffset?: number;
   translationZh?: string;
+  translationSource?: SavedSelectionTranslationSource;
   familiarity?: FamiliarityLevel;
 }
 
@@ -58,6 +59,7 @@ interface SavedHighlightTerm {
   source: string;
   lower: string;
   translationZh?: string;
+  translationSource?: SavedSelectionTranslationSource;
   familiarity: FamiliarityLevel;
 }
 
@@ -103,7 +105,7 @@ export function isLearningFamiliarity(familiarity: FamiliarityLevel): familiarit
 }
 
 function highlightTerms(selections: SavedSelection[]): SavedHighlightTerm[] {
-  const unique = new Map<string, { source: string; translationZh?: string; familiarity: FamiliarityLevel }>();
+  const unique = new Map<string, { source: string; translationZh?: string; translationSource?: SavedSelectionTranslationSource; familiarity: FamiliarityLevel }>();
   for (const item of selections) {
     const source = item.text.trim();
     if (!source) continue;
@@ -112,9 +114,15 @@ function highlightTerms(selections: SavedSelection[]): SavedHighlightTerm[] {
     const familiarity = savedSelectionFamiliarity(item);
     const existing = unique.get(lower);
     if (!existing) {
-      unique.set(lower, { source, translationZh, familiarity });
+      unique.set(lower, { source, translationZh, translationSource: item.translationSource, familiarity });
     } else {
-      if (!existing.translationZh && translationZh) existing.translationZh = translationZh;
+      if (item.translationSource === "user" && existing.translationSource !== "user" && translationZh) {
+        existing.translationZh = translationZh;
+        existing.translationSource = "user";
+      } else if (!existing.translationZh && translationZh) {
+        existing.translationZh = translationZh;
+        existing.translationSource = item.translationSource;
+      }
       if (familiarity > existing.familiarity) existing.familiarity = familiarity;
     }
   }
@@ -164,6 +172,7 @@ export function savedHighlightSegments(
       saved: true,
       startOffset: cursor,
       translationZh: term.translationZh,
+      translationSource: term.translationSource,
       familiarity: term.familiarity,
     });
     cursor = end;
@@ -189,7 +198,7 @@ function isSavedSelection(value: unknown): boolean {
     && typeof item.paragraphIndex === "number"
     && typeof item.createdAt === "string"
     && (item.translationZh === undefined || typeof item.translationZh === "string")
-    && (item.translationSource === undefined || item.translationSource === "auto" || item.translationSource === "user")
+    && (item.translationSource === undefined || item.translationSource === "auto" || item.translationSource === "dictionary" || item.translationSource === "user")
     && (item.mastered === undefined || typeof item.mastered === "boolean")
     && (item.familiarity === undefined || [0, 1, 2, 3, 4, 5].includes(item.familiarity));
 }

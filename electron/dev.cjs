@@ -18,7 +18,8 @@ vite.stdout.on('data', chunk => {
   if (!electron && /\bready in\b/.test(text)) {
     const userDataDir = process.env.VANTILO_DEV_USER_DATA_DIR;
     const electronArgs = userDataDir ? [`--user-data-dir=${path.resolve(userDataDir)}`] : [];
-    electron = spawn(process.execPath, [electronBin, '.', ...electronArgs], { stdio: 'inherit', cwd: root, env: { ...process.env, VANTILO_DEV_SERVER_URL: url } });
+    const readerAssets = path.resolve(process.env.VANTILO_READER_BUILD_OUTPUT || path.join(root, 'build/reader-dev'));
+    electron = spawn(process.execPath, [electronBin, '.', ...electronArgs], { stdio: 'inherit', cwd: root, env: { ...process.env, VANTILO_DEV_SERVER_URL: url, VANTILO_DEV_READER_ASSETS: readerAssets } });
     electron.on('error', err => { console.error(`Electron failed to start: ${err.message}`); stop(1); });
     electron.on('exit', code => stop(code ?? 1));
   }
