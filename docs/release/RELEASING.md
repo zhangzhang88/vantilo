@@ -1,6 +1,6 @@
 # Vantilo release procedure
 
-When asked **“开始发布 Vantilo 新版本”**, read this document, root AGENTS.md, and [macOS Universal build instructions](macos-universal-build.md). Confirm the requested version and actual state each time; past hashes and release decisions are not reusable authorization.
+When asked **“开始发布 Vantilo 新版本”**, **“发布 Vantilo”**, or **“准备 Vantilo Release”**, first read this document, root AGENTS.md, and the applicable [macOS Universal build instructions](macos-universal-build.md). Follow the checks below using the actual current and target versions, Git and remote state, release commit, artifacts and SHA-256. Decide whether an already accepted artifact meets the present release requirements or a new build is necessary. Resume safely from verified completed steps; never blindly recreate or overwrite an existing tag or Release. Past hashes and release decisions are not reusable authorization.
 
 ## Before building
 

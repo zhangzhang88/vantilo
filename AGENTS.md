@@ -38,7 +38,8 @@
 
 ## Release workflow
 
-- For “开始发布 Vantilo 新版本”, read [`docs/release/RELEASING.md`](docs/release/RELEASING.md) and verify the current version, commit, artifact, remote and authorization before each release.
+- When the user asks “开始发布 Vantilo 新版本”, “发布 Vantilo”, or “准备 Vantilo Release” (or an equivalent release request), first read [`docs/release/RELEASING.md`](docs/release/RELEASING.md) and follow its applicable steps. Do not rely on memory or skip pre-release checks.
+- Inspect the current and target versions, Git worktree, commits, remote history, existing tags and releases, build artifacts and SHA-256. Determine from the actual evidence whether an accepted artifact can be reused or a new build is necessary. Complete the authorized push, tag, GitHub Release, asset upload, README update and post-release verification in the manual's order. Do not blindly recreate or overwrite an existing tag or Release; stop and investigate a conflict. Prior release decisions do not authorize later releases.
 
 ## Product principles
 
