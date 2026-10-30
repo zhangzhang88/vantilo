@@ -2,8 +2,18 @@ import {readFileSync} from 'node:fs';
 export function adaptCatalogPreview(source,filename) {
   const exact=(a,b)=>{if(source.split(a).length!==2)throw new Error('Catalog seam changed: '+a.slice(0,90));source=source.replace(a,b);};
   if(filename.endsWith('/server/app.ts')) {
-    source=source.replaceAll('if (readerGuideAvailable() || sectionTranslationAvailable())','if (false)');
-    source=source.replaceAll('if (result.status === "imported" && result.issueId && (readerGuideAvailable() || sectionTranslationAvailable()))','if (false)');
+    // Imports must not start model work implicitly; the UI has explicit catalog controls.
+    exact(`      if (result.status === "imported" && importedIssueId && (readerGuideAvailable() || sectionTranslationAvailable())) {
+        void trackReaderBackground(() => guidePreparationService.start(importedIssueId));
+      }`,
+      '      // Importing a magazine does not start AI work; users opt in from its catalog controls.');
+    exact(`      if (result.status === "imported" && importedBookId && aiSettingsService.hasConfiguredActiveProfile()) {
+        void trackReaderBackground(async () => {
+          const book = await bookImportService.getBook(importedBookId);
+          return book ? bookTocChineseService.start(book) : undefined;
+        }).catch((error: unknown) => app.log.error({ error }, "Book TOC Chinese preparation failed to start"));
+      }`,
+      '      // Importing a book does not start AI work; users opt in from its catalog controls.');
     return source;
   }
   if(filename.endsWith('/frontend/global-navigation.tsx')) {
