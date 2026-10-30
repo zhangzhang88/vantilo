@@ -97,6 +97,15 @@ describe('Reader build adaptation', () => {
     const server = 'const codexAuth = new CodexAuthService(paths.dataDir, options.aiFetchImpl); app.get("/api/ai-settings",()=>settings()); app.put<{Body:{apiKey:string}}>("/api/ai-settings/profile",()=>writeConfig());';
     expect(adaptReaderSource(server,'/source/src/server/app.ts')).not.toContain('/api/ai-settings');
   });
+  it('replaces the legacy Reader-wide backup panel with vocabulary-only backup and source reimport navigation', () => {
+    const filename = `${readerSourceRoot}/src/frontend/data-management-panel.tsx`;
+    const result = adaptReaderSource(readFileSync(filename, 'utf8'), filename);
+    expect(result).toContain('data-testid="vocabulary-backup-panel"');
+    expect(result).toContain('前往书库重新导入');
+    expect(result).not.toContain('clearUserData');
+    expect(result).not.toContain('parseUserDataBackup');
+    expect(ts.createSourceFile('vocabulary-data-management.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  });
 
 });
 
@@ -281,6 +290,17 @@ it('keeps native full dictionary text out of both word-detail meaning lists whil
   expect(adapted).toContain('word-detail-user-meaning');
   expect(adapted).toContain('word-detail-context-section');
   expect(ts.createSourceFile('adapted.tsx', adapted, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+});
+
+it('builds the Reader storage notice without restoring the retired Reader-wide backup exporter', () => {
+  const sourcePath = `${readerSourceRoot}/src/frontend/storage-notice.tsx`;
+  const source = readFileSync(sourcePath, 'utf8');
+  const adapted = adaptReaderSource(source, sourcePath);
+  expect(adapted).toContain('export function StorageNotice()');
+  expect(adapted).toContain('尚未保存到本机');
+  expect(adapted).not.toContain('serializeUserDataBackup');
+  expect(adapted).not.toContain('createObjectURL');
+  expect(ts.createSourceFile('storage-notice.tsx', adapted, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
 });
 
 

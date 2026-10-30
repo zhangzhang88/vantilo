@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -75,5 +75,45 @@ describe('custom OpenAI-compatible API provider',()=>{
    await service.save({name:'陪读蛙本地 Qwen',baseUrl:'http://192.168.1.20:18437/v1/responses',model:'qwen3.5-4b',apiKey:'local-key'});
    await expect(service.complete({instruction:'Translate faithfully.',input:'A short passage.'})).resolves.toBe('本地模型译文');
   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+});
+
+
+describe('credential recovery and migration', () => {
+ it('does not consult Keychain when no configuration exists',async()=>{const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-empty-'));const storage={isEncryptionAvailable:vi.fn(),encryptString:vi.fn(),decryptString:vi.fn()};try{const service=createReaderCustomApi({filePath:path.join(dir,'provider.json'),safeStorage:storage});expect((await service.get()).configured).toBe(false);expect(storage.isEncryptionAvailable).not.toHaveBeenCalled();expect(storage.decryptString).not.toHaveBeenCalled();}finally{await rm(dir,{recursive:true,force:true});}});
+ it('loads profiles without touching Keychain and isolates a failed credential', async () => {
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-safe-')); const filePath=path.join(dir,'provider.json');
+  const ids=['11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222'];
+  let available=false; const storage={isEncryptionAvailable:vi.fn(()=>available),encryptString:vi.fn(v=>Buffer.from('encrypted:'+v)),decryptString:vi.fn(v=>{const text=v.toString();if(text==='bad')throw Error('bad');return text.slice(10);})};
+  const profiles=ids.map((id,i)=>({config:{id,name:'service '+i,baseUrl:'https://example.com',model:'model'},encryptedApiKey:Buffer.from(i?'encrypted:good':'bad').toString('base64')}));
+  await writeFile(filePath,JSON.stringify({version:2,activeId:ids[0],profiles}));const before=await readFile(filePath,'utf8');
+  const service=createReaderCustomApi({filePath,safeStorage:storage,fetchImpl:vi.fn(async()=>new Response(JSON.stringify({choices:[{message:{content:'OK'}}]})))});
+  try {
+   const initial=await service.get();expect(initial.profiles.map(p=>p.name)).toEqual(['service 0','service 1']);expect(storage.isEncryptionAvailable).not.toHaveBeenCalled();expect(storage.decryptString).not.toHaveBeenCalled();expect(JSON.stringify(initial)).not.toContain(profiles[0].encryptedApiKey);
+   await expect(service.complete({instruction:'x',input:'y'})).rejects.toMatchObject({code:'keychain_unavailable'});expect(await readFile(filePath,'utf8')).toBe(before);
+   available=true;await expect(service.complete({instruction:'x',input:'y'})).rejects.toMatchObject({code:'credential_unavailable'});expect((await service.get()).profiles[0].credentialStatus).toBe('credential_unavailable');
+   await service.save({...profiles[0].config,apiKey:''});expect(JSON.parse(await readFile(filePath,'utf8')).profiles[0].encryptedApiKey).toBe(profiles[0].encryptedApiKey);
+   await service.activate(ids[1]);expect(await service.complete({instruction:'x',input:'y'})).toBe('OK');
+   await service.save({...profiles[0].config,apiKey:'replacement'});expect(await service.complete({instruction:'x',input:'y'})).toBe('OK');
+  } finally {await rm(dir,{recursive:true,force:true});}
+ });
+ it('retains v1 input during migration and preserves ciphertext when a key is blank',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-v1-'));const filePath=path.join(dir,'provider.json');const raw=JSON.stringify({version:1,config:{name:'old',baseUrl:'https://example.com',model:'m'},encryptedApiKey:Buffer.from('encrypted:old').toString('base64')});
+  try { await writeFile(filePath,raw);const storage=safeStorage();const service=createReaderCustomApi({filePath,safeStorage:storage});const first=await service.get();expect((await service.get()).id).toBe(first.id);await service.save({id:first.id,name:'edited',baseUrl:first.baseUrl,model:first.model,apiKey:''});expect(await readFile(filePath+'.v1-backup','utf8')).toBe(raw);expect(JSON.parse(await readFile(filePath,'utf8')).profiles[0].encryptedApiKey).toBe(JSON.parse(raw).encryptedApiKey); }
+  finally{await rm(dir,{recursive:true,force:true});}
+ });
+ it('never replaces corrupt or unsupported input and retains state after failed encryption',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-corrupt-'));const filePath=path.join(dir,'provider.json');
+  try {const storage=safeStorage();const service=createReaderCustomApi({filePath,safeStorage:storage});await writeFile(filePath,'{');await expect(service.get()).rejects.toMatchObject({code:'corrupt_json'});await expect(service.save(config)).rejects.toMatchObject({code:'corrupt_json'});expect(await readFile(filePath,'utf8')).toBe('{');await writeFile(filePath,JSON.stringify({version:99}));await expect(service.get()).rejects.toMatchObject({code:'unsupported_version'});await rm(filePath);await service.save(config);const old=await readFile(filePath,'utf8');storage.encryptString=()=>{throw Error('unavailable')};await expect(service.save({...config,name:'changed',apiKey:'new'})).rejects.toThrow();expect(await readFile(filePath,'utf8')).toBe(old);expect((await service.get()).name).toBe(config.name);}
+  finally{await rm(dir,{recursive:true,force:true});}
+ });
+ it('keeps the original file and removes the temporary file when rename fails',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-save-failure-'));const filePath=path.join(dir,'provider.json');const fs=require('node:fs/promises');
+  try{const service=createReaderCustomApi({filePath,safeStorage:safeStorage()});await service.save(config);const before=await readFile(filePath,'utf8');const rename=vi.spyOn(fs,'rename').mockRejectedValueOnce(Object.assign(Error('write failed'),{code:'EIO'}));try{await expect(service.save({...config,name:'changed',apiKey:''})).rejects.toThrow('write failed');}finally{rename.mockRestore();}expect(await readFile(filePath,'utf8')).toBe(before);expect((await fs.readdir(dir)).sort()).toEqual(['provider.json']);expect((await service.get()).name).toBe(config.name);}finally{await rm(dir,{recursive:true,force:true});}
+ });
+ it('reports invalid ciphertext without calling the keychain',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-invalid-'));const filePath=path.join(dir,'provider.json');const id='11111111-1111-1111-1111-111111111111';const storage=safeStorage();storage.decryptString=vi.fn(storage.decryptString);
+  try {await writeFile(filePath,JSON.stringify({version:2,activeId:id,profiles:[{config:{id,name:'bad',baseUrl:'https://example.com',model:'m'},encryptedApiKey:'@@@'}]}));const service=createReaderCustomApi({filePath,safeStorage:storage});await expect(service.complete({instruction:'x',input:'y'})).rejects.toMatchObject({code:'invalid_ciphertext'});expect(storage.decryptString).not.toHaveBeenCalled();expect((await service.get()).credentialStatus).toBe('invalid_ciphertext');}
+  finally{await rm(dir,{recursive:true,force:true});}
  });
 });

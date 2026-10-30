@@ -226,9 +226,8 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
     return readFileSync(new URL('./reader-data-management.tsx', import.meta.url), 'utf8');
   }
   if (filename.endsWith('/frontend/storage-notice.tsx')) {
-    const blob = '  const url = URL.createObjectURL(new Blob([serializeUserDataBackup(backup)], { type: "application/json;charset=utf-8" }));';
-    if (source.split(blob).length !== 2) throw new Error('Reader backup download seam changed');
-    return source.replace(blob, '  const file = new Blob([serializeUserDataBackup(backup)], { type: "application/json;charset=utf-8" });\n  if (file.size > 25 * 1024 * 1024) throw new Error("阅读备份超过 25 MB，暂时无法导出；请保留当前数据。");\n  const url = URL.createObjectURL(file);').replaceAll('尚未保存到浏览器', '尚未保存到本机').replaceAll('无法读取浏览器保存的数据，请检查浏览器存储权限', '无法读取本机阅读数据，请检查存储空间和权限');
+    if (!source.includes('export function StorageNotice()') || !source.includes('getReaderStorage()')) throw new Error('Reader storage notice seam changed');
+    return source.replaceAll('尚未保存到浏览器', '尚未保存到本机').replaceAll('无法读取浏览器保存的数据，请检查浏览器存储权限', '无法读取本机阅读数据，请检查存储空间和权限');
   }
   if (filename.endsWith('/server/services/codex-prep-runtime.ts')) {
     return `export const CODEX_PREP_SANDBOX_MODE = 'read-only';

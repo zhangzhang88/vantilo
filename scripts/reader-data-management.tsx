@@ -1,68 +1,243 @@
-import { useRef, useState } from "react";
-import { getReaderStorage } from "./reader-storage";
-import { downloadReaderBackup, requestHostGrowthSnapshot, replaceHostGrowthRecord, clearHostGrowthRecord } from "./storage-notice";
+import { useEffect, useRef, useState } from "react";
+import { freezeReaderStorageKeys, writeFrozenReaderStorageKeys } from "./reader-storage";
 import {
-  buildUserDataBackup, clearUserData, parseUserDataBackup, restoreUserDataBackup, summarizeUserDataBackup,
-  type UserDataBackupSummary, type UserDataBackupV1,
-} from "./user-data-backup";
+  buildVocabularyBackupData,
+  captureVocabularyStorageRaw,
+  currentVocabularySummary,
+  findMissingVocabularySources,
+  mergeVocabularyData,
+  MAX_VOCABULARY_BACKUP_BYTES,
+  parseVocabularyBackup,
+  restoreVocabularyDataTransaction,
+  VOCABULARY_STORAGE_KEYS,
+  type VocabularyBackupV1,
+  type VocabularyMergePreview,
+} from "./vocabulary-backup";
 
-interface PendingBackup { fileName: string; backup: UserDataBackupV1; summary: UserDataBackupSummary }
-const MAX_BACKUP_BYTES = 25 * 1024 * 1024;
+type LastBackup = { createdAt: string; name: string; size: number; sha256: string; vocabularyCount: number };
+type BackupResult = { name: string; size: number; sha256: string; vocabularyCount: number };
+type PendingRestore = { fileName: string; backup: VocabularyBackupV1; preview: VocabularyMergePreview; expectedRaw: Record<string, string | null>; sourceCheck: { status: "checked"; missingDocumentIds: string[]; documentCount: number } | { status: "unavailable" } };
+const RESTORE_NOTICE_KEY = "vantilo-vocabulary-restore-notice-v1";
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { hour12: false }) : value;
+}
+function formatSize(bytes: number): string { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 
 export function DataManagementPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<PendingBackup | null>(null);
-  const [confirmation, setConfirmation] = useState<"restore" | "clear" | null>(null);
+  const activeBackupRef = useRef<string | null>(null);
+  const releaseBackupFreezeRef = useRef<(() => void) | null>(null);
+  const releaseRestoreFreezeRef = useRef<(() => void) | null>(null);
+  const token = (window as Window & { __vantiloGrowthToken?: string }).__vantiloGrowthToken;
+  const [vocabularyCount, setVocabularyCount] = useState(() => {
+    try { return currentVocabularySummary(window.localStorage).vocabularyCount; } catch { return null; }
+  });
+  const [lastBackup, setLastBackup] = useState<LastBackup | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [phase, setPhase] = useState("IDLE");
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState("");
+  const [backupResult, setBackupResult] = useState<BackupResult | null>(null);
+  const [pending, setPending] = useState<PendingRestore | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState("");
+  const [restoreNotice, setRestoreNotice] = useState(() => {
+    try { const value = sessionStorage.getItem(RESTORE_NOTICE_KEY); sessionStorage.removeItem(RESTORE_NOTICE_KEY); return value || ""; } catch { return ""; }
+  });
   const [error, setError] = useState<string | null>(null);
+  const [recoveryRequired, setRecoveryRequired] = useState(() => Boolean((window as Window & { __vantiloVocabularyRecoveryRequired?: string }).__vantiloVocabularyRecoveryRequired));
+  const busy = Boolean(requestId) || Boolean(releaseRestoreFreezeRef.current);
 
-  async function exportBackup() {
-    try { await downloadReaderBackup(); setError(null); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "导出备份失败。"); }
+  useEffect(() => {
+    if (window.parent === window || !token) return;
+    window.parent.postMessage({ type: "vantilo:vocabulary-backup-status-request", token }, "*");
+    const receive = (event: MessageEvent) => {
+      if (event.source !== window.parent || !event.data || typeof event.data !== "object" || event.data.token !== token) return;
+      const data = event.data;
+      if (data.type === "vantilo:vocabulary-backup-freeze" && data.requestId === activeBackupRef.current) {
+        try {
+          releaseBackupFreezeRef.current?.();
+          releaseBackupFreezeRef.current = freezeReaderStorageKeys(VOCABULARY_STORAGE_KEYS);
+          const snapshot = buildVocabularyBackupData(window.localStorage);
+          window.parent.postMessage({ type: "vantilo:vocabulary-backup-snapshot", token, requestId: data.requestId, snapshot }, "*");
+        } catch (cause) {
+          window.parent.postMessage({ type: "vantilo:vocabulary-backup-error", token, requestId: data.requestId, message: cause instanceof Error ? cause.message : "无法安全读取词汇数据。" }, "*");
+        }
+        return;
+      }
+      if (data.type === "vantilo:vocabulary-backup-resume" && data.requestId === activeBackupRef.current) {
+        releaseBackupFreezeRef.current?.(); releaseBackupFreezeRef.current = null;
+        activeBackupRef.current = null; setRequestId(null);
+        try { setVocabularyCount(currentVocabularySummary(window.localStorage).vocabularyCount); } catch { setVocabularyCount(null); }
+        return;
+      }
+      if (data.type === "vantilo:vocabulary-backup-unfreeze" && data.requestId === activeBackupRef.current) {
+        // Main has accepted an immutable snapshot. Keep the backup UI busy, but
+        // don't block new learning writes while that snapshot is written to disk.
+        releaseBackupFreezeRef.current?.(); releaseBackupFreezeRef.current = null;
+        return;
+      }
+      if (data.type === "vantilo:vocabulary-backup-last-status") {
+        const item = data.lastBackup;
+        if (item && typeof item.createdAt === "string" && typeof item.name === "string" && Number.isSafeInteger(item.size) && typeof item.sha256 === "string" && Number.isSafeInteger(item.vocabularyCount)) setLastBackup(item);
+        else setLastBackup(null);
+        return;
+      }
+      if (data.type === "vantilo:vocabulary-backup-status" && data.requestId === activeBackupRef.current) {
+        if (typeof data.phase === "string") setPhase(data.phase);
+        if (typeof data.progress === "number") setProgress(Math.max(0, Math.min(100, data.progress)));
+        if (typeof data.message === "string") setMessage(data.message);
+        if (data.phase === "COMPLETED" && data.result) {
+          setBackupResult(data.result);
+          const record = { ...data.result, createdAt: new Date().toISOString() };
+          setLastBackup(record);
+        }
+        if (["FAILED", "CANCELLED"].includes(data.phase)) {
+          setBackupResult(null);
+          if (data.phase === "FAILED") setError(data.message || "词汇备份失败。");
+        }
+        if (data.terminal === true && ["FAILED", "CANCELLED"].includes(data.phase)) {
+          releaseBackupFreezeRef.current?.(); releaseBackupFreezeRef.current = null;
+          activeBackupRef.current = null; setRequestId(null);
+        }
+      }
+    };
+    window.addEventListener("message", receive);
+    return () => {
+      window.removeEventListener("message", receive);
+      releaseBackupFreezeRef.current?.(); releaseBackupFreezeRef.current = null;
+      releaseRestoreFreezeRef.current?.(); releaseRestoreFreezeRef.current = null;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    const recovery = (window as Window & { __vantiloVocabularyRecoveryRequired?: string }).__vantiloVocabularyRecoveryRequired;
+    if (recovery) { setRecoveryRequired(true); setError(`词汇恢复事务需要处理：${recovery}。本机词汇写入已暂停。`); }
+  }, []);
+
+  function startBackup() {
+    if (requestId || recoveryRequired) return;
+    const nextId = globalThis.crypto?.randomUUID?.();
+    if (!nextId || !token || window.parent === window) { setError("桌面词汇备份通道未就绪，请重新打开阅读空间后重试。"); return; }
+    setError(null); setBackupResult(null); setProgress(0); setMessage("请选择备份保存位置"); setPhase("PREPARING");
+    activeBackupRef.current = nextId; setRequestId(nextId);
+    window.parent.postMessage({ type: "vantilo:vocabulary-backup-start", token, requestId: nextId }, "*");
   }
-  async function chooseBackup(file: File | undefined) {
-    setPending(null); setConfirmation(null); setError(null);
+
+  function cancelBackup() {
+    if (!requestId || !token) return;
+    setPhase("CANCELLING"); setMessage("正在取消备份…");
+    window.parent.postMessage({ type: "vantilo:vocabulary-backup-cancel", token, requestId }, "*");
+  }
+
+  function revealBackup() {
+    if (token) window.parent.postMessage({ type: "vantilo:vocabulary-backup-reveal", token }, "*");
+  }
+
+  function openLibrary() {
+    if (window.parent !== window) window.parent.postMessage({ type: "vantilo:navigate", target: "library" }, "*");
+  }
+
+  async function chooseRestoreFile(file?: File) {
+    setPending(null); setRestoreMessage(""); setError(null);
     if (!file) return;
-    if (file.size > MAX_BACKUP_BYTES) { setError("备份文件超过 25 MB，未读取。"); if (inputRef.current) inputRef.current.value = ""; return; }
+    if (file.size > MAX_VOCABULARY_BACKUP_BYTES) { setError("词汇备份文件超过 25 MB，未读取。"); if (inputRef.current) inputRef.current.value = ""; return; }
     try {
-      const backup = parseUserDataBackup(await file.text());
-      setPending({ fileName: file.name, backup, summary: summarizeUserDataBackup(backup) });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取备份文件。"); }
+      const serialized = await file.text();
+      const backup = await parseVocabularyBackup(serialized);
+      const raw = captureVocabularyStorageRaw(window.localStorage);
+      const current = buildVocabularyBackupData(window.localStorage);
+      const preview = mergeVocabularyData(current, backup.data).preview;
+      let sourceCheck: PendingRestore["sourceCheck"] = { status: "unavailable" };
+      try {
+        const [booksResponse, issuesResponse] = await Promise.all([fetch("/api/books"), fetch("/api/issues")]);
+        if (!booksResponse.ok || !issuesResponse.ok) throw new Error("来源目录暂不可用");
+        const books: unknown = await booksResponse.json(); const issues: unknown = await issuesResponse.json();
+        if (!Array.isArray(books) || !Array.isArray(issues)) throw new Error("来源目录格式无效");
+        const bookIds = new Set(books.flatMap(item => item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string" ? [(item as { id: string }).id] : []));
+        const issueIds = new Set(issues.flatMap(item => item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string" ? [(item as { id: string }).id] : []));
+        sourceCheck = { status: "checked", ...findMissingVocabularySources(backup.data, bookIds, issueIds) };
+      } catch { /* Source availability is informational; preserve vocabulary references when offline. */ }
+      setPending({ fileName: file.name, backup, preview, expectedRaw: raw, sourceCheck });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "无法验证词汇备份文件。"); }
     finally { if (inputRef.current) inputRef.current.value = ""; }
   }
-  async function applyAction() {
-    if (!confirmation || (confirmation === "restore" && !pending)) return;
-    if (getReaderStorage().getSnapshot().pendingCount) {
-      setError("有尚未保存的阅读内容，请先导出备份并重试保存，再进行此操作。");
-      setConfirmation(null); return;
-    }
-    const isRestore=confirmation==="restore"&&Boolean(pending);
-    const hasGrowth=isRestore&&Object.prototype.hasOwnProperty.call(pending!.backup.data,"vantilo-reading-growth-v1");
-    let readerSnapshot:UserDataBackupV1|null=null;let previousGrowth:unknown,growthCommitted=false;
+
+  function restoreBackup() {
+    if (!pending || busy || recoveryRequired) return;
+    const summary = pending.preview;
+    const accepted = window.confirm(
+      `将合并“${pending.fileName}”中的词汇。\n\n备份词汇：${summary.backupVocabularyCount} 条\n本机词汇：${summary.currentVocabularyCount} 条\n预计新增：${summary.newVocabularyCount} 条\n已存在并合并：${summary.mergeableRecords} 条记录\n字段冲突：${summary.conflictCount} 处${pending.sourceCheck.status === "checked" ? `\n本机未找到来源：${pending.sourceCheck.missingDocumentIds.length} / ${pending.sourceCheck.documentCount}` : "\n来源目录暂不可用，无法检查原书籍或杂志是否已导入"}\n\n现有词汇、笔记和熟悉度不会被备份覆盖。是否继续？`,
+    );
+    if (!accepted) return;
+    setError(null); setRestoreMessage("正在安全合并词汇…");
     try {
-      readerSnapshot=buildUserDataBackup(window.localStorage);
-      previousGrowth=await requestHostGrowthSnapshot();
-      if(isRestore&&pending){if(hasGrowth){await replaceHostGrowthRecord(pending.backup.data["vantilo-reading-growth-v1"]);growthCommitted=true;}try{restoreUserDataBackup(window.localStorage,pending.backup);}catch(restoreError){if(growthCommitted){try{await replaceHostGrowthRecord(previousGrowth);}catch(rollbackError){throw new Error(`Reader 恢复失败：${restoreError instanceof Error?restoreError.message:String(restoreError)}；阅读成长回滚也失败：${rollbackError instanceof Error?rollbackError.message:String(rollbackError)}`);}}throw restoreError;}}
-      else {clearUserData(window.localStorage);await clearHostGrowthRecord();}
-      getReaderStorage().discardPending();window.location.reload();
+      releaseRestoreFreezeRef.current = freezeReaderStorageKeys(VOCABULARY_STORAGE_KEYS);
+      const result = restoreVocabularyDataTransaction(window.localStorage, pending.backup.data, writeFrozenReaderStorageKeys, pending.expectedRaw);
+      // The transaction and verification are synchronous in this Renderer. Once
+      // committed, new learning writes are safe and must survive the page reload.
+      releaseRestoreFreezeRef.current?.();
+      let notice = result.recoveryJournalPending ? "词汇已合并；恢复日志将在重新启动时安全清理。" : `恢复完成：新增 ${result.preview.newVocabularyCount} 条词汇，合并 ${result.preview.mergeableRecords} 条记录。`;
+      if (pending.sourceCheck.status === "checked" && pending.sourceCheck.missingDocumentIds.length) notice += ` 本机未找到 ${pending.sourceCheck.missingDocumentIds.length} 个书籍或杂志来源；词汇和关联已保留，可在书库重新导入原文件。`;
+      if (pending.sourceCheck.status === "unavailable") notice += " 来源目录未能检查；所有来源关联均已保留，若原书籍或杂志缺失，可在书库重新导入。";
+      try { sessionStorage.setItem(RESTORE_NOTICE_KEY, notice); } catch { /* The completed restore remains committed if a transient notice cannot be stored. */ }
+      setRestoreMessage(`${notice} 正在重新加载…`);
+      window.setTimeout(() => window.location.reload(), 700);
     } catch (cause) {
-      try { if(readerSnapshot)restoreUserDataBackup(window.localStorage,readerSnapshot);if(previousGrowth!==undefined)await replaceHostGrowthRecord(previousGrowth); }
-      catch(rollbackError){setError(`操作失败，回滚也未能完全完成：${rollbackError instanceof Error?rollbackError.message:String(rollbackError)}`);setConfirmation(null);return;}
-      setConfirmation(null);setError(cause instanceof Error?cause.message:"操作失败，请检查本机存储空间和权限。");
+      const recovery = (window as Window & { __vantiloVocabularyRecoveryRequired?: string }).__vantiloVocabularyRecoveryRequired;
+      if (recovery) { setRecoveryRequired(true); setError(`恢复失败且自动回滚未能确认：${recovery}。恢复点已保留，词汇写入已锁定。`); }
+      else { releaseRestoreFreezeRef.current?.(); releaseRestoreFreezeRef.current = null; setRestoreMessage(""); setError(cause instanceof Error ? cause.message : "词汇恢复失败，现有词汇未修改。"); }
     }
   }
-  const date = (value: string) => { const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString("zh-CN", { hour12: false }) : value; };
-  return <section className="settings-card data-management-card">
+
+  const preview = pending?.preview;
+  const statusText = ({
+    PREPARING: "请选择备份保存位置", FREEZING: "正在暂停词汇写入并创建快照", WRITING: "正在写入并校验备份", CANCELLING: "正在取消备份…", COMPLETED: "备份完成，校验通过", FAILED: "备份失败", CANCELLED: "备份已取消",
+  }[phase] || message);
+
+  return <section className="settings-card data-management-card" data-testid="vocabulary-backup-panel">
     <div className="settings-card-heading">
-      <div><span>Data management</span><h2>数据管理</h2></div>
-      <small>备份包含本机的阅读进度、笔记、词汇、阅读偏好和部分翻译缓存。EPUB、中文目录缓存、API 服务与密钥、ChatGPT 登录及 Agent 会话不包含在内。</small>
+      <div><span>Data management</span><h2>词汇备份与恢复</h2></div>
+      <small>只备份词汇、保存的语境释义、熟悉度、复习记录和必要来源信息。电子书、EPUB、杂志、文章全文、阅读进度、设置、Agent、Codex、Chromium 数据及 API 凭据均不包含在内。</small>
     </div>
+    {recoveryRequired && <div className="data-management-error" role="alert">词汇恢复事务尚未安全解决，已暂停词汇写入。请保留原始数据并联系支持，不要清除 Reader 数据。</div>}
     <div className="data-management-actions">
-      <div className="data-management-action"><div><strong>导出阅读备份</strong><span>保存备份文件，可在另一台安装 Vantilo 的电脑上恢复；书籍需另行导入。</span></div><button className="primary-button" onClick={exportBackup}>导出阅读备份</button></div>
-      <div className="data-management-action"><div><strong>恢复阅读备份</strong><span>选择并预览备份，再确认覆盖本机对应的阅读数据。</span></div><input ref={inputRef} className="data-backup-input" data-testid="data-backup-input" type="file" accept=".json,application/json" onChange={event => void chooseBackup(event.target.files?.[0])} /><button className="text-button data-backup-choose" onClick={() => inputRef.current?.click()}>选择备份文件</button></div>
+      <div className="data-management-action">
+        <div><strong>备份个人词汇</strong><span>当前词汇：{vocabularyCount === null ? "无法读取" : `${vocabularyCount} 条`} · 生成一个带完整性校验的小型 JSON 文件。</span></div>
+        <button className="primary-button" data-testid="vocabulary-backup-start" disabled={busy || recoveryRequired} onClick={startBackup}>{requestId ? "备份进行中…" : "选择位置并备份"}</button>
+      </div>
+      <div className="data-management-action">
+        <div><strong>恢复词汇</strong><span>验证备份并预览合并结果；默认合并，不覆盖本机已有词汇或个人笔记。</span></div>
+        <input ref={inputRef} className="data-backup-input" data-testid="vocabulary-backup-input" type="file" accept=".json,application/json" onChange={event => void chooseRestoreFile(event.target.files?.[0])} />
+        <button className="text-button data-backup-choose" disabled={busy || recoveryRequired} onClick={() => inputRef.current?.click()}>选择词汇备份文件</button>
+      </div>
     </div>
-    {pending && <div className="data-backup-preview" data-testid="data-backup-preview"><div className="data-backup-preview-heading"><div><strong>{pending.fileName}</strong><span>导出于 {date(pending.summary.exportedAt)} · {pending.summary.categoryCount} 类数据</span></div><button className="primary-button" onClick={() => { setError(null); setConfirmation("restore"); }}>恢复这个备份</button></div>{!Object.prototype.hasOwnProperty.call(pending.backup.data,"vantilo-reading-growth-v1")&&<p className="muted-text">此备份不包含阅读成长记录，恢复时将保留本机现有成长数据。</p>}<div className="data-backup-preview-grid">{pending.summary.entries.map(entry => <div key={entry.key}><span>{entry.label}{entry.description&&<small> · {entry.description}</small>}</span><strong>{entry.count}</strong></div>)}{!pending.summary.entries.length && <span className="muted-text">备份没有数据项；恢复后对应的阅读数据将为空。</span>}</div></div>}
+    {requestId && <div className="reader-backup-progress" data-testid="vocabulary-backup-progress">
+      <strong role="status">{message || statusText}</strong>
+      {phase !== "FREEZING" && <><progress max={100} value={progress} /><span>{progress}%</span></>}
+      {phase === "FREEZING" && <button className="text-button" onClick={cancelBackup}>取消备份</button>}
+    </div>}
+    {lastBackup && <p className="muted-text" data-testid="vocabulary-backup-last">上次备份：{formatDate(lastBackup.createdAt)} · {lastBackup.name} · {lastBackup.vocabularyCount} 条词汇 · {formatSize(lastBackup.size)}</p>}
+    {backupResult && <div className="reader-backup-success" data-testid="vocabulary-backup-success" role="status">
+      <strong>词汇备份完成，SHA-256 校验通过</strong><span>{backupResult.name} · {backupResult.vocabularyCount} 条词汇 · {formatSize(backupResult.size)}</span>
+      <code>SHA-256：{backupResult.sha256}</code><button className="text-button" onClick={revealBackup}>在 Finder 中显示</button>
+    </div>}
+    {restoreMessage && <p role="status" className="muted-text">{restoreMessage}</p>}
+    {restoreNotice && <p role="status" className="muted-text" data-testid="vocabulary-restore-result">{restoreNotice}{/(本机未找到|来源目录)/.test(restoreNotice) && <> <button className="text-button" type="button" onClick={openLibrary}>前往书库重新导入</button></>}</p>}
+    {pending && preview && <div className="data-backup-preview" data-testid="vocabulary-restore-preview">
+      <div className="data-backup-preview-heading"><div><strong>{pending.fileName}</strong><span>已验证 SHA-256 · 备份版本 {pending.backup.backupFormatVersion} · 创建于 {formatDate(pending.backup.createdAt)}</span></div>
+        <button className="primary-button" data-testid="vocabulary-restore-confirm" disabled={busy || recoveryRequired} onClick={restoreBackup}>确认合并恢复</button></div>
+      <div className="data-backup-preview-grid">
+        <div><span>备份词汇</span><strong>{preview.backupVocabularyCount}</strong></div><div><span>当前词汇</span><strong>{preview.currentVocabularyCount}</strong></div><div><span>预计新增</span><strong>{preview.newVocabularyCount}</strong></div>
+        <div><span>已有词汇</span><strong>{preview.existingVocabularyCount}</strong></div><div><span>可合并记录</span><strong>{preview.mergeableRecords}</strong></div><div><span>冲突字段（保留本机用户内容）</span><strong>{preview.conflictCount}</strong></div>
+        <div><span>不兼容记录</span><strong>{preview.incompatibleCount}</strong></div>
+      </div>
+      {pending.sourceCheck.status === "checked" && pending.sourceCheck.missingDocumentIds.length > 0 && <div className="data-management-error" role="status"><p>本机尚未找到 {pending.sourceCheck.missingDocumentIds.length} / {pending.sourceCheck.documentCount} 个来源。恢复后仍会保留关联词汇；可重新导入原书籍或杂志。</p><button className="text-button" type="button" onClick={openLibrary}>前往书库重新导入</button></div>}
+      {pending.sourceCheck.status === "unavailable" && <div className="settings-help" role="status"><p>暂时无法检查本机书库；恢复仍会保留来源名称和内部 ID，不会创建空书籍或删除词汇。</p><button className="text-button" type="button" onClick={openLibrary}>前往书库查看或重新导入</button></div>}
+      <p className="settings-help">词汇按来源文档、段落、词形和位置匹配。重复导入不会重复增加学习次数；本机熟悉度和笔记优先保留。找不到原书籍或杂志时，来源记录仍会保留，不会重新创建空书籍。</p>
+    </div>}
     {error && <div className="data-management-error" role="alert">{error}</div>}
-    <div className="data-danger-zone"><div><strong>清除阅读与学习记录</strong><span>清除进度、笔记、词汇、阅读偏好和此备份包含的缓存；书籍、中文目录缓存、API 设置和 Agent 会话会保留。建议先导出备份。</span></div><button className="text-button data-clear-button" onClick={() => { setError(null); setConfirmation("clear"); }}>清除阅读数据</button></div>
-    {confirmation && <div className="data-backup-preview" role="alertdialog" aria-modal="false" aria-labelledby="data-action-title"><div className="data-backup-preview-heading"><div><strong id="data-action-title">{confirmation === "restore" ? "确认恢复阅读备份？" : "确认清除阅读与学习记录？"}</strong><span>{confirmation === "restore" ? `将用“${pending?.fileName}”覆盖本机对应记录，备份中没有的项目会被清空。` : "清除后无法撤销；请确认已保存需要保留的备份。"}</span></div><div><button className="text-button" onClick={() => setConfirmation(null)}>取消</button><button className="primary-button" onClick={applyAction}>{confirmation === "restore" ? "确认恢复" : "确认清除"}</button></div></div></div>}
+    <p className="settings-help">来源信息只保留名称、内部 ID、段落位置和最多 320 个字符的短语境。恢复后如果原书籍或杂志不在本机，相关词汇与来源关联仍会保留，可重新导入原文件。</p>
   </section>;
 }

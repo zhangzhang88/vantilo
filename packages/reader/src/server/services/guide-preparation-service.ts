@@ -38,6 +38,11 @@ export class GuidePreparationService {
     return this.jobs.has(issueId);
   }
 
+  async waitForIdle(): Promise<void> {
+    while (this.jobs.size) await Promise.allSettled([...this.jobs.values()]);
+    await this.statusWriteQueue.catch(() => undefined);
+  }
+
   async removeStatus(issueId: string): Promise<void> {
     const task = this.statusWriteQueue.catch(() => undefined).then(async () => {
       const cache = await this.storage.loadGuidePreparationStatuses();

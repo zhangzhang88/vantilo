@@ -429,6 +429,7 @@ it('runs project work and Reader work simultaneously with separate drivers and c
   reader.driver.emit('delta',{delta:'Reader chunk'});project.driver.emit('delta',{delta:'Project chunk'});
   await waitFor(()=>deltas.mock.calls.length===1);
   expect(deltas).toHaveBeenCalledWith({requestId,delta:'Reader chunk'});
+  await waitFor(()=>project.store.get(session.session.id).messages.at(-1).text==='Project chunk');
   expect(project.store.get(session.session.id).messages.at(-1).text).toBe('Project chunk');
   engine.cancel(requestId);await waitFor(()=>reader.driver.cancelTurn.mock.calls.length===1);
   expect(project.driver.cancelTurn).not.toHaveBeenCalled();

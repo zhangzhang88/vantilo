@@ -34,6 +34,32 @@ export class IssueService {
     return records.map((record) => this.toSummary(record));
   }
 
+  /** Build a compact restore index only from existing Reader metadata caches and filenames.
+   * This deliberately never opens, parses, hashes, or writes a source magazine EPUB. */
+  async snapshotBackupIndex(): Promise<Array<Record<string, unknown>>> {
+    await this.waitForAllIssueMutations();
+    const files = await scanIssueFiles(this.issuesDir);
+    const result: Array<Record<string, unknown>> = [];
+    for (const file of files) {
+      const cached = await this.storage.loadIssue(file.id);
+      const validCache = cached?.schemaVersion === 1 && cached.id === file.id;
+      const articles = validCache && Array.isArray(cached.articles)
+        ? cached.articles.filter((article) => article && typeof article.id === "string").map((article) => ({
+          id: article.id,
+          title: typeof article.title === "string" ? article.title : "",
+          status: article.status === "save" || article.status === "process" || article.status === "skip" ? article.status : null,
+        }))
+        : [];
+      result.push({
+        id: file.id, publicationId: file.publicationId, publicationName: file.publicationName,
+        filename: file.filename, title: validCache && typeof cached.title === "string" ? cached.title : file.label,
+        date: file.date, label: file.label, sections: validCache && Array.isArray(cached.sections) ? cached.sections : [],
+        articleCount: articles.length, articles, indexAvailable: Boolean(validCache),
+      });
+    }
+    return result;
+  }
+
   async getIssue(issueId: string): Promise<IssueRecord | null> {
     await this.waitForAllIssueMutations();
     const files = await scanIssueFiles(this.issuesDir);

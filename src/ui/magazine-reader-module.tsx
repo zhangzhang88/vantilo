@@ -14,8 +14,9 @@ export function isReaderAppearance(value: unknown): value is ReaderAppearance {
   return typeof item.theme === 'string' && ['paper','sepia','green','blue','night'].includes(item.theme) && typeof item.fontSize === 'number' && Number.isInteger(item.fontSize) && item.fontSize >= 12 && item.fontSize <= 24 && (item.fontFamily === 'serif' || item.fontFamily === 'sans');
 }
 const MAGAZINE_READER_URL = 'http://127.0.0.1:5175/';
-type BridgeMessage = {type:string;token?:string;bookId?:string;documentId?:string;pageId?:string;mode?:'sentence'|'article';english?:boolean;action?:'sentence'|'lookup'|'translation'|'scroll';requestId?:string;operation?:'snapshot'|'replace'|'clear';record?:unknown};
-type HostBridge = {onSystemSuspended?:(callback:()=>void)=>()=>void};
+type BridgeMessage = {type:string;token?:string;bookId?:string;documentId?:string;pageId?:string;mode?:'sentence'|'article';english?:boolean;action?:'sentence'|'lookup'|'translation'|'scroll';requestId?:string;operation?:'snapshot'|'replace'|'clear';record?:unknown;snapshot?:unknown;message?:unknown;terminal?:boolean};
+type VocabularyBackupEvent = {type:'freeze'|'resume'|'status';requestId:string;phase?:string;progress?:number;message?:string;result?:{name:string;size:number;sha256:string;vocabularyCount:number}};
+type HostBridge = {onSystemSuspended?:(callback:()=>void)=>()=>void;onVocabularyBackupEvent?:(callback:(event:VocabularyBackupEvent)=>void)=>()=>void;startVocabularyBackup?:(requestId:string)=>Promise<{canceled?:boolean}>;submitVocabularyBackupSnapshot?:(requestId:string,snapshot:unknown)=>Promise<{accepted:boolean}>;cancelVocabularyBackup?:(requestId:string)=>Promise<{canceled:boolean}>;revealVocabularyBackup?:()=>Promise<{shown:boolean}>;getVocabularyBackupStatus?:()=>Promise<{lastBackup:{createdAt:string;name:string;path:string;size:number;sha256:string;vocabularyCount:number}|null}>};
 
 export function MagazineReaderModule({navigationRequest,status,error,onRetry,onBack,syncState,onSync,onSetup,onAppearanceChange,visible=true}: {
   navigationRequest?:{target:'settings'|'library';sequence:number};status:MagazineReaderStatus;error:string|null;onRetry:()=>void;onBack:()=>void;syncState?:MagazineSyncState|null;onSync?:()=>void;onSetup?:()=>void;onAppearanceChange?:(appearance:ReaderAppearance)=>void;visible?:boolean;
@@ -26,6 +27,8 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
   const lastActivityAt=React.useRef(0);
   const initRetryRef=React.useRef<number|null>(null);
   const [session,setSession]=React.useState<SessionState>(()=>createReadingSession(readGrowthRecord()));
+  const sessionRef=React.useRef(session);sessionRef.current=session;
+  const vocabularyBackupRequestRef=React.useRef<string|null>(null);
   const [growthStorageValid,setGrowthStorageValid]=React.useState(()=>{try{const raw=localStorage.getItem(READING_GROWTH_STORAGE_KEY);return raw===null||isValidGrowthRecord(JSON.parse(raw));}catch{return false;}});
   const [now,setNow]=React.useState(()=>Date.now());
   const daily=growthStats(session.record,new Date(now)).todaySeconds;
@@ -69,30 +72,36 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
       if(data.type==='vantilo:reader-appearance'&&isReaderAppearance(data)){onAppearanceChange?.({theme:data.theme,fontSize:data.fontSize,fontFamily:data.fontFamily});return;}
       if(data.type==='vantilo:growth-ready'&&data.token===instanceToken){if(initRetryRef.current!==null){clearInterval(initRetryRef.current);initRetryRef.current=null;}return;}
       if(!instanceToken||data.token!==instanceToken)return;
+      if(data.type==='vantilo:vocabulary-backup-status-request'){
+        const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+        void api?.getVocabularyBackupStatus?.().then(result=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-last-status',token:instanceToken,lastBackup:result.lastBackup},origin)).catch(()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-last-status',token:instanceToken,lastBackup:null},origin));return;
+      }
+      if(data.type==='vantilo:vocabulary-backup-reveal'){
+        void (window as Window & {vantilo?:HostBridge}).vantilo?.revealVocabularyBackup?.().catch(()=>{});return;
+      }
+      if(data.type==='vantilo:vocabulary-backup-start'&&typeof data.requestId==='string'&&/^[0-9a-f-]{36}$/i.test(data.requestId)){
+        if(vocabularyBackupRequestRef.current)return;
+        const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+        if(!api?.startVocabularyBackup){frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-status',token:instanceToken,requestId:data.requestId,phase:'FAILED',message:'桌面词汇备份通道不可用。',terminal:true},origin);return;}
+        vocabularyBackupRequestRef.current=data.requestId;
+        void api.startVocabularyBackup(data.requestId).then(result=>{if(result?.canceled){frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-status',token:instanceToken,requestId:data.requestId,phase:'CANCELLED',message:'已取消词汇备份。',terminal:true},origin);if(vocabularyBackupRequestRef.current===data.requestId)vocabularyBackupRequestRef.current=null;}},error=>{const canceled=error instanceof Error&&error.message==='词汇备份已取消';frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-status',token:instanceToken,requestId:data.requestId,phase:canceled?'CANCELLED':'FAILED',message:canceled?'已取消词汇备份。':error instanceof Error?error.message:'词汇备份失败。',terminal:true},origin);});return;
+      }
+      if(data.type==='vantilo:vocabulary-backup-snapshot'&&typeof data.requestId==='string'&&data.requestId===vocabularyBackupRequestRef.current&&data.snapshot&&typeof data.snapshot==='object'){
+        const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+        if(!api?.submitVocabularyBackupSnapshot){void api?.cancelVocabularyBackup?.(data.requestId);return;}
+        void api.submitVocabularyBackupSnapshot(data.requestId,data.snapshot).catch(error=>{void api.cancelVocabularyBackup?.(data.requestId!);frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-status',token:instanceToken,requestId:data.requestId,phase:'FAILED',message:error instanceof Error?error.message:'词汇数据快照提交失败。',terminal:true},origin);});return;
+      }
+      if(data.type==='vantilo:vocabulary-backup-cancel'&&typeof data.requestId==='string'&&data.requestId===vocabularyBackupRequestRef.current){void (window as Window & {vantilo?:HostBridge}).vantilo?.cancelVocabularyBackup?.(data.requestId);return;}
+      if(data.type==='vantilo:vocabulary-backup-error'&&typeof data.requestId==='string'&&data.requestId===vocabularyBackupRequestRef.current){
+        const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+        void api?.cancelVocabularyBackup?.(data.requestId);
+        frameRef.current?.contentWindow?.postMessage({type:'vantilo:vocabulary-backup-status',token:instanceToken,requestId:data.requestId,phase:'FAILED',message:typeof data.message==='string'?data.message:'词汇数据快照失败。',terminal:true},origin);return;
+      }
       if(data.type==='vantilo:growth-leave'&&typeof data.documentId==='string'&&typeof data.bookId==='string'&&typeof data.pageId==='string'){
         setSession(current=>current.documentId===data.documentId&&current.bookId===data.bookId&&current.pageId===data.pageId?leaveReadingSession(current,data.documentId!,data.pageId):current);return;
       }
       if(data.type==='vantilo:growth-open-request'){setSession(current=>current.documentId?leaveReadingSession(current,current.documentId,current.pageId??undefined):current);setDiscoveryOpen(false);setGrowthOpen(true);return;}
       if(data.type==='vantilo:growth-resume-request'){if(growthStorageValid&&visible&&document.hasFocus())continueReading();return;}
-      if(data.type==='vantilo:growth-backup-request'&&typeof data.requestId==='string'&&/^[0-9a-f-]{16,64}$/i.test(data.requestId)&&['snapshot','replace','clear'].includes(data.operation||'')){
-        try{
-          if(data.operation==='replace'&&!isValidGrowthRecord(data.record))throw new Error('备份中的阅读成长记录格式无效。');
-          let record:unknown;
-          if(data.operation==='snapshot'){
-            const raw=localStorage.getItem(READING_GROWTH_STORAGE_KEY);
-            record=raw===null?emptyGrowthRecord():JSON.parse(raw);
-            if(!isValidGrowthRecord(record))throw new Error('本机阅读成长记录损坏，已停止备份/恢复以避免数据丢失。');
-          }else if(data.operation==='replace'){
-            saveGrowthRecord(data.record as ReturnType<typeof emptyGrowthRecord>);setGrowthStorageValid(true);record=data.record;
-            setSession(current=>({...current,record:data.record as ReturnType<typeof emptyGrowthRecord>}));
-          }else{
-            localStorage.removeItem(READING_GROWTH_STORAGE_KEY);const empty=emptyGrowthRecord();record=empty;setGrowthStorageValid(true);setSession(createReadingSession(empty));
-          }
-          window.dispatchEvent(new Event('vantilo:growth-updated'));
-          frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-backup-response',token:instanceToken,requestId:data.requestId,ok:true,record},origin);
-        }catch(cause){frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-backup-response',token:instanceToken,requestId:data.requestId,ok:false,error:cause instanceof Error?cause.message:'宿主窗口阅读成长存储失败。'},origin);}
-        return;
-      }
       if(data.type==='vantilo:growth-state'&&typeof data.bookId==='string'&&data.bookId.length>0&&data.bookId.length<=512&&typeof data.documentId==='string'&&data.documentId.length>0&&data.documentId.length<=512&&typeof data.pageId==='string'&&data.pageId.length>0&&data.pageId.length<=128&&(data.mode==='sentence'||data.mode==='article')&&typeof data.english==='boolean'){
         setSession(current=>{
           const now=Date.now();
@@ -110,6 +119,14 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
     };
     window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive);
   },[origin,navigate,onSetup,onAppearanceChange,instanceToken,visible,growthOpen,discoveryOpen,growthStorageValid]);
+  React.useEffect(()=>{
+    const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+    return api?.onVocabularyBackupEvent?.((event)=>{
+      if(!event||event.requestId!==vocabularyBackupRequestRef.current||!frameRef.current?.contentWindow||!instanceToken)return;
+      frameRef.current.contentWindow.postMessage({...event,type:`vantilo:vocabulary-backup-${event.type}`,token:instanceToken},origin);
+      if(event.type==='resume'&&vocabularyBackupRequestRef.current===event.requestId)vocabularyBackupRequestRef.current=null;
+    });
+  },[instanceToken,origin]);
   React.useEffect(()=>{if(!instanceToken||!frameRef.current?.contentWindow)return;const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-summary',token:instanceToken,seconds:daily,active:session.active,canResume:Boolean(growthStorageValid&&session.bookId&&session.mode)},origin);send();const id=window.setInterval(send,1000);return()=>clearInterval(id);},[instanceToken,daily,session.active,session.bookId,session.mode,growthStorageValid,origin]);
   React.useEffect(()=>{if(status==='ready')navigate();},[status,navigate]);
   const onFrameLoad=()=>{

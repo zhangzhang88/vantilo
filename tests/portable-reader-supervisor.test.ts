@@ -52,10 +52,12 @@ describe('portable Reader process ownership',()=>{
     const {supervisor:packaged,children}=fixture(undefined,{seedDir:'/app/reader/seed'});const packagedStart=packaged.start();expect((packaged as any).utilityProcess.fork.mock.calls[0][1].at(-1)).toBe('/app/reader/seed');children[0].emit('message',{type:'ready'});await packagedStart;await packaged.stop();
   });
   it('starts only on demand, uses an isolated environment, reuses its own service and stops it',async()=>{
-    const {supervisor,utilityProcess,children}=fixture();
+    const userDataRoot='/private/tmp/vantilo-reader-fixture-user-data';
+    const {supervisor,utilityProcess,children}=fixture(undefined,{userDataRoot});
     expect(utilityProcess.fork).not.toHaveBeenCalled();
     const pending=supervisor.start();children[0].emit('message',{type:'ready'});await pending;
     expect((utilityProcess.fork.mock.calls as any)[0][2].env).not.toHaveProperty('OPENAI_API_KEY');
+    expect((utilityProcess.fork.mock.calls as any)[0][2].env).toHaveProperty('VANTILO_READER_USER_DATA_ROOT',userDataRoot);
     await supervisor.start();expect(utilityProcess.fork).toHaveBeenCalledOnce();
     supervisor.synchronize();expect(children[0].postMessage).toHaveBeenCalledWith({type:'sync'});
     await supervisor.stop();expect(supervisor.getStatus().status).toBe('stopped');

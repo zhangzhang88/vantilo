@@ -1,14 +1,15 @@
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 class PortableReaderSupervisor {
-  constructor({ utilityProcess, assetsDir, libraryRoot, seedDir, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
+  constructor({ utilityProcess, assetsDir, libraryRoot, userDataRoot, seedDir, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
     if(typeof installSessionCookie!=='function'||typeof clearSessionCookie!=='function')throw new Error('Reader session authentication is not configured');
-    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, seedDir, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
+    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, userDataRoot, seedDir, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
     this.webOrigin = 'http://127.0.0.1:5175';
     this.apiOrigin = 'http://127.0.0.1:5174';
     this.status = 'idle'; this.error = null; this.child = null; this.pending = null; this.stopping = false; this.failedHealthChecks = 0;
     this.sync = { enabled: true, status: 'idle', message: '首次打开后检查新刊', importedCount: 0, failedCount: 0 };
     this.customApiRequests = new Map();
+    this.readerBackupRequests = new Map();
   }
   getStatus() { return { status: this.status, error: this.error, sync: { ...this.sync } }; }
   async checkHealth() {
@@ -58,12 +59,20 @@ class PortableReaderSupervisor {
         child = this.utilityProcess.fork(this.entryPath, [this.assetsDir, this.libraryRoot, this.enableLocalQwen ? 'preview-local-qwen' : 'disabled', this.enableTranslation ? 'reader-translation' : 'disabled', this.enableReaderPreviews ? 'reader-previews' : 'disabled', this.seedDir || '--no-seed'], {
           serviceName: 'Vantilo Reader', stdio: 'ignore',
           // The installed app never inherits developer AI keys, GitHub tokens or local provider configuration.
-          env: { PATH: process.env.PATH || '/usr/bin:/bin', LANG: process.env.LANG || 'en_US.UTF-8', TMPDIR: process.env.TMPDIR || '/tmp' },
+          env: { PATH: process.env.PATH || '/usr/bin:/bin', LANG: process.env.LANG || 'en_US.UTF-8', TMPDIR: process.env.TMPDIR || '/tmp', ...(this.userDataRoot ? { VANTILO_READER_USER_DATA_ROOT: this.userDataRoot } : {}) },
         });
       } catch { fail('无法启动内置阅读服务'); return; }
       this.child = child;
       child.on('message', message => {
         if (this.child !== child || this.stopping) return;
+        if (message?.type === 'reader-backup-response' && typeof message.requestId === 'string') {
+          const pending = this.readerBackupRequests.get(message.requestId);
+          if (!pending) return;
+          clearTimeout(pending.timer); this.readerBackupRequests.delete(message.requestId);
+          if (message.ok === true) pending.resolve(message.result);
+          else pending.reject(new Error(typeof message.error === 'string' ? message.error : 'Reader 备份维护请求失败'));
+          return;
+        }
         if(message?.type==='custom-api-cancel'&&typeof message.requestId==='string') { this.customApiRequests.get(message.requestId)?.abort(new Error('自定义 API 请求已取消'));return; }
         if(message?.type==='custom-api') {
           const {requestId,operation}=message;
@@ -110,6 +119,9 @@ class PortableReaderSupervisor {
       });
       child.on('error', () => fail('阅读服务进程出错，请重试'));
       child.on('exit', () => {
+        for (const [requestId, pending] of this.readerBackupRequests) {
+          clearTimeout(pending.timer); pending.reject(new Error('Reader 服务在备份维护期间退出')); this.readerBackupRequests.delete(requestId);
+        }
         if (this.child !== child) return;
         this.child = null;
         clearTimeout(timer);
@@ -132,6 +144,19 @@ class PortableReaderSupervisor {
     this.child.postMessage({ type: 'sync' });
     return { accepted: true };
   }
+  _requestReaderBackup(type, requestId, timeoutMs = 160000) {
+    if (this.status !== 'ready' || !this.child || this.stopping) return Promise.reject(new Error('Reader 服务未运行，无法安全备份'));
+    if (!['reader-backup-freeze', 'reader-backup-resume'].includes(type) || typeof requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(requestId)) return Promise.reject(new Error('Reader 备份请求无效'));
+    if (this.readerBackupRequests.has(requestId)) return Promise.reject(new Error('Reader 备份请求重复'));
+    const child = this.child;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.readerBackupRequests.delete(requestId); reject(new Error('Reader 服务未能在时限内完成写入排空')); }, timeoutMs);
+      this.readerBackupRequests.set(requestId, { resolve, reject, timer });
+      child.postMessage({ type, requestId });
+    });
+  }
+  freezeForBackup(requestId) { return this._requestReaderBackup('reader-backup-freeze', requestId); }
+  resumeAfterBackup(requestId) { return this._requestReaderBackup('reader-backup-resume', requestId); }
   async stop() {
     this.stopping = true;
     for(const controller of this.customApiRequests.values())controller.abort(new Error('阅读服务已停止'));

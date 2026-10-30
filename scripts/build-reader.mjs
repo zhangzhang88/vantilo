@@ -86,8 +86,11 @@ await copyCodexRuntime(path.join(nativePackage, 'vendor', triple, 'bin'), output
 if (process.platform === 'darwin') {
   const nativeDir = path.join(output, 'native');
   await fs.mkdir(nativeDir, { recursive: true });
+  const swiftModuleCacheArgs = process.env.VANTILO_SWIFT_MODULE_CACHE_PATH
+    ? ['-module-cache-path', path.resolve(process.env.VANTILO_SWIFT_MODULE_CACHE_PATH)]
+    : [];
   execFileSync('/usr/bin/xcrun', [
-    'swiftc', '-O', path.join(repo, 'scripts/reader-system-dictionary.swift'),
+    'swiftc', '-O', ...swiftModuleCacheArgs, path.join(repo, 'scripts/reader-system-dictionary.swift'),
     '-o', path.join(nativeDir, 'vantilo-dictionary'),
   ], { cwd: repo, stdio: 'inherit', timeout: 120000 });
 }

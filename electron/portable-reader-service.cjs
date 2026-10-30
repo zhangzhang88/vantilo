@@ -8,6 +8,7 @@ const { createReaderAiFetch } = require('./reader-ai-gateway.cjs');
 const { createDictionaryCache } = require('./reader-dictionary-cache.cjs');
 const { createMacDictionaryLookup } = require('./reader-system-dictionary.cjs');
 const { createMagazineFetch } = require('./magazine-github-fetch.cjs');
+const { acquireReaderDataLockSync } = require('./reader-data-lock.cjs');
 
 const {READER_SESSION_COOKIE}=require('./reader-session-cookie.cjs');
 function hasReaderSession(cookieHeader, sessionToken) {
@@ -17,7 +18,23 @@ function hasReaderSession(cookieHeader, sessionToken) {
   const expected=Buffer.from(sessionToken,'hex'), received=Buffer.from(value,'hex');
   return expected.length===received.length && timingSafeEqual(expected,received);
 }
-async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, translationProvider, getTranslationCacheIdentity, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') }) {
+async function startPortableReader(options = {}) {
+  let userDataRoot = options.userDataRoot;
+  let app = null;
+  if (!userDataRoot && process.versions.electron) {
+    try { app = require('electron').app; userDataRoot = app?.getPath('userData'); } catch { /* A utility process must receive the explicit parent path. */ }
+  }
+  if (!userDataRoot && path.basename(options.libraryRoot || '') === 'reader-library') userDataRoot = path.dirname(options.libraryRoot);
+  if (process.versions.electron && (!userDataRoot || !path.isAbsolute(userDataRoot))) throw new Error('Reader 启动缺少受保护的数据目录身份');
+  const readerDataLease = process.platform === 'darwin' && userDataRoot
+    ? acquireReaderDataLockSync(userDataRoot, { createIfMissing: Boolean(app && !app.isPackaged) })
+    : null;
+  try { return await startPortableReaderWithLease(options, readerDataLease, userDataRoot); }
+  catch (error) { readerDataLease?.close(); throw error; }
+}
+
+async function startPortableReaderWithLease(options, readerDataLease, userDataRoot) {
+  let { assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, translationProvider, getTranslationCacheIdentity, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') } = options;
   if(!/^[a-f0-9]{64}$/.test(sessionToken))throw new Error('Reader session token is invalid');
   for (const folder of ['issues', 'books', 'data', 'config']) await fs.mkdir(path.join(libraryRoot, folder), { recursive: true, mode: 0o700 });
   if (seedDir) await initializeReaderLibrary({ seedDir, libraryRoot });
@@ -29,7 +46,8 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
     modelId:readerPreferences?.modelMode === 'manual' ? readerPreferences.model : null,
     reasoningEffort:readerPreferences?.reasoningMode === 'manual' ? readerPreferences.reasoningEffort : null,
   })) : undefined;
-  const api = await buildServer({ projectRoot: libraryRoot, serveFrontend: false, aiProviderEnv: {},
+  const api = await buildServer({ projectRoot: libraryRoot, serveFrontend: false, aiProviderEnv: {}, vantiloReaderUserDataRoot: userDataRoot,
+    ...(readerDataLease ? { vantiloReaderDataLockFd: readerDataLease.getInheritanceFd() } : {}),
     ...(translationProvider ? { translationProvider } : {}),
     ...(getTranslationCacheIdentity ? { getTranslationCacheIdentity } : {}),
     // Never resume queued AI preparation merely by starting the packaged library.
@@ -221,14 +239,39 @@ async function startPortableReader({ assetsDir, libraryRoot, apiPort = 5174, web
     webPort = web.address().port;
   } catch (error) { lifetime.abort(); web.close(); await api.close(); throw error; }
   if (autoSync) sync.start();
-  return { sync, apiOrigin: 'http://127.0.0.1:' + apiPort, webOrigin: 'http://127.0.0.1:' + web.address().port, async close() {
-    lifetime.abort();
-    ownedQwen?.close(); // Reclaim resident MLX memory when leaving Reader.
-    await sync.stop();
-    // Release idle Chromium keep-alive connections before awaiting server close.
-    api.server.closeIdleConnections?.();
-    web.closeIdleConnections?.();
-    await Promise.all([api.close(), new Promise(resolve => web.close(resolve))]);
+  let closed = false, backupFrozen = false;
+  const backupControl = api.vantiloReaderBackupControl;
+  return { sync, apiOrigin: 'http://127.0.0.1:' + apiPort, webOrigin: 'http://127.0.0.1:' + web.address().port,
+    async freezeForBackup() {
+      if (closed || backupFrozen) throw new Error('Reader 服务当前无法开始备份');
+      await sync.suspend();
+      let apiFrozen = false;
+      try {
+        const state = await backupControl.freeze();
+        apiFrozen = true;
+        const libraryIndex = await backupControl.snapshotIndex();
+        backupFrozen = true;
+        return { ...state, libraryIndex };
+      } catch (error) { if (apiFrozen) backupControl.resume(); sync.resume(); throw error; }
+    },
+    async resumeAfterBackup() {
+      if (!backupFrozen) return { frozen: false };
+      backupControl.resume(); backupFrozen = false;
+      sync.resume();
+      return { frozen: false };
+    },
+    async close() {
+    if (closed) return;
+    closed = true;
+    try {
+      lifetime.abort();
+      ownedQwen?.close(); // Reclaim resident MLX memory when leaving Reader.
+      await sync.stop();
+      // Release idle Chromium keep-alive connections before awaiting server close.
+      api.server.closeIdleConnections?.();
+      web.closeIdleConnections?.();
+      await Promise.all([api.close(), new Promise(resolve => web.close(resolve))]);
+    } finally { readerDataLease?.close(); }
   } };
 }
 module.exports = { startPortableReader, hasReaderSession, READER_SESSION_COOKIE };

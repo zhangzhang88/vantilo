@@ -108,6 +108,35 @@ export class BookImportService {
       .sort((left, right) => left.title.localeCompare(right.title, "en", { sensitivity: "base" }));
   }
 
+  /** Return only metadata already discovered by the normal Reader library load.
+   * Backup enumerates EPUB names only to ensure the index is complete; it never
+   * opens, parses, copies, compresses or hashes an original EPUB here. */
+  async snapshotBackupIndex(): Promise<Array<Record<string, unknown>>> {
+    const books: Array<Record<string, unknown>> = [];
+    const entries = await readdir(this.booksDir, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    const sourceNames = entries.filter(entry => entry.isFile() && entry.name.toLocaleLowerCase("en-US").endsWith(".epub")).map(entry => entry.name);
+    for (const stored of this.index.values()) {
+      const cached = this.records.get(stored.filePath);
+      let record: BookRecord | null = null;
+      if (cached?.signature === stored.signature) record = await cached.promise;
+      books.push({
+        ...stored.summary,
+        ...(record ? {
+          parts: record.parts.map(({ id, title, order, chapterIds }) => ({ id, title, order, chapterIds })),
+          chapters: record.chapters.map(({ id, partId, order, role, title, wordCount }) => ({ id, partId, order, role, title, wordCount })),
+          indexAvailable: true,
+        } : { parts: [], chapters: [], indexAvailable: false }),
+      });
+    }
+    const indexedNames = new Set(books.map(book => String(book.sourceFilename || "").toLocaleLowerCase("en-US")));
+    const missingIndexes = sourceNames.filter(name => !indexedNames.has(name.toLocaleLowerCase("en-US")));
+    if (missingIndexes.length) throw new Error(`Reader 书库索引尚未就绪（${missingIndexes.length} 个文件未出现在已加载索引中），已停止备份以免丢失书籍关联。请等待书架加载完成后重试。`);
+    return books.sort((left, right) => String(left.title).localeCompare(String(right.title), "en", { sensitivity: "base" }));
+  }
+
   async getBook(bookId: string): Promise<BookRecord | null> {
     const stored = await this.findStoredBook(bookId);
     return stored ? this.loadRecord(stored.filePath, stored.signature) : null;

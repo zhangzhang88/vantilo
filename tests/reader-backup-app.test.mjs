@@ -44,6 +44,16 @@ describe('desktop reading backup', () => {
     expect(target.getItem(paragraph)).toBeNull(); expect(target.getItem(sentence)).toBeNull();
     expect(target.getItem('unrelated-api-secret')).toBe('preserved');
   });
+  it('exports Reader records while excluding unrelated Agent and credential keys', () => {
+    const source=storage();
+    source.setItem('economist-reader-state-v1', JSON.stringify({version:1,progress:{'fixture:article':32},lastPosition:null}));
+    source.setItem(paragraph, JSON.stringify([base]));
+    for (const key of ['agent-sessions','agent-projects','codex-oauth','chromium-cookie','api-key','encryptedApiKey']) source.setItem(key, 'excluded-fixture-'+key);
+    const backup=api.buildUserDataBackup(source);
+    expect(backup.data['economist-reader-state-v1'].progress['fixture:article']).toBe(32);
+    expect(backup.data[paragraph]).toHaveLength(1);
+    expect(JSON.stringify(backup)).not.toContain('excluded-fixture-');
+  });
   it('exports and validates the host growth record while preserving the host-owned copy during Reader-side restore', () => {
     const from=storage();const growth={days:{'2026-10-29':{seconds:1800,books:{'book:one':1200,'book:two':600}}}};
     const backup=api.parseUserDataBackup(JSON.stringify(api.buildUserDataBackup({getItem:key=>key==='vantilo-reading-growth-v1'?JSON.stringify(growth):from.getItem(key)})));

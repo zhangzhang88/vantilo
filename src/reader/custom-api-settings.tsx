@@ -1,5 +1,5 @@
 import {useEffect as customApiUseEffect,useState as customApiUseState} from 'react';
-type CustomApiProfile={id:string;name:string;baseUrl:string;model:string;hasApiKey:boolean};
+type CustomApiProfile={id:string;name:string;baseUrl:string;model:string;hasApiKey:boolean;credentialStatus?:string};
 type CustomApiSettingsValue=CustomApiProfile&{configured:boolean;profiles:CustomApiProfile[];activeId:string};
 const emptyCustomApi:CustomApiSettingsValue={id:'',configured:false,name:'',baseUrl:'',model:'',hasApiKey:false,profiles:[],activeId:''};
 function VantiloCustomApiSettings(){
@@ -14,9 +14,9 @@ function VantiloCustomApiSettings(){
   async function request(path:string,method:string){
     setBusy(true);setError('');setMessage('');
     try{const response=await fetch(path,{method,headers:{'content-type':'application/json'},body:JSON.stringify(config())});const data=await response.json();if(!response.ok)throw new Error(data.error||'自定义 API 请求失败');
-      if(path.endsWith('/test'))setMessage(data.message||'连接成功');
+      if(path.endsWith('/test')){setMessage(data.message||'连接成功');const refreshed=await fetch('/api/vantilo-custom-api/settings',{cache:'no-store'});if(refreshed.ok)setValue(await refreshed.json());}
       else{setValue({...data});setApiKey('');setMessage('设置已安全保存；阅读翻译和目录模型列表已更新。');window.dispatchEvent(new CustomEvent('vantilo-custom-api-updated'));}
-    }catch(reason){setError(reason instanceof Error?reason.message:'自定义 API 请求失败');}finally{setBusy(false);}
+    }catch(reason){setError(reason instanceof Error?reason.message:'自定义 API 请求失败');if(path.endsWith('/test')){try{const refreshed=await fetch('/api/vantilo-custom-api/settings',{cache:'no-store'});if(refreshed.ok)setValue(await refreshed.json());}catch{/* Preserve the original error. */}}}finally{setBusy(false);}
   }
   async function switchProfile(id:string){
     if(!id){setValue({...emptyCustomApi,profiles:value.profiles});setApiKey('');setError('');setMessage('填写新服务信息并保存，即可加入服务列表。');return;}
@@ -33,6 +33,7 @@ function VantiloCustomApiSettings(){
     <label>API 地址或根地址<input value={value.baseUrl} maxLength={2048} placeholder="https://api.example.com/v1 或 http://192.168.1.20:18437/v1/responses" onChange={event=>update({baseUrl:event.target.value})}/></label>
     <label>模型名称<input value={value.model} maxLength={256} placeholder="例如 MiniMax-M2、deepseek-chat、qwen3" onChange={event=>update({model:event.target.value})}/></label>
     <label>API 密钥<input type="password" value={apiKey} autoComplete="new-password" maxLength={4096} placeholder={value.hasApiKey?'已保存密钥；留空表示保留':'局域网服务可按需留空'} onChange={event=>setApiKey(event.target.value)}/></label>
+    {value.id&&<p className="settings-help">密钥状态：{({missing:'未设置',unchecked:'存在密钥记录，尚未检查',available:'可用',empty_key:'为空',keychain_unavailable:'系统安全存储不可用，请恢复授权后重试',decrypt_failed:'无法解密，请恢复授权或重新填写',credential_unavailable:'密钥暂不可用，请检查系统授权或重新填写',invalid_ciphertext:'密钥记录无效，请重新填写'} as Record<string,string>)[value.credentialStatus||'missing']||'暂时未知'}。</p>}
     <div className="vantilo-custom-api-actions"><button type="button" disabled={busy||!value.name.trim()||!value.baseUrl.trim()||!value.model.trim()} onClick={()=>void request('/api/vantilo-custom-api/test','POST')}>{busy?'正在连接…':'测试连接'}</button><button type="button" className="primary-button" disabled={busy||!value.name.trim()||!value.baseUrl.trim()||!value.model.trim()} onClick={()=>void request('/api/vantilo-custom-api/settings','PUT')}>{busy?'正在保存…':value.id?'保存 API':'保存新服务'}</button>{value.id&&<button type="button" disabled={busy} onClick={()=>void removeProfile()}>删除服务</button>}</div>
     {message&&<p role="status">{message}</p>}{error&&<p role="alert" className="vantilo-custom-api-error">{error}</p>}
   </section>;

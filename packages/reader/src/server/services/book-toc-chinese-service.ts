@@ -95,6 +95,11 @@ export class BookTocChineseService {
 
   isRunning(bookId: string): boolean { return this.running.has(bookId); }
 
+  async waitForIdle(): Promise<void> {
+    while (this.running.size) await Promise.allSettled([...this.running.values()]);
+    await this.writeQueue.catch(() => undefined);
+  }
+
   async remove(bookId: string): Promise<void> {
     if (this.isRunning(bookId)) throw new Error("该书正在生成中文目录，请稍后再删除。");
     const work = this.writeQueue.then(async () => {

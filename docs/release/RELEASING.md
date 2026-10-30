@@ -7,10 +7,14 @@ When asked **“功能已在本地开发版真人验收通过，开始发布 Van
 Treat these as separate gates and record evidence and PASS, FAIL or NOT RUN for each:
 
 1. **Source verification:** run relevant automated tests, typecheck and production builds for the intended release source. These do not establish a human UI result or packaged-app behavior.
-2. **Development-version human acceptance:** record the owner's acceptance of the actual changed features in the development app and the source state tested. Do not infer this from tests or a launch.
+2. **Development-version acceptance:** manual human acceptance is the default: record the owner's acceptance of the actual changed features in the development app and the source state tested. For a fully automatable flow, complete automated E2E may replace manual UI acceptance only if it launches real Electron, performs real UI actions through actual IPC and business services, uses fresh isolated user data and synthetic records, does not mock backup/restore/merge/integrity/rollback logic, verifies real files and persistent storage, covers the full flow and restart persistence plus cancellation, malformed input, integrity failures and rollback, runs against the final current-source packaged application, is repeatable, and reports uncovered scenarios as PASS, FAIL, BLOCKED or NOT RUN. Unit/component tests, a Reader-only host, mocked core behavior, or a development-only launch do not qualify. This exception replaces only manual UI interaction for the flow actually covered; it does not waive source verification, the external-volume or Intel-helper gate, Universal package acceptance, signature/notarization, physical architecture checks, or other independent release gates. Scenarios requiring a person, physical hardware or external service remain NOT RUN until separately verified.
 3. **Packaged-app acceptance:** unpack the exact candidate ZIP into an independent test location and launch the actual packaged application with isolated userData and storage. Verify the changed features and relevant regressions using synthetic data and simulated services as applicable. For restart persistence, fully exit the packaged app, verify the process has exited, relaunch it and check the restored position; a Reader test-host restart or page reload is not equivalent. Verify signature, notarization, Gatekeeper, icon and architecture separately. Do not claim Intel hardware acceptance from Universal slices.
 
 Any feature source change after an older artifact was built requires a new version-specific Universal ZIP built and accepted from the corresponding intended source commit; never reuse the older commit's package. Reuse an already accepted ZIP only when its version, exact feature source commit, build report, SHA-256 and applicable acceptance evidence all match the intended release. Documentation-only commits after the build do not move the release tag away from the build commit.
+
+For the vocabulary-backup feature, run `npm run test:e2e:vocabulary-backup` serially. It launches isolated Electron processes and exercises the actual Reader UI, IPC, localStorage allowlist, backup writer, restore transaction and restart recovery with synthetic records. Required safety cases include writes at the backup freeze/snapshot boundary, writes immediately after restore commit, primary-restore plus rollback failure with recovery on a new process, a genuinely capacity-limited temporary APFS image, and an unwritable directory. Preserve the APFS image under the test temp root, verify the kernel returns `ENOSPC`, run the application backup against that volume, record free space versus estimated backup size, then detach and verify the exact image is gone. Never fill a real system or Workspace volume. Record failures honestly; do not convert mock-only evidence to PASS.
+
+The final package gate must run the exact `.app` extracted from the final Universal ZIP with a fresh isolated `userData`, not a previous app or a separately packaged E2E wrapper. A helper that packages a dedicated E2E app is useful supplementary evidence only. Exercise real package UI, files, restore and restart persistence; repeat the applicable failure cases on the artifact. Test both architectures through `lipo` separately from physical-device testing. Apple Silicon execution does not establish Intel hardware acceptance.
 
 **All required package acceptance must pass before pushing source, creating a tag or publishing a GitHub Release.** If a required check fails or has not run, stop the release and report the exact gap; a previous release is not evidence that the current candidate passed. Do not overwrite existing versioned artifacts.
 
@@ -86,3 +90,26 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 - 根测试 525 项通过；Reader 离线测试 547 项通过、7 项跳过。Intel 真机未验收，签名为 ad-hoc，未公证；门禁和局限见 [0.1.13 发布记录](0.1.13-beta.md)。
 - 新版发布说明必须按本文中文格式编写；历史英文说明保留原样，应用在没有简体中文说明时提供 GitHub 原文入口。
 - 本次清理了 5 个旧工作副本的独立 Node 编译缓存（删除前分配 28,397,568 字节）及本次 2,097,152 字节合成下载文件；保留历史安装包、构建工作副本、日志、验收资料和 Intel helper 输入。外置卷可用空间受同时构建等活动影响，不能把单次 `df` 差值等同于上述文件大小。
+
+## 0.1.14 词汇备份安全补测记录（发布执行中）
+
+- 根目录串行测试通过：85 个测试文件、578 项；Reader 离线串行测试通过：95 个文件、574 项，1 个文件及 7 项按项目配置跳过。未提权尝试的 `127.0.0.1` 用例因本机 `EPERM` 失败；在已授权的本机回环测试权限下整套复测通过。macOS 系统词典项目在受限运行时没有 `imposed` 词条；允许访问后根套件通过。未修改这些测试断言。
+- 完整隔离 Electron E2E 通过：正常备份/取消/防覆盖、损坏和摘要不匹配拒绝、版本不兼容拒绝、合并与重复导入、恢复失败回滚及重启恢复、冻结边界并发写入、恢复提交后写入、二次回滚失败的日志/恢复点保留、真实容量受限临时 APFS 卷拒绝空间不足备份、不可写目录失败。APFS 用测试专用 128 MiB 稀疏映像；实际写入获得 `ENOSPC`，备份体积约 2.81 MB、报告可用空间约 3.22 MB，应用空间预检拒绝且未生成最终或 partial 文件。测试卷已安全卸载。
+- 首次完整流程等待恢复后 UI 状态时沿用已销毁的 Reader iframe，导致 E2E 超时；驱动现在在页面重载后重新查找当前 iframe，完整流程随后通过。第一次 APFS 测试只要求可用空间低于 1 MiB，遇到 APFS 保留块后不足以让备份本身拒绝；现在由较大的合成记录让真实待写文件大于卷剩余空间，并同时确认实际 ENOSPC 和应用失败路径。
+- 最终 Universal ZIP E2E、实际构建信息与 GitHub 发布结果必须在本版发布结束后补齐；在此之前不得把本节当作完整发布完成记录。
+
+## 用户数据保护发布门禁
+
+- 不得未经授权删除用户数据。Keychain 或密钥解密失败不得重建空 API 配置；保存失败必须保留原配置。
+- 破坏性迁移前必须创建并验证恢复点。恢复备份前必须验证完整性，失败或异常中断后必须能够安全恢复或回滚。
+- 发布前运行数据迁移及备份恢复回归测试，核验测试数据隔离。自动化单元测试不能替代真实跨设备恢复验收，未做的真实验收须如实记录。
+- 修改用户数据目录、应用身份或 Reader 存储 origin 前，必须检查旧数据兼容和回退路径；未通过的独立门禁不得跳过。
+- 词汇备份和恢复必须在真实词汇写入入口冻结相应存储键，拒绝新的词汇写入并核实不存在待保存项。只有源码证明其他进程可以写入这些词汇键时，才协调这些进程；默认不要求 Reader-wide 维护或停止无关 Agent/服务。Reader 启动加载词汇前必须检查未完成的词汇恢复日志；可安全回滚时先回滚，否则保留日志并阻止词汇写入，不得创建空数据绕过问题。数据保护测试仅使用隔离合成词汇。符合本节完整自动化 E2E 标准的词汇流程可由自动化替代真人手动 UI 操作，但必须测试最终当前源码打包应用；未覆盖的场景仍标记 NOT RUN，不能用单元测试或开发版结果代替。
+
+## 词汇备份范围（用户的明确决定）
+
+- Vantilo 用户可操作的备份范围仅为**个人词汇及其相关学习数据**，不是整个 Reader 或整个 Vantilo。实际字段必须以当前源码模型为准：已保存单词/词组、来源关联、保存的中文释义和语境释义、英文释义及例句、熟悉度、复习计划与次数、个人使用说明/笔记。不得假设存在未由当前数据模型支持的独立词元、音标、标签、收藏标记或逐次复习事件。
+- 只保留来源名称、稳定内部 ID、段落/偏移及短语境片段，不导出文章或书籍全文。始终排除 EPUB、电子书、杂志及其图片/音频/视频原始资源，阅读进度和逐句位置，Reader 全局设置、普通词典缓存及可重新生成的临时 AI 缓存。恢复后原始来源缺失时，仍保留词汇和来源引用；提示用户重新导入或关联，不创建空书籍或删除相关记录。
+- 普通词汇 JSON 备份不得包含 API Key 明文或密文、OAuth/Codex 凭据、Keychain 内容、Agent 会话/Runtime/项目数据或 Chromium Profile、Cookie、缓存和浏览历史。必须使用明确的词汇存储键及字段 allowlist，不能复制 Reader 数据目录或 Chromium Profile。
+- 备份格式必须有版本、记录数量清单和 SHA-256 完整性校验。先写同目录临时文件，校验成功后原子创建最终文件且不得覆盖已有文件。恢复默认使用合并模式：保留现有用户释义、笔记和熟悉度，冲突须显式统计；先创建持久化恢复点，再 staging、核验、提交。重复导入必须幂等且不得重复增加复习次数。任何失败都不得损坏原词汇库或丢失恢复点。
+- 只在词汇存储写入入口冻结词汇键并等待待写入项完成；除非源码证明确有其他写入者，否则不停止整个 Vantilo 或无关 Agent/Reader Service。清单必须明确列出排除内容，不能将书刊、文章、媒体、阅读进度或其他平台数据统计为已备份。所有测试使用隔离 userData 和合成词汇。符合 Acceptance gates 中完整标准的、可重复的最终打包应用自动化 E2E 可以替代真人手动 UI 操作；单元测试或 Reader 测试主机不能替代此验收。物理硬件、人工判断或外部服务情形未验证时须标记 NOT RUN。

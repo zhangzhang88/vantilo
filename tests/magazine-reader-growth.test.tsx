@@ -59,18 +59,46 @@ describe('Reader growth UI bridge',()=>{
   act(()=>window.dispatchEvent(new MessageEvent('message',{data:{type:'vantilo:growth-state',token,bookId:'book:actual',documentId:'document:actual',pageId:'page:actual',mode:'sentence',english:true},origin:'http://127.0.0.1:5175',source:frame.contentWindow})));act(()=>vi.advanceTimersByTime(5000));expect(localStorage.getItem('vantilo-reading-growth-v1')).toBe(malformed);
   act(()=>window.dispatchEvent(new MessageEvent('message',{data:{type:'vantilo:growth-open-request',token},origin:'http://127.0.0.1:5175',source:frame.contentWindow})));expect(screen.getByRole('alert').textContent).toContain('计时已暂停');expect(localStorage.getItem('vantilo-reading-growth-v1')).toBe(malformed);
  });
- it('serves backup snapshots and applies validated replace/clear only for its trusted iframe instance',()=>{
+ it('does not expose Reader-wide growth records through the vocabulary-only backup bridge',()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date(2026,9,29,10));Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>true});
   render(<MagazineReaderModule status="ready" error={null} onRetry={()=>{}} onBack={()=>{}} visible/>);
   const frame=screen.getByTitle('Magazine Reader') as HTMLIFrameElement;let sent:any[]=[];vi.spyOn(frame.contentWindow!,'postMessage').mockImplementation((...args:any[])=>{sent.push(args);});fireEvent.load(frame);
   const token=sent.find(item=>item[0]?.type==='vantilo:growth-init')?.[0]?.token as string;const requestId='12345678-1234-4123-8123-123456789abc';
-  const send=(origin:string,source:MessageEventSource|null,operation:string,record?:unknown)=>act(()=>window.dispatchEvent(new MessageEvent('message',{data:{type:'vantilo:growth-backup-request',token,requestId,operation,record},origin,source})));
   localStorage.setItem('vantilo-reading-growth-v1',JSON.stringify({days:{'2026-10-29':{seconds:60,books:{'book:existing':60}}}}));
-  send('https://attacker.test',frame.contentWindow,'clear');expect(sent.some(item=>item[0]?.type==='vantilo:growth-backup-response')).toBe(false);
-  send('http://127.0.0.1:5175',frame.contentWindow,'snapshot');expect(sent.at(-1)[0]).toMatchObject({type:'vantilo:growth-backup-response',ok:true,record:{days:{'2026-10-29':{seconds:60}}}});
-  send('http://127.0.0.1:5175',frame.contentWindow,'replace',{days:{'2026-10-30':{seconds:1800,books:{'book:restored':1800}}}});expect(JSON.parse(localStorage.getItem('vantilo-reading-growth-v1')!).days['2026-10-30'].seconds).toBe(1800);
-  send('http://127.0.0.1:5175',frame.contentWindow,'replace',{days:{'bad-date':{seconds:2,books:{x:2}}}});expect(sent.at(-1)[0]).toMatchObject({ok:false});expect(JSON.parse(localStorage.getItem('vantilo-reading-growth-v1')!).days['2026-10-30'].seconds).toBe(1800);
-  send('http://127.0.0.1:5175',frame.contentWindow,'clear');expect(localStorage.getItem('vantilo-reading-growth-v1')).toBeNull();
+  act(()=>window.dispatchEvent(new MessageEvent('message',{data:{type:'vantilo:growth-backup-request',token,requestId,operation:'clear'},origin:'http://127.0.0.1:5175',source:frame.contentWindow})));
+  expect(sent.some(item=>item[0]?.type==='vantilo:growth-backup-response')).toBe(false);
+  expect(JSON.parse(localStorage.getItem('vantilo-reading-growth-v1')!).days['2026-10-29'].seconds).toBe(60);
+  expect(sent.some(item=>item[0]?.type?.startsWith('vantilo:vocabulary-backup-'))).toBe(false);
+ });
+ it('forwards cancellation for an active vocabulary backup and reports the canceled result',async()=>{
+  let finishStart!:(value:{canceled?:boolean})=>void;const startPromise=new Promise<{canceled?:boolean}>(resolve=>{finishStart=resolve;});
+  const start=vi.fn(()=>startPromise),cancel=vi.fn(async()=>({canceled:true}));const prior=Object.getOwnPropertyDescriptor(window,'vantilo');
+  Object.defineProperty(window,'vantilo',{configurable:true,value:{startVocabularyBackup:start,cancelVocabularyBackup:cancel}});
+  try{
+   render(<MagazineReaderModule status="ready" error={null} onRetry={()=>{}} onBack={()=>{}} visible/>);
+   const frame=screen.getByTitle('Magazine Reader') as HTMLIFrameElement;const sent:any[]=[];vi.spyOn(frame.contentWindow!,'postMessage').mockImplementation((...args:any[])=>{sent.push(args);});fireEvent.load(frame);
+   const token=sent.find(item=>item[0]?.type==='vantilo:growth-init')?.[0]?.token as string;const requestId='12345678-1234-4123-8123-123456789abc';
+   const send=(data:unknown)=>act(()=>window.dispatchEvent(new MessageEvent('message',{data,origin:'http://127.0.0.1:5175',source:frame.contentWindow})));
+   send({type:'vantilo:vocabulary-backup-start',token,requestId});expect(start).toHaveBeenCalledWith(requestId);
+   send({type:'vantilo:vocabulary-backup-cancel',token,requestId});expect(cancel).toHaveBeenCalledWith(requestId);
+   await act(async()=>{finishStart({canceled:true});await startPromise;});
+   expect(sent.some(item=>item[0]?.type==='vantilo:vocabulary-backup-status'&&item[0]?.phase==='CANCELLED')).toBe(true);
+  }finally{if(prior)Object.defineProperty(window,'vantilo',prior);else delete (window as Window&{vantilo?:unknown}).vantilo;}
+ });
+ it('reports an active Main-process cancellation as canceled instead of failed',async()=>{
+  let rejectStart!:(reason:Error)=>void;const startPromise=new Promise<{canceled?:boolean}>((_,reject)=>{rejectStart=reject;});
+  const start=vi.fn(()=>startPromise),cancel=vi.fn(async()=>({canceled:true}));const prior=Object.getOwnPropertyDescriptor(window,'vantilo');
+  Object.defineProperty(window,'vantilo',{configurable:true,value:{startVocabularyBackup:start,cancelVocabularyBackup:cancel}});
+  try{
+   render(<MagazineReaderModule status="ready" error={null} onRetry={()=>{}} onBack={()=>{}} visible/>);
+   const frame=screen.getByTitle('Magazine Reader') as HTMLIFrameElement;const sent:any[]=[];vi.spyOn(frame.contentWindow!,'postMessage').mockImplementation((...args:any[])=>{sent.push(args);});fireEvent.load(frame);
+   const token=sent.find(item=>item[0]?.type==='vantilo:growth-init')?.[0]?.token as string;const requestId='22345678-1234-4123-8123-123456789abc';
+   const send=(data:unknown)=>act(()=>window.dispatchEvent(new MessageEvent('message',{data,origin:'http://127.0.0.1:5175',source:frame.contentWindow})));
+   send({type:'vantilo:vocabulary-backup-start',token,requestId});send({type:'vantilo:vocabulary-backup-cancel',token,requestId});expect(cancel).toHaveBeenCalledWith(requestId);
+   await act(async()=>{rejectStart(new Error('词汇备份已取消'));await startPromise.catch(()=>{});});
+   expect(sent.some(item=>item[0]?.type==='vantilo:vocabulary-backup-status'&&item[0]?.phase==='CANCELLED'&&item[0]?.terminal===true)).toBe(true);
+   expect(sent.some(item=>item[0]?.type==='vantilo:vocabulary-backup-status'&&item[0]?.phase==='FAILED'&&item[0]?.terminal===true)).toBe(false);
+  }finally{if(prior)Object.defineProperty(window,'vantilo',prior);else delete (window as Window&{vantilo?:unknown}).vantilo;}
  });
  it('shows a gentle idle reminder and keeps the session paused after the reminder expires',()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date(2026,9,29,10));Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>true});

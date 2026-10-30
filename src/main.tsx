@@ -36,6 +36,7 @@ type ToolApproval = { approvalId:string;serverRequestId:string|number;callId:str
 type StorageHealth = { available: boolean; error: string|null; warning: string|null };
 type AgentEvent = { type: string; taskId?: string; sessionId?: string; title?:string; text?: string; delta?: string; messageId?: string; status?: string; error?: string|null; message?: string; record?: Message; session?: SessionSummary; projects?:ProjectEntry[]; userMessage?: Message; assistantMessage?: Message; workspace?: WorkspaceState; approvalId?:string;serverRequestId?:string|number;callId?:string;toolName?:string;reason?:string;relativePath?:string;operation?:'list'|'read'|'write';lineRange?:{startLine:number;endLine:number};readOnly?:boolean;workspaceRoot?:string;workspaceRevision?:number;createdAt?:string;expiresAt?:string;stage?:'started'|'completed'|'failed'|'denied'|'cancelled';cause?:'runtime-disconnected';summary?:string };
 type WorkspaceReference = {path:string;kind:'file'|'directory'};
+type VocabularyBackupEvent = {type:'freeze'|'resume'|'status';requestId:string;phase?:string;progress?:number;message?:string;result?:{name:string;size:number;sha256:string;vocabularyCount:number}};
 type AccountState = { connected: boolean; email: string|null };
 type RuntimeApi = {
   getAccountStatus?:()=>Promise<AccountState>; loginWithChatGPT?:()=>Promise<{pending:boolean}>; logoutAccount?:()=>Promise<AccountState>;
@@ -48,6 +49,12 @@ type RuntimeApi = {
   startMagazineReader:()=>Promise<{ready:boolean}>;
   getMagazineReaderStatus:()=>Promise<{status:string;error:string|null;sync?:MagazineSyncState}>;
   syncMagazineReader:()=>Promise<{accepted:boolean}>;
+  startVocabularyBackup:(requestId:string)=>Promise<{canceled?:boolean;completed?:boolean;name?:string;size?:number;sha256?:string;vocabularyCount?:number}>;
+  submitVocabularyBackupSnapshot:(requestId:string,snapshot:unknown)=>Promise<{accepted:boolean}>;
+  cancelVocabularyBackup:(requestId:string)=>Promise<{canceled:boolean}>;
+  revealVocabularyBackup:()=>Promise<{shown:boolean}>;
+  getVocabularyBackupStatus:()=>Promise<{lastBackup:{createdAt:string;name:string;path:string;size:number;sha256:string;vocabularyCount:number}|null}>;
+  onVocabularyBackupEvent:(callback:(event:VocabularyBackupEvent)=>void)=>()=>void;
   requestGutenberg:(request:{operation:'introEngines'}|{operation:'search';query?:string;topic?:string;page?:number}|{operation:'detail';id:number}|{operation:'acquire';id:number;filename:string;categoryId:string}|{operation:'intro'|'introCached'|'introCancel';id:number;engine?:'custom'|'codex';force?:boolean;modelId?:string|null;reasoningEffort?:string|null})=>Promise<any>;
   getReaderSetupState:()=>Promise<{show:boolean}>;
   checkReaderSetup:()=>Promise<ReaderSetupCheck>;

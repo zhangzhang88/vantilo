@@ -12,17 +12,36 @@ const { createReaderCustomApi } = require('./reader-custom-api.cjs');
 const { createGutenbergIntroService } = require('./gutenberg-intro.cjs');
 const { createCodexIntroApi } = require('./gutenberg-codex-intro.cjs');
 const { listGutenbergIntroEngines } = require('./gutenberg-intro-engines.cjs');
-const { installReaderBackupDownloads } = require('./reader-backup-download.cjs');
 const { isTrustedSender, isTrustedPageUrl, PACKAGED_RENDERER_PATH } = require('./ipc-security.cjs');
+const { checkStartupTransactions } = require('./transaction-startup-guard.cjs');
+const { acquireReaderDataLockSync } = require('./reader-data-lock.cjs');
+const { createVocabularyBackupDocument, writeVocabularyBackupAtomic, formatVocabularyBackupFilename, sanitizeVocabularySnapshot } = require('./vocabulary-backup-service.cjs');
 
 // Preserve the existing userData directory while branding the native app as Vantilo.
 const existingUserDataPath = app.getPath('userData');
 app.setName('Vantilo');
 app.setPath('userData', existingUserDataPath);
 
+// Acquire the OS shared lock synchronously before app.whenReady(), BrowserWindow,
+// Runtime, or the Reader service can open protected Reader stores. macOS O_SHLOCK
+// is atomic and the kernel releases it only when this process closes the descriptor.
+let readerDataLease = null;
+let readerDataLockError = null;
+const explicitUserDataPath = Boolean(app.commandLine?.hasSwitch?.('user-data-dir') || process.argv.some(value => value.startsWith('--user-data-dir=')));
+if (process.platform === 'darwin') {
+  try { readerDataLease = acquireReaderDataLockSync(existingUserDataPath, { createIfMissing: !explicitUserDataPath }); }
+  catch (error) { readerDataLockError = error; }
+}
+let primaryApplicationInstance = true;
+try { primaryApplicationInstance = app.requestSingleInstanceLock?.() ?? true; }
+catch (error) { primaryApplicationInstance = false; readerDataLockError ||= error; }
+if (!primaryApplicationInstance) { readerDataLease?.close(); readerDataLease = null; }
+
 let win;
 let runtime;
 let readerCustomApiService;
+const vocabularyBackupSessions = new Map();
+let lastVocabularyBackup = null;
 let gutenbergIntroService;
 const gutenbergIntroRequests = new Map();
 function getGutenbergIntroService() {
@@ -46,10 +65,11 @@ const readerOnboarding = createReaderOnboarding({ userData: app.getPath('userDat
 const softwareUpdates=createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:resolveUpdateCurrentVersion({isPackaged:app.isPackaged,currentVersion:app.getVersion(),testVersion:process.env.VANTILO_UPDATE_TEST_CURRENT_VERSION}),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),showItemInFolder:file=>shell.showItemInFolder(file),chooseDownloadDirectory:async()=>{let defaultPath;try{defaultPath=app.getPath('downloads');}catch{}const result=await dialog.showOpenDialog(win,{title:'选择更新包下载位置',defaultPath,properties:['openDirectory','createDirectory']});return result.canceled?null:result.filePaths[0];},
   onAvailable:async state=>{if(!win||win.isDestroyed())return;const result=await dialog.showMessageBox(win,{type:'info',title:'Vantilo 软件更新',message:'发现新版本 '+state.latestVersion,detail:'当前版本 '+state.currentVersion+'。可前往 GitHub 发布页下载安装，应用不会强制退出。',buttons:['稍后','前往发布页'],defaultId:0,cancelId:0});if(result.response===1)await softwareUpdates.openRelease();}
 });
-const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableTranslation: true, enableReaderPreviews: true, customApi: async (operation,payload,signal) => {const service=getReaderCustomApiService();const result=operation==='activate'||operation==='remove'?await service[operation](payload.id):await service[operation](operation==='complete'?{...payload,signal}:payload);return operation==='complete'?{output:result}:result;}, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), seedDir: packagedReaderSeedDir({ isPackaged: app.isPackaged, assetsDir: readerAssets }), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
+const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableTranslation: true, enableReaderPreviews: true, customApi: async (operation,payload,signal) => {const service=getReaderCustomApiService();const result=operation==='activate'||operation==='remove'?await service[operation](payload.id):await service[operation](operation==='complete'?{...payload,signal}:payload);return operation==='complete'?{output:result}:result;}, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), userDataRoot: app.getPath('userData'), seedDir: packagedReaderSeedDir({ isPackaged: app.isPackaged, assetsDir: readerAssets }), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
   ...readerSessionCookies(()=>session.defaultSession),
 });
 let quitting = false;
+let startupAborted = false;
 
 function trustedSender(event) { return isTrustedSender(event, { win, packaged: app.isPackaged, rendererPath: PACKAGED_RENDERER_PATH }); }
 function requireTrustedSender(event) {
@@ -88,6 +108,7 @@ function installApplicationMenu() {
 }
 
 function createWindow() {
+  if (process.platform === 'darwin') readerDataLease?.assertHeld();
   win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 800, minHeight: 600, title: 'Vantilo', backgroundColor: '#111214',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -244,7 +265,127 @@ ipcMain.handle('magazine-reader:status', event => {
 ipcMain.handle('magazine-reader:start', (event, ...args) => {
   requireTrustedSender(event);
   if (args.length || quitting) throw new Error('Invalid Reader startup request.');
+  if (process.platform === 'darwin') readerDataLease?.assertHeld();
   return magazineReaderSupervisor.start();
+});
+ipcMain.handle('vocabulary-backup:start', async (event, requestId, ...args) => {
+  requireTrustedSender(event);
+  if (args.length || typeof requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error('词汇备份请求无效');
+  if (vocabularyBackupSessions.size) throw new Error('已有词汇备份正在进行中');
+  if (quitting || magazineReaderSupervisor.getStatus().status !== 'ready') throw new Error('请先打开 Reader，再开始词汇备份');
+  let defaultPath;
+  try {
+    const downloads = app.getPath('downloads');
+    const stat = await require('node:fs/promises').stat(downloads);
+    await require('node:fs/promises').access(downloads, require('node:fs').constants.W_OK);
+    if (stat.isDirectory()) defaultPath = path.join(downloads, formatVocabularyBackupFilename());
+  } catch { /* Do not fall back to a stale or external Downloads path. */ }
+  let chosen;
+  try {
+    chosen = await dialog.showSaveDialog(win, {
+      title: '保存词汇备份', ...(defaultPath ? { defaultPath } : {}), buttonLabel: '保存备份',
+      filters: [{ name: 'Vantilo 词汇备份', extensions: ['json'] }],
+    });
+  } catch (error) {
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: 'FAILED', progress: 0, message: error instanceof Error ? error.message : '无法打开备份保存位置' });
+    publish('vocabulary-backup:event', { type: 'resume', requestId });
+    throw error;
+  }
+  if (chosen.canceled || !chosen.filePath) {
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: 'CANCELLED', progress: 0, message: '已取消词汇备份。' });
+    publish('vocabulary-backup:event', { type: 'resume', requestId });
+    return { canceled: true };
+  }
+  const savePath = path.resolve(chosen.filePath);
+  if (path.extname(savePath).toLowerCase() !== '.json') {
+    const error = new Error('词汇备份必须保存为 .json 文件');
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: 'FAILED', progress: 0, message: error.message });
+    publish('vocabulary-backup:event', { type: 'resume', requestId });
+    throw error;
+  }
+  const controller = new AbortController();
+  let resolveSnapshot, rejectSnapshot, snapshotReceived = false;
+  const snapshotPromise = new Promise((resolve, reject) => { resolveSnapshot = resolve; rejectSnapshot = reject; });
+  let finishBackup;
+  const finished = new Promise(resolve => { finishBackup = resolve; });
+  const context = { requestId, controller, savePath, resolveSnapshot, rejectSnapshot, snapshotPromise, finished, phase: 'FREEZING', get snapshotReceived() { return snapshotReceived; }, set snapshotReceived(value) { snapshotReceived = value; } };
+  vocabularyBackupSessions.set(requestId, context);
+  try {
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: 'FREEZING', progress: 0, message: '正在暂停词汇写入并创建一致性快照' });
+    publish('vocabulary-backup:event', { type: 'freeze', requestId });
+    let snapshotTimer;
+    const snapshot = await Promise.race([
+      snapshotPromise,
+      new Promise((_, reject) => { snapshotTimer = setTimeout(() => reject(new Error('词汇数据快照超时，未写入备份文件')), 60000); }),
+    ]).finally(() => clearTimeout(snapshotTimer));
+    controller.signal.throwIfAborted();
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: 'WRITING', progress: 35, message: '正在写入并校验词汇备份' });
+    context.phase = 'WRITING';
+    const document = createVocabularyBackupDocument({ snapshot: sanitizeVocabularySnapshot(snapshot), appVersion: app.getVersion() });
+    const result = await writeVocabularyBackupAtomic({ savePath, document });
+    lastVocabularyBackup = { createdAt: new Date().toISOString(), name: result.name, path: result.path, size: result.size, sha256: result.sha256, vocabularyCount: document.counts.vocabulary };
+    try {
+      const fs = require('node:fs/promises');
+      const file = path.join(app.getPath('userData'), 'vocabulary-backup-status-v1.json');
+      const temporary = `${file}.${require('node:crypto').randomUUID()}.tmp`;
+      await fs.writeFile(temporary, JSON.stringify({ version: 1, lastBackup: lastVocabularyBackup }), { flag: 'wx', mode: 0o600 });
+      await fs.rename(temporary, file);
+    } catch { /* A verified export remains valid if the convenience status cannot be stored. */ }
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: 'COMPLETED', progress: 100, message: '备份完成，SHA-256 校验通过', result: { name: result.name, size: result.size, sha256: result.sha256, vocabularyCount: document.counts.vocabulary } });
+    return { completed: true, ...result, vocabularyCount: document.counts.vocabulary };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '词汇备份失败';
+    publish('vocabulary-backup:event', { type: 'status', requestId, phase: controller.signal.aborted ? 'CANCELLED' : 'FAILED', progress: 0, message });
+    throw error;
+  } finally {
+    publish('vocabulary-backup:event', { type: 'resume', requestId });
+    vocabularyBackupSessions.delete(requestId);
+    finishBackup();
+  }
+});
+ipcMain.handle('vocabulary-backup:snapshot', (event, requestId, snapshot, ...args) => {
+  requireTrustedSender(event);
+  if (args.length || typeof requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error('词汇备份快照请求无效');
+  const context = vocabularyBackupSessions.get(requestId);
+  if (!context || context.snapshotReceived) throw new Error('词汇备份请求已结束或快照重复');
+  const safeSnapshot = sanitizeVocabularySnapshot(snapshot);
+  context.snapshotReceived = true;
+  context.resolveSnapshot(safeSnapshot);
+  // The immutable snapshot now belongs to the Main Process. Let Reader writes
+  // resume while the file is written; later edits cannot change this snapshot.
+  publish('vocabulary-backup:event', { type: 'unfreeze', requestId });
+  return { accepted: true };
+});
+ipcMain.handle('vocabulary-backup:cancel', (event, requestId, ...args) => {
+  requireTrustedSender(event);
+  if (args.length || typeof requestId !== 'string') throw new Error('词汇备份取消请求无效');
+  const context = vocabularyBackupSessions.get(requestId);
+  if (!context) return { canceled: false };
+  if (context.phase === 'WRITING') return { canceled: false };
+  context.controller.abort(new Error('用户取消词汇备份'));
+  context.rejectSnapshot(new Error('词汇备份已取消'));
+  return { canceled: true };
+});
+ipcMain.handle('vocabulary-backup:reveal', async event => {
+  requireTrustedSender(event);
+  if (!lastVocabularyBackup?.path) throw new Error('当前没有可定位的词汇备份文件');
+  const info = await require('node:fs/promises').lstat(lastVocabularyBackup.path);
+  if (!info.isFile() || info.isSymbolicLink() || path.extname(lastVocabularyBackup.path).toLowerCase() !== '.json') throw new Error('词汇备份文件已不可用');
+  shell.showItemInFolder(lastVocabularyBackup.path);
+  return { shown: true };
+});
+ipcMain.handle('vocabulary-backup:status', async event => {
+  requireTrustedSender(event);
+  if (lastVocabularyBackup) return { lastBackup: lastVocabularyBackup };
+  const file = path.join(app.getPath('userData'), 'vocabulary-backup-status-v1.json');
+  try {
+    const value = JSON.parse(await require('node:fs/promises').readFile(file, 'utf8'));
+    const item = value?.lastBackup;
+    if (value?.version !== 1 || !item || typeof item.createdAt !== 'string' || typeof item.name !== 'string' || typeof item.path !== 'string'
+      || !Number.isSafeInteger(item.size) || !/^[a-f0-9]{64}$/.test(item.sha256) || !Number.isSafeInteger(item.vocabularyCount)) return { lastBackup: null };
+    lastVocabularyBackup = item;
+    return { lastBackup: item };
+  } catch (error) { if (error.code === 'ENOENT') return { lastBackup: null }; throw new Error('无法读取词汇备份记录'); }
 });
 ipcMain.handle('gutenberg:request', async (event, request) => {
   requireTrustedSender(event);
@@ -288,8 +429,33 @@ ipcMain.handle('gutenberg:request', async (event, request) => {
   } finally {clearTimeout(timer);}
 });
 
-app.whenReady().then(() => {
-  installReaderBackupDownloads(session.defaultSession, () => win, app.getPath('downloads'));
+app.whenReady().then(async () => {
+  if (!primaryApplicationInstance) { startupAborted = true; app.quit(); return; }
+  if (readerDataLockError) {
+    startupAborted = true;
+    const detail = readerDataLockError.code === 'ERR_READER_DATA_LOCK_BUSY'
+      ? 'Reader 数据正在维护，或另一个 Vantilo 实例仍在访问它。请等待当前操作结束后再启动。'
+      : '无法确认 Reader 数据目录和访问锁。为保护原数据，Vantilo 未启动 Reader、Runtime 或窗口。请确认数据卷已挂载且路径未更改。';
+    try { await dialog.showMessageBox({type:'error', title:'Vantilo 数据保护', message:'无法安全打开 Reader 数据', detail, buttons:['退出']}); }
+    finally { app.quit(); }
+    return;
+  }
+  let transactionState;
+  try { transactionState = await checkStartupTransactions(app.getPath('userData')); }
+  catch { transactionState = { safe: false, reason: 'invalid' }; }
+  if (startupAborted) return;
+  if (!transactionState.safe) {
+    const detail = transactionState.reason === 'maintenance_lock'
+      ? '发现数据维护锁。请保留锁记录和所有恢复材料，确认维护状态后再处理。'
+      : transactionState.reason === 'maintenance_requested'
+        ? '发现尚未完成的 Reader 维护请求。请保留请求记录和所有恢复材料，确认维护状态后再启动。'
+      : transactionState.reason === 'unfinished'
+        ? '发现尚未完成的数据事务。请保留事务记录和所有恢复材料，联系支持人员处理。'
+        : '事务记录无法读取或已损坏。请保留原始记录和所有恢复材料，联系支持人员处理。';
+    try { await dialog.showMessageBox({type:'error', title:'Vantilo 数据保护', message:'无法安全启动', detail, buttons:['退出']}); }
+    finally { app.quit(); }
+    return;
+  }
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(nativeImage.createFromPath(path.join(__dirname, '../resources/vantilo-icon.png')));
   }
@@ -304,15 +470,28 @@ app.whenReady().then(() => {
   // This isolated preview checks new issues from app launch, even while Agent is visible.
   void softwareUpdates.start();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on('second-instance', () => { if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.focus(); } });
 powerMonitor.on('suspend', () => { if (win && !win.isDestroyed()) win.webContents.send('system:suspended'); });
 powerMonitor.on('lock-screen', () => { if (win && !win.isDestroyed()) win.webContents.send('system:suspended'); });
 });
 
 app.on('before-quit', event => {
+  startupAborted = true;
+  if (!quitting && vocabularyBackupSessions.size) {
+    event.preventDefault();
+    const activeBackups = [...vocabularyBackupSessions.values()];
+    for (const backup of activeBackups) {
+      backup.controller.abort(new Error('Vantilo 正在关闭'));
+      backup.rejectSnapshot(new Error('Vantilo 正在关闭，词汇备份已取消'));
+    }
+    void Promise.allSettled(activeBackups.map(backup => backup.finished)).finally(() => { quitting = false; app.quit(); });
+    return;
+  }
   if (quitting || (!runtime && magazineReaderSupervisor.getStatus().status === 'idle')) return;
   event.preventDefault(); quitting = true;
   Promise.allSettled([runtime?.stop(), magazineReaderSupervisor.stop(), softwareUpdates?.stop()]).finally(() => app.quit());
 });
+app.on('will-quit', () => { readerDataLease?.close(); readerDataLease = null; });
 app.on('window-all-closed', () => app.quit());
 
 module.exports = { trustedSender };

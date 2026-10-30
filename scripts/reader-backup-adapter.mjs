@@ -11,7 +11,7 @@ export function adaptReaderBackup(source, filename) {
     replace('      removeItem: (key) => window.localStorage.removeItem(key),', '      removeItem: (key) => window.localStorage.removeItem(key),\n      keys: () => Array.from({ length: window.localStorage.length }, (_, i) => window.localStorage.key(i)).filter((key): key is string => key !== null),');
     return source;
   }
-  if (filename.endsWith('/frontend/storage-notice.tsx')) return adaptGrowthBackupTransport(source);
+  if (filename.endsWith('/frontend/storage-notice.tsx')) return source;
   if (filename.endsWith('/frontend/data-management-panel.tsx')) return source; // Vantilo replaces this panel with scripts/reader-data-management.tsx.
   if (!filename.endsWith('/frontend/user-data-backup.ts')) return source;
   replace('  removeItem(key: string): void;\n}', '  removeItem(key: string): void;\n  keys?(): string[];\n  readonly length?: number;\n  key?(index: number): string | null;\n}');

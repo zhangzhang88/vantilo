@@ -62,6 +62,7 @@ async function preserveRevision(dir: string, material: LearningMaterial) {
 export class LearningMaterialService {
   private pending = new Map<string, Promise<LearningMaterial>>();
   constructor(private dataDir: string, private generate?: GenerateLearningMaterial, private prepareAudio?: (material: LearningMaterial) => Promise<NonNullable<LearningMaterial["audio"]>>) {}
+  async waitForIdle(): Promise<void> { while (this.pending.size) await Promise.allSettled([...this.pending.values()]); }
   async readCached(lesson: BookLesson): Promise<LearningMaterial | null> {
     const sourceVersion = learningSourceVersion(lesson);
     const file = path.join(this.dataDir, "learning-materials", `${sourceVersion}.authored-v3.json`);

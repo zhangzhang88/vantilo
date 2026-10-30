@@ -1088,6 +1088,7 @@ describe("Fastify app", () => {
       serveFrontend: false,
       translationProvider: null,
       readerGuideProvider: { generate },
+      guidePreparationRetryDelaysMs: [0, 0],
       sectionTranslationProvider: null,
       selectionAssistProvider: null,
       wordContextProvider: null,

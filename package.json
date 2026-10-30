@@ -1,9 +1,11 @@
 {
   "name": "vantilo",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/reader"],
+  "workspaces": [
+    "packages/reader"
+  ],
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
@@ -13,6 +15,9 @@
     "test": "vitest run",
     "test:e2e:codex": "node scripts/verify-real-codex-tools.cjs",
     "test:e2e:codex:passage": "node scripts/verify-real-codex-passage.cjs",
+    "test:e2e:vocabulary-backup": "node scripts/run-vocabulary-backup-e2e.mjs",
+    "package:e2e:vocabulary-backup": "node scripts/package-vocabulary-backup-e2e.mjs",
+    "test:e2e:vocabulary-backup:packaged": "node scripts/run-vocabulary-backup-packaged-e2e.mjs",
     "desktop": "electron .",
     "desktop:dev": "node scripts/build-reader-dev.mjs && node electron/dev.cjs",
     "build:reader": "node scripts/build-reader.mjs",

@@ -21,21 +21,24 @@ describe('Reader main-process IPC', () => {
       }
       loadURL() {}
     }
-    const app = { getPath: () => '/tmp/vantilo', getVersion: () => '0.1.1', setName() {}, setPath() {},
-      isPackaged: false, on() {}, whenReady: () => ({ then: (fn: Function) => fn() }) };
+    const app = { getPath: () => process.cwd(), getVersion: () => '0.1.1', setName() {}, setPath() {},
+      commandLine: { hasSwitch: () => false },
+      isPackaged: false, requestSingleInstanceLock: () => true, on() {}, quit() {}, whenReady: () => ({ then: (fn: Function) => fn() }) };
     const runtime = { on() {}, start: () => Promise.resolve() };
     runInNewContext(readFileSync('electron/main.cjs', 'utf8'), {
       require: (name: string) => name === 'electron' ? {
         app, BrowserWindow, Menu: { buildFromTemplate: vi.fn(), setApplicationMenu() {} },
         session: { defaultSession: { on: vi.fn() } }, powerMonitor: { on: vi.fn() },
         ipcMain: { handle: (key: string, fn: Function) => handlers.set(key, fn) },
-      } : name === './runtime-supervisor.cjs' ? { RuntimeSupervisor: function () { return runtime; } }
+      } : name === './reader-data-lock.cjs' ? { acquireReaderDataLockSync: vi.fn(() => ({ assertHeld: vi.fn(), close: vi.fn() })) }
+        : name === './runtime-supervisor.cjs' ? { RuntimeSupervisor: function () { return runtime; } }
         : name === './portable-reader-supervisor.cjs' ? {
           PortableReaderSupervisor: function () { return { start, checkHealth }; },
         } : name.startsWith('./') ? require('../electron/' + name.slice(2)) : require(name),
-      process: { platform: 'darwin', env: { VANTILO_DEV_SERVER_URL: 'http://127.0.0.1:5173/' }, cwd: () => '/tmp' },
+      process: { platform: 'darwin', argv: [], env: { VANTILO_DEV_SERVER_URL: 'http://127.0.0.1:5173/' }, cwd: () => '/tmp' },
       __dirname: '/tmp/vantilo/electron', module: { exports: {} }, URL,
     });
+    await vi.waitFor(() => expect(windowOptions).toHaveLength(1));
     expect(windowOptions[0]).toMatchObject({
       titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 },
     });

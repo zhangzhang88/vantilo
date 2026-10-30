@@ -9,6 +9,7 @@ class MagazineSyncController {
     this.state = { enabled: true, status: 'idle', lastAttemptAt: null, lastSuccessAt: null, importedCount: 0, failedCount: 0, message: '首次打开后检查四种杂志的新刊' };
     this.pending = null;
     this.stopped = false;
+    this.suspended = false;
     this.timer = null;
   }
   getState() { return { ...this.state }; }
@@ -43,7 +44,7 @@ class MagazineSyncController {
   }
   #publish() { this.onState(this.getState()); }
   start() {
-    if (this.timer || this.stopped || !this.state.enabled) return;
+    if (this.timer || this.stopped || this.suspended || !this.state.enabled) return;
     const tick = () => {
       if (!this.state.lastAttemptAt || this.now() - Date.parse(this.state.lastAttemptAt) >= (this.state.status === 'error' ? this.retryMs : this.intervalMs)) void this.check();
     };
@@ -62,7 +63,7 @@ class MagazineSyncController {
     this.#publish();return this.getState();
   }
   check() {
-    if (this.stopped) return Promise.resolve(this.getState());
+    if (this.stopped || this.suspended) return Promise.resolve(this.getState());
     if (this.pending) return this.pending;
     this.pending = this.#check().finally(() => { this.pending = null; });
     return this.pending;
@@ -92,6 +93,17 @@ class MagazineSyncController {
     clearInterval(this.timer);
     this.timer = null;
     await this.pending;
+  }
+  async suspend() {
+    if (this.stopped) throw new Error('Reader 同步服务已停止');
+    this.suspended = true;
+    clearInterval(this.timer); this.timer = null;
+    await this.pending;
+  }
+  resume() {
+    if (this.stopped) throw new Error('Reader 同步服务已停止');
+    this.suspended = false;
+    this.start();
   }
 }
 module.exports = { MagazineSyncController, DEFAULT_INTERVAL_MS };

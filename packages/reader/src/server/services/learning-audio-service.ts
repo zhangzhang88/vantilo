@@ -14,14 +14,16 @@ export function learningSpeechTexts(material: LearningMaterial): string[] {
   const sources = learningSourceSentences(material.english);
   return [...new Set([...material.vocabulary.flatMap(word => [word.sourceText,sources.find(source => source.id === word.sentenceId)!.english]),...material.sentences.flatMap(sentence => sentence.steps.map(step => step.english))])];
 }
-export function pythonSpeechSynthesizer(projectRoot: string): SpeechSynthesizer {
+export function pythonSpeechSynthesizer(projectRoot: string, readerDataLockFd?: number): SpeechSynthesizer {
   return request => new Promise((resolve,reject) => {
     const projectPython = path.join(projectRoot,".venv-learning-tts","bin","python");
-    const child = spawn(process.env.MAGAZINE_TTS_PYTHON || (existsSync(projectPython) ? projectPython : "python3"),[path.join(projectRoot,"scripts","prepare-learning-tts.py")],{ stdio: ["pipe","ignore","ignore"] });
+    const child = spawn(process.env.MAGAZINE_TTS_PYTHON || (existsSync(projectPython) ? projectPython : "python3"),[path.join(projectRoot,"scripts","prepare-learning-tts.py")],{ stdio: ["pipe","ignore","ignore",...(readerDataLockFd === undefined ? [] : [readerDataLockFd])] });
     const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("朗读生成超时")); },240000);
     child.on("error",() => { clearTimeout(timer); reject(new Error("本地 Python 或 Edge TTS 工具不可用")); });
     child.on("exit",code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error("本地朗读生成未完成")); });
-    child.stdin.on("error",() => {}); child.stdin.end(JSON.stringify(request));
+    const stdin = child.stdin;
+    if (!stdin) { clearTimeout(timer); child.kill(); reject(new Error("无法向本地朗读生成进程发送数据")); return; }
+    stdin.on("error",() => {}); stdin.end(JSON.stringify(request));
   });
 }
 export class LearningAudioService {
@@ -33,6 +35,7 @@ export class LearningAudioService {
     try { const data = await readFile(path.join(this.directory,filename)); return data.length >= 100 && (data.subarray(0,3).toString() === "ID3" || data[0] === 255 && (data[1] & 224) === 224) ? data : null; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
   }
+  async waitForIdle(): Promise<void> { while (this.pending.size) await Promise.allSettled([...this.pending.values()]); }
   prepare(material: LearningMaterial): Promise<LearningAudioManifest> {
     const existing = this.pending.get(material.materialVersion); if (existing) return existing;
     const task = this.create(material).finally(() => this.pending.delete(material.materialVersion)); this.pending.set(material.materialVersion,task); return task;
