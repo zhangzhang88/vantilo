@@ -38,8 +38,9 @@
 
 ## Release workflow
 
-- When the user asks “开始发布 Vantilo 新版本”, “发布 Vantilo”, or “准备 Vantilo Release” (or an equivalent release request), first read [`docs/release/RELEASING.md`](docs/release/RELEASING.md) and follow its applicable steps. Do not rely on memory or skip pre-release checks.
-- Inspect the current and target versions, Git worktree, commits, remote history, existing tags and releases, build artifacts and SHA-256. Determine from the actual evidence whether an accepted artifact can be reused or a new build is necessary. Complete the authorized push, tag, GitHub Release, asset upload, README update and post-release verification in the manual's order. Do not blindly recreate or overwrite an existing tag or Release; stop and investigate a conflict. Prior release decisions do not authorize later releases.
+- When the user says “功能已在本地开发版真人验收通过，开始发布 Vantilo 新版本”, “开始发布 Vantilo 新版本”, “发布 Vantilo”, or “准备 Vantilo Release” (or an equivalent release request), first read [`docs/release/RELEASING.md`](docs/release/RELEASING.md) and follow the complete applicable development-to-release workflow. Do not rely on memory or skip pre-release checks.
+- Distinguish source tests, human acceptance in the development version, and acceptance of the actual packaged application. After a feature source change, build and accept a new version-specific Universal ZIP from the corresponding source commit; never reuse an artifact from an older feature commit. Follow the Workspace external-volume rules and preserve the Intel dictionary helper integrity gate. Package acceptance must pass before pushing source, creating a tag or publishing a GitHub Release.
+- Inspect the current and target versions, Git worktree, commits, remote history, existing tags and releases, build artifacts and SHA-256. Reuse a previously accepted artifact only when its version and exact feature source commit match the intended release and its evidence passes the manual's checks. Complete the authorized push, tag, GitHub Release, asset upload, README and release-record updates, and post-release verification in the manual's order. Record problems and solutions in the SOP after each release. Do not blindly recreate or overwrite an existing tag or Release; stop and investigate a conflict. Prior release decisions do not authorize later releases.
 
 ## Product principles
 
