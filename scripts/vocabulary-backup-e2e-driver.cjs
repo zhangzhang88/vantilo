@@ -197,6 +197,8 @@ async function runRaceSource() {
   const seeded = makeRaceFixture();
   await seed(frame, seeded);
   frame = await ensureReader(win, { settings: true });
+  const raceBackupPath = process.env.VANTILO_VOCABULARY_E2E_RACE_BACKUP;
+  if (!raceBackupPath) throw new Error('缺少隔离并发测试备份文件路径');
 
   // Hold only the native file picker adapter so a real Renderer write can land
   // immediately before the freeze/snapshot boundary.
@@ -218,7 +220,7 @@ async function runRaceSource() {
   await frame.executeJavaScript(`(()=>{localStorage.setItem(${JSON.stringify(STORAGE.selections)},${JSON.stringify(JSON.stringify(selectionsBefore))});localStorage.setItem(${JSON.stringify(STORAGE.contexts)},${JSON.stringify(JSON.stringify(contextsBefore))});localStorage.setItem(${JSON.stringify(STORAGE.schedules)},${JSON.stringify(JSON.stringify(schedulesBefore))});return true})()`);
   const snapshotPoint = await readData(frame);
   await installFreezeBoundaryProbe(frame, makeFrozenWriteCandidates(snapshotPoint));
-  resolveDialog({ canceled: false, filePath: process.env.VANTILO_VOCABULARY_E2E_BACKUP });
+  resolveDialog({ canceled: false, filePath: raceBackupPath });
 
   await until(() => frame.executeJavaScript(`Boolean(document.querySelector('[data-testid="vocabulary-backup-success"]'))`), Boolean, '并发备份完成');
   await until(() => frame.executeJavaScript(`!document.querySelector('[data-testid="vocabulary-backup-progress"]')`), Boolean, '并发备份退出维护状态');
@@ -229,7 +231,7 @@ async function runRaceSource() {
   assert.deepEqual(probe.errors, [], '冻结期拒绝或解除冻结后的重试不得出现意外错误');
   assert.deepEqual(probe.applied.sort(), ['add-word-and-update-familiarity-and-note', 'update-contextual-meaning', 'update-review-schedule'].sort(), '被安全拒绝的合成写入必须在解除冻结后重试');
 
-  const serialized = await fs.readFile(process.env.VANTILO_VOCABULARY_E2E_BACKUP, 'utf8');
+  const serialized = await fs.readFile(raceBackupPath, 'utf8');
   const backup = JSON.parse(serialized);
   verifyVocabularyBackupDocument(backup, serialized);
   assert.ok(backup.data.savedSelections.some(item => item.id === 'concurrency-word-added-before-freeze'), '冻结前完成的合法词汇写入必须进入一致性快照');
