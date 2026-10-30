@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -142,7 +143,7 @@ async function processGroupMembers(groupId) {
   });
 }
 
-function buildEnvironment(mode, profile, directories, resultPath) {
+function buildEnvironment(mode, profile, directories, resultPath, backupPath) {
   return {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     LANG: 'zh_CN.UTF-8',
@@ -171,13 +172,13 @@ function buildEnvironment(mode, profile, directories, resultPath) {
     VANTILO_VOCABULARY_E2E_CRASH_DUMPS: directories.crashDumps,
     VANTILO_VOCABULARY_E2E_CACHE: directories.cache,
     VANTILO_VOCABULARY_E2E_RESULT: resultPath,
-    VANTILO_VOCABULARY_E2E_BACKUP: backup,
+    VANTILO_VOCABULARY_E2E_BACKUP: backupPath || backup,
     VANTILO_VOCABULARY_E2E_EXPECTED_RAW: expectedRaw,
     VANTILO_VOCABULARY_E2E_RACE_BACKUP: raceBackup,
   };
 }
 
-async function runCase({ mode, profileName }) {
+async function runCase({ mode, profileName, backupPath }) {
   const profile = path.join(testRoot, profileName);
   const directories = {
     userData: profile,
@@ -212,7 +213,7 @@ async function runCase({ mode, profileName }) {
   }
   const resultPath = path.join(testRoot, `result-${mode}.json`);
   const port = await availableLoopbackPort();
-  const env = buildEnvironment(mode, profile, directories, resultPath);
+  const env = buildEnvironment(mode, profile, directories, resultPath, backupPath);
   const child = spawn(appBinary, [`--user-data-dir=${profile}`, `--inspect=127.0.0.1:${port}`], {
     detached: true,
     env,
@@ -314,9 +315,88 @@ async function runCase({ mode, profileName }) {
   }
 }
 
+async function createCapacityLimitedApfsVolume() {
+  const image = path.join(testRoot, 'capacity-limited-test.sparseimage');
+  const mount = path.join(testRoot, 'capacity-limited-apfs');
+  await fs.mkdir(mount, { recursive: false, mode: 0o700 });
+  await execFileAsync('/usr/bin/hdiutil', ['create', '-size', '128m', '-type', 'SPARSE', '-fs', 'APFS', '-volname', `VantiloSafety-${process.pid}`, image]);
+  let attached = false;
+  try {
+    await execFileAsync('/usr/bin/hdiutil', ['attach', '-nobrowse', '-mountpoint', mount, image]);
+    attached = true;
+    const reservationPath = path.join(mount, 'capacity-reservation.bin');
+    const handle = await fs.open(reservationPath, 'wx', 0o600);
+    const largeBlock = 1024 * 1024;
+    let written = 0;
+    let enospcObserved = false;
+    try {
+      while (written < 256 * largeBlock) {
+        try {
+          const result = await handle.write(crypto.randomBytes(largeBlock), 0, largeBlock, written);
+          if (!result.bytesWritten) { enospcObserved = true; break; }
+          written += result.bytesWritten;
+        } catch (error) {
+          if (error.code === 'ENOSPC') { enospcObserved = true; break; }
+          throw error;
+        }
+      }
+      const smallBlock = 4096;
+      while (written < 256 * largeBlock) {
+        try {
+          const result = await handle.write(crypto.randomBytes(smallBlock), 0, smallBlock, written);
+          if (!result.bytesWritten) { enospcObserved = true; break; }
+          written += result.bytesWritten;
+        } catch (error) {
+          if (error.code === 'ENOSPC') { enospcObserved = true; break; }
+          throw error;
+        }
+      }
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    const stat = await fs.statfs(mount);
+    const freeBytes = Number(stat.bavail) * Number(stat.bsize);
+    if (!enospcObserved) throw new Error(`隔离 APFS 测试卷没有触发 ENOSPC：写入 ${written} 字节，剩余 ${freeBytes} 字节。`);
+    return { image, mount, written, freeBytes, enospcObserved, attached: true };
+  } catch (error) {
+    if (attached) await execFileAsync('/usr/bin/hdiutil', ['detach', mount]).catch(() => {});
+    throw error;
+  }
+}
+
+async function detachCapacityLimitedApfsVolume(volume) {
+  if (!volume?.attached) return;
+  await execFileAsync('/usr/bin/hdiutil', ['detach', volume.mount]);
+  volume.attached = false;
+}
+
 console.log(`UNIVERSAL_E2E_TEST_ROOT=${testRoot}`);
 console.log(`UNIVERSAL_E2E_APP=${appPath}`);
-for (const item of cases) summaries.push(await runCase({ mode: item.mode, profileName: item.profile }));
+let capacityVolume;
+for (const item of cases) {
+  if (item.mode === 'disk-full') {
+    capacityVolume = await createCapacityLimitedApfsVolume();
+    try {
+      const diskBackupPath = path.join(capacityVolume.mount, 'Vantilo-Vocabulary-Disk-Full.json');
+      summaries.push(await runCase({ mode: item.mode, profileName: item.profile, backupPath: diskBackupPath }));
+    } finally {
+      await detachCapacityLimitedApfsVolume(capacityVolume);
+    }
+  } else if (item.mode === 'unwritable') {
+    const unwritableDirectory = path.join(testRoot, 'unwritable-directory');
+    await fs.mkdir(unwritableDirectory, { recursive: false, mode: 0o700 });
+    await fs.chmod(unwritableDirectory, 0o500);
+    try {
+      const unwritableBackupPath = path.join(unwritableDirectory, 'Vantilo-Vocabulary-Unwritable.json');
+      summaries.push(await runCase({ mode: item.mode, profileName: item.profile, backupPath: unwritableBackupPath }));
+    } finally {
+      await fs.chmod(unwritableDirectory, 0o700);
+    }
+  } else {
+    summaries.push(await runCase({ mode: item.mode, profileName: item.profile }));
+  }
+}
 
 const backupText = await fs.readFile(backup, 'utf8');
 const backupDoc = JSON.parse(backupText);
@@ -338,6 +418,7 @@ const summary = {
   backupBytes: Buffer.byteLength(backupText),
   backupSha256,
   counts: backupDoc.counts,
+  capacityLimitedApfs: capacityVolume ? { image: capacityVolume.image, writtenBytesBeforeEnospc: capacityVolume.written, availableBytesAtEnospc: capacityVolume.freeBytes, enospcObserved: capacityVolume.enospcObserved, detached: !capacityVolume.attached } : null,
   syntheticSecretsExcluded: true,
   modes: summaries,
 };
