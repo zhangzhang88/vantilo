@@ -32,7 +32,10 @@ describe('packaged Beta E2E data isolation', () => {
     expect(universalE2E).toContain('async function waitForIsolationReady(inspector, child, tail)');
     expect(universalE2E).toContain("return app.isReady()&&global.__vocabularyIsolationProof?.status==='PASS'");
     expect(universalE2E).toContain("path.join(profile, 'reader-library', 'data')");
-    expect(universalE2E).toContain("JSON.stringify({ version: 1, automatic: false })");
+    expect(universalE2E).toContain('preferences = { version: 1, automatic: false }');
+    expect(universalE2E).toContain("if (error?.code !== 'ENOENT') throw error;");
+    expect(universalE2E).toContain('preferences?.automatic !== false');
+    expect(universalE2E).toContain("{ flag: 'wx', mode: 0o600 }");
     expect(universalE2E.indexOf('await waitForIsolationReady(inspector, child, tail)')).toBeLessThan(
       universalE2E.indexOf('const proofExpression ='),
     );

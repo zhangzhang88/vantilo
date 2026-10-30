@@ -198,7 +198,18 @@ async function runCase({ mode, profileName }) {
   // a real network feature and is unrelated to vocabulary backup coverage.
   const readerData = path.join(profile, 'reader-library', 'data');
   await fs.mkdir(readerData, { recursive: true, mode: 0o700 });
-  await fs.writeFile(path.join(readerData, 'vantilo-magazine-sync.json.preferences.json'), JSON.stringify({ version: 1, automatic: false }), { flag: 'wx', mode: 0o600 });
+  const preferencePath = path.join(readerData, 'vantilo-magazine-sync.json.preferences.json');
+  let preferences;
+  try {
+    preferences = JSON.parse(await fs.readFile(preferencePath, 'utf8'));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    preferences = { version: 1, automatic: false };
+    await fs.writeFile(preferencePath, JSON.stringify(preferences), { flag: 'wx', mode: 0o600 });
+  }
+  if (preferences?.version !== 1 || preferences?.automatic !== false) {
+    throw new Error(`隔离 Reader 测试配置无效，拒绝覆盖：${preferencePath}`);
+  }
   const resultPath = path.join(testRoot, `result-${mode}.json`);
   const port = await availableLoopbackPort();
   const env = buildEnvironment(mode, profile, directories, resultPath);
