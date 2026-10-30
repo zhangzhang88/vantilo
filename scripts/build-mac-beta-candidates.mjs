@@ -120,7 +120,7 @@ for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:elec
   for(const [name,records] of [['main-renderer',mainRecords],['reader-runtime',readerRecords],['electron-main',electronRecords],['all-runtime',packageRecords]])await fs.writeFile(path.join(runtimeInventory,`${name}-package-roots.json`),JSON.stringify(records,null,2)+'\n');
   await fs.writeFile(path.join(stage,'licenses/THIRD_PARTY_NOTICES.txt'),notices);
   await fs.writeFile(path.join(r,'THIRD_PARTY_NOTICES.txt'),notices);
-  await fs.writeFile(path.join(stage,'electron/beta-main.cjs'),`'use strict';\nconst {app}=require('electron');\nconst path=require('node:path');\nconst override=app.commandLine.getSwitchValue('user-data-dir');\napp.setPath('userData',override&&path.isAbsolute(override)?override:path.join(app.getPath('appData'),'Vantilo Beta'));\nprocess.env.VANTILO_BETA_BUILD='1';\nrequire('./main.cjs');\n`);
+  await fs.copyFile(path.join(repo,'electron/beta-main.cjs'),path.join(stage,'electron/beta-main.cjs'));
   await fs.writeFile(path.join(stage,'package.json'),JSON.stringify({name:'vantilo-beta',version:metadata.version,private:true,main:'electron/beta-main.cjs'}));
   await fs.copyFile(path.join(repo,'node_modules/zod/LICENSE'),path.join(stage,'licenses/Zod-LICENSE.txt'));
   const result=await packager({dir:stage,out,name:'Vantilo Beta',platform:'darwin',arch:target.arch,electronVersion,electronZipDir:inputs,appBundleId:'com.vantilo.desktop.beta',icon:path.join(repo,'resources/vantilo.icns'),overwrite:false,prune:false,asar:false});
