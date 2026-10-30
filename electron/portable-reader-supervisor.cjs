@@ -81,11 +81,11 @@ class PortableReaderSupervisor {
         if (message?.type === 'ai-cancel' && typeof message.requestId === 'string' && /^[0-9a-f-]{36}$/i.test(message.requestId)) { void this.cancelAi?.(message.requestId).catch(()=>{}); return; }
         if (message?.type === 'ai') {
           const id = message.requestId;
-          if (['account-status','models','software-status','software-check','software-auto','software-open-release'].includes(message.operation) && typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)) {
+          if (['account-status','models','software-status','software-check','software-auto','software-open-release','software-download','software-cancel-download','software-reveal-download'].includes(message.operation) && typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)) {
             const operations={'account-status':this.getAccountStatus,models:this.listModels,
               'software-status':this.softwareUpdates?.status,'software-check':this.softwareUpdates?.check,
               'software-auto':typeof message.automatic==='boolean'&&this.softwareUpdates?()=>this.softwareUpdates.setAutomatic(message.automatic):null,
-              'software-open-release':this.softwareUpdates?.openRelease};
+              'software-open-release':this.softwareUpdates?.openRelease,'software-download':this.softwareUpdates?.download,'software-cancel-download':this.softwareUpdates?.cancelDownload,'software-reveal-download':this.softwareUpdates?.revealDownload};
             const get=operations[message.operation];
             if(!get){child.postMessage({type:'ai-result',requestId:id,ok:false});return;}
             void get().then(metadata => { if (this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:true,metadata}); }, () => { if(this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:false}); });

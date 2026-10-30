@@ -34,6 +34,10 @@ export function adaptCatalogPreview(source,filename) {
 .vantilo-update-settings p {font-size:14px;line-height:1.7;}
 .vantilo-update-settings small {display:block;line-height:1.6;margin-top:12px;color:var(--ui-muted,#666);}
 .vantilo-update-toggle {display:flex;align-items:center;gap:10px;margin:14px 0;}
+.vantilo-release-details summary {cursor:pointer;color:var(--ui-accent,#477c80);margin:12px 0;}
+.vantilo-release-markdown {overflow-wrap:anywhere;line-height:1.65;}
+.vantilo-release-markdown pre {white-space:pre-wrap;overflow-wrap:anywhere;}
+.vantilo-update-progress {width:100%;max-width:420px;}
 .vantilo-update-error {color:#b22;}
 
 .vantilo-catalog-control {margin:16px 0;padding:16px;border:1px solid var(--ui-line,#ddd);border-radius:12px;background:var(--ui-soft,#faf9f5);color:var(--ui-ink,#222);}
@@ -72,6 +76,7 @@ export function adaptCatalogPreview(source,filename) {
 .vantilo-catalog-import {padding:12px 20px;display:grid;gap:12px;border-bottom:1px solid var(--ui-line,#ddd);}
 `;
   if(!filename.endsWith('/frontend/App.tsx'))return source;
+  source='import VantiloReleaseMarkdown from "react-markdown";\n'+source;
   exact('  const [assistantOpen, setAssistantOpen] = useState(() => window.matchMedia("(min-width: 1151px)").matches);',
     '  const [assistantOpen, setAssistantOpen] = useState(false);');
   source=source.replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。','管理阅读环境、杂志与软件更新、外观、数据备份和自定义 API。').replaceAll('阅读偏好在浏览器 · AI 配置在本机','阅读偏好保存在本机 · 翻译模型独立选择');

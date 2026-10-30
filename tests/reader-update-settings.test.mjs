@@ -7,7 +7,7 @@ const require=createRequire(import.meta.url);const {startPortableReader}=require
 it('separates persistent magazine settings from software settings and validates request scope',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'reader-update-settings-'));let server;
  const sessionToken='e'.repeat(64),sessionCookie='__Host-vantilo-reader='+sessionToken;
- const software={status:vi.fn(async()=>({currentVersion:'0.1.0',phase:'unpublished',automatic:true})),check:vi.fn(async()=>({currentVersion:'0.1.0',phase:'current',automatic:true})),setAutomatic:vi.fn(async automatic=>({automatic,currentVersion:'0.1.0',phase:'idle'})),openRelease:vi.fn(async()=>({opened:true}))};
+ const software={status:vi.fn(async()=>({currentVersion:'0.1.0',phase:'unpublished',automatic:true})),check:vi.fn(async()=>({currentVersion:'0.1.0',phase:'current',automatic:true})),setAutomatic:vi.fn(async automatic=>({automatic,currentVersion:'0.1.0',phase:'idle'})),openRelease:vi.fn(async()=>({opened:true})),download:vi.fn(async()=>({phase:'downloading'})),cancelDownload:vi.fn(async()=>({phase:'download-cancelled'})),revealDownload:vi.fn(async()=>({phase:'verified'}))};
  const fetchImpl=vi.fn(async()=>{throw Error('Offline fixture');});
  const setup=autoSync=>startPortableReader({assetsDir:path.resolve('build/reader'),libraryRoot:root,apiPort:0,webPort:0,autoSync,enableReaderPreviews:true,softwareUpdates:software,localQwenService:{inspect:async()=>({selected:false,helperAvailable:false})},fetchImpl,sessionToken});
  const call=async(method,url,body)=>{const response=await fetch(server.webOrigin+'/api/vantilo-updates/'+url,{method,headers:{'Content-Type':'application/json',cookie:sessionCookie},...(body?{body:JSON.stringify(body)}:{})});return {code:response.status,value:await response.json()};};
@@ -17,6 +17,7 @@ it('separates persistent magazine settings from software settings and validates 
   expect((await call('POST','magazines/check',{})).code).toBe(202);await server.sync.pending;expect(fetchImpl).toHaveBeenCalled();
   expect((await call('PUT','software',{automatic:'yes'})).code).toBe(400);
   expect((await call('POST','software/open-release',{url:'https://evil.test'})).code).toBe(400);expect(software.openRelease).not.toHaveBeenCalled();
+  expect((await call('POST','software/download',{})).value.phase).toBe('downloading');expect((await call('POST','software/cancel-download',{})).value.phase).toBe('download-cancelled');expect((await call('POST','software/reveal-download',{})).value.phase).toBe('verified');expect((await call('POST','software/download',{path:'/tmp/evil'})).code).toBe(400);
   const blocked=await fetch(server.webOrigin+'/api/vantilo-updates/software',{headers:{origin:'https://evil.test',cookie:sessionCookie}});expect(blocked.status).toBe(403);
  }finally{await server?.close();await rm(root,{recursive:true,force:true});}
 });

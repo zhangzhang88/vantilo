@@ -58,3 +58,23 @@ Reassess if the integration changes to a different third-party pronunciation ser
 Build commit `4e7bc5160678514dfbc4035dfe4224b3cca0328c`; ZIP SHA-256 `62d4250f668d97f53c0f06c8e00324fa1c359d9ec42be871f3266ad2406b6752`; size 485,521,368 bytes. The package was launched in an isolated profile; packaged Reader fixture tests passed. Full packaged-app sentence restart and production-route translation reuse were not run. The isolated app automatically synced a live magazine during a later launch; it was not included in the ZIP. The application uses Youdao dictvoice, whose written public-distribution authorization has not been confirmed; the owner accepted that risk for this release. The later continuing decision and its scope are recorded above.
 
 Published on 2026-10-30 at 06:35:48 UTC as [Vantilo Beta 0.1.12](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.12), pre-release and not draft. GitHub recorded two uploaded assets: the ZIP size and SHA-256 matched above; the 100-byte sidecar's own SHA-256 was `805f2eb471787ab6bfa067f8bbf041efbc71d4632b1935a9d0daa94fecaf554e`. The public ZIP link returned HTTP 206 for a one-byte range and the sidecar link returned HTTP 200 with the expected ZIP hash. The tag points to the build commit, independent of the later documentation commit.
+
+## In-app update assets
+
+A Beta build uses the explicitly configured `beta` channel and selects GitHub pre-releases; Stable uses `stable` and selects non-prereleases. Publish an uploaded `Vantilo-Beta-<version>-universal.zip` (or `Vantilo-<version>-universal.zip`) and its exact-name `.sha256` sidecar containing `<64 hex SHA-256>  <ZIP filename>`. Confirm the GitHub asset digest, sidecar and ZIP bytes agree, and check the release tag, notes, publication date and asset sizes before publishing. GitHub API digest is preferred; the sidecar is a fallback, not an independent signature. The first-stage updater downloads to a user-selected directory, verifies SHA-256 and guides the user to manually replace the application. Future automatic installation requires a separate design covering Developer ID signing, notarization and secure update authentication.
+
+## Release notes for users and the full record
+
+### 永久发布语言与格式规则
+
+除非用户明确要求英文，所有版本的 GitHub Release 标题、正文、应用内摘要及完整技术发布记录必须使用简体中文。用户摘要应自然简洁；技术变更、测试与构建结果、签名、公证、已知限制和第三方服务风险均用中文如实解释。不得直接复制英文提交、PR 或开发日志作为正文，不得直接在中文应用更新页面展示英文 Release 正文。必要的技术标识、文件名、命令、API 名称、错误代码和模型名称可保留原文。每次发布前逐项检查标题、正文、应用内摘要及完整技术说明，发现英文段落先翻译。历史 Release 保持原样，历史版本的限制不得被当作当前版本限制。
+
+Release 正文按以下结构编写；不适用的子项可省略，不得编造测试结果：
+
+1. `## 一、本次更新`：3–5 条普通用户能理解的功能、体验和修复，供应用默认提取。
+2. `## 二、详细更新内容`：重要功能、改进和使用方法。
+3. `## 三、技术变更与测试结果`：技术变更及真实测试、构建和验收结果。
+4. `## 四、已知限制与风险说明`：签名、公证、架构验收、第三方服务、未运行测试和已知限制。
+5. `## 五、安装与更新说明`：安装、更新步骤和注意事项。
+
+完整技术记录及必要风险披露继续保留在 GitHub Release，并在应用内折叠展示。用户摘要不包含内部构建日志或技术测试报告。

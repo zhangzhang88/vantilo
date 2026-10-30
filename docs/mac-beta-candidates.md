@@ -23,7 +23,9 @@ Intel 设备使用自定义云端或局域网 API；网络、API 服务与模型
 - Intel 的 Codex 与系统词典原生程序、模型选择、段落翻译、点词、取消和异常恢复必须在 Intel 设备实测；两种架构均需验证已配置的 API 服务。
 - Reader 的会话认证、合成 EPUB 流程和隔离的助手通道需验证；真实账号或真实模型测试须单独说明，不能从模拟测试推断。
 - 候选包使用 ad-hoc 签名，未经过 Developer ID 签名和 Apple 公证。测试者可能需要根据 macOS 提示确认打开。Universal 公共交付只包括 ZIP、SHA-256 sidecar 和构建报告，不生成、不上传 DMG。
-- 软件更新当前只检查 GitHub 的稳定 Release 并打开发布页面，不自动安装；预发布版不触发稳定版更新提示。
+- 0.1.12 历史候选的软件更新只检查 GitHub 稳定 Release 并打开发布页面；开发版更新机制见下文。
 - 检查源码和安装包中的第三方许可、隐私数据与构建内容，建立可回滚 Git 基线之后，才适合准备公开 Release。
 
 不要把本地候选包描述为已经公开发布；不要将用户个人 EPUB、模型权重或登录资料加入源码提交。
+
+更新开发版通过显式 Beta 通道读取 GitHub pre-release；Stable 通道只读取非 pre-release。Universal ZIP 下载由主进程执行并以 GitHub 资产 digest 或同名 `.sha256` 检查文件，校验通过后由用户在 Finder 手动替换应用；校验值不是独立数字签名。资产命名和发布核验见 `docs/release/RELEASING.md`。

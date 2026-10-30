@@ -9,6 +9,7 @@ function registerUpdateSettings(api,{sync,softwareUpdates}){
  api.get('/api/vantilo-updates/software',async(_req,reply)=>{reply.header('Cache-Control','no-store');try{return await software.status();}catch{return reply.code(503).send({error:'软件版本状态读取失败'});}});
  api.put('/api/vantilo-updates/software',async(req,reply)=>{if(!validAuto(req.body))return reply.code(400).send({error:'自动检查设置无效'});try{return await software.setAutomatic(req.body.automatic);}catch{return reply.code(503).send({error:'软件更新设置保存失败'});}});
  api.post('/api/vantilo-updates/software/check',async(req,reply)=>{if(req.body&&Object.keys(req.body).length)return reply.code(400).send({error:'检查参数无效'});try{return await software.check();}catch{return reply.code(503).send({error:'软件版本检查失败'});}});
+ for(const [route,method] of [['download','download'],['cancel-download','cancelDownload'],['reveal-download','revealDownload']])api.post('/api/vantilo-updates/software/'+route,async(req,reply)=>{if(req.body&&Object.keys(req.body).length)return reply.code(400).send({error:'请求参数无效'});try{return await software[method]();}catch{return reply.code(409).send({error:'更新操作暂不可用'});}});
  api.post('/api/vantilo-updates/software/open-release',async(req,reply)=>{if(req.body&&Object.keys(req.body).length)return reply.code(400).send({error:'打开参数无效'});try{return await software.openRelease();}catch{return reply.code(409).send({error:'当前没有可打开的公开发布版本'});}});
 }
 module.exports={registerUpdateSettings};

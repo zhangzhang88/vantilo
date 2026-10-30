@@ -1,4 +1,4 @@
-const {createSoftwareUpdateService}=require('./software-update-service.cjs');
+const {createSoftwareUpdateService,resolveUpdateCurrentVersion}=require('./software-update-service.cjs');
 const softwareUpdateSource=require('../resources/software-update-source.json');
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess, session, nativeImage, safeStorage, powerMonitor } = require('electron');
 const path = require('node:path');
@@ -43,7 +43,7 @@ const readerAssets = !app.isPackaged && process.env.VANTILO_DEV_SERVER_URL && pr
 // A missing build must fail startup; never fall back to the source project's independent auth/API.
 const usePortableReader = true;
 const readerOnboarding = createReaderOnboarding({ userData: app.getPath('userData'), assetsDir: readerAssets });
-const softwareUpdates=createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:app.getVersion(),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),
+const softwareUpdates=createSoftwareUpdateService({userData:app.getPath('userData'),currentVersion:resolveUpdateCurrentVersion({isPackaged:app.isPackaged,currentVersion:app.getVersion(),testVersion:process.env.VANTILO_UPDATE_TEST_CURRENT_VERSION}),source:softwareUpdateSource,openExternal:url=>shell.openExternal(url),showItemInFolder:file=>shell.showItemInFolder(file),chooseDownloadDirectory:async()=>{let defaultPath;try{defaultPath=app.getPath('downloads');}catch{}const result=await dialog.showOpenDialog(win,{title:'选择更新包下载位置',defaultPath,properties:['openDirectory','createDirectory']});return result.canceled?null:result.filePaths[0];},
   onAvailable:async state=>{if(!win||win.isDestroyed())return;const result=await dialog.showMessageBox(win,{type:'info',title:'Vantilo 软件更新',message:'发现新版本 '+state.latestVersion,detail:'当前版本 '+state.currentVersion+'。可前往 GitHub 发布页下载安装，应用不会强制退出。',buttons:['稍后','前往发布页'],defaultId:0,cancelId:0});if(result.response===1)await softwareUpdates.openRelease();}
 });
 const magazineReaderSupervisor = new PortableReaderSupervisor({ softwareUpdates, utilityProcess, enableTranslation: true, enableReaderPreviews: true, customApi: async (operation,payload,signal) => {const service=getReaderCustomApiService();const result=operation==='activate'||operation==='remove'?await service[operation](payload.id):await service[operation](operation==='complete'?{...payload,signal}:payload);return operation==='complete'?{output:result}:result;}, assetsDir: readerAssets, libraryRoot: path.join(app.getPath('userData'), 'reader-library'), seedDir: packagedReaderSeedDir({ isPackaged: app.isPackaged, assetsDir: readerAssets }), cancelAi: requestId => runtime.request('reader:cancel', {requestId}), getAccountStatus: () => runtime.request('account:status', {}), listModels: () => runtime.request('models:list', {}), runAi: payload => { if (!runtime) return Promise.reject(new Error('Agent 未连接')); return runtime.request('reader:ai', payload); },
