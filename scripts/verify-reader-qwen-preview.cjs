@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Electron smoke from the ACTUAL packaged Qwen preview's renderer and preload.
 // Isolated synthetic profile; native file picker and actual 3GB download are stubbed.
 // The native helper against real weights is verified separately.

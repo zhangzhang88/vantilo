@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Compare a file:// parent iframe to the live Reader 5195 renderer.
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');

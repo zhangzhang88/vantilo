@@ -4,6 +4,9 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import workspaceGuard from './workspace-test-environment.cjs';
+
+workspaceGuard.assertWorkspaceTestEnvironment();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
@@ -60,6 +63,13 @@ function electronEnv(mode, profile, downloads, resultPath, { backupPath = backup
     XDG_CACHE_HOME: path.join(base, 'xdg-cache'),
     TMPDIR: dirs.tmp,
     SWC_NATIVE_BINDING_CACHE: process.env.SWC_NATIVE_BINDING_CACHE,
+    VANTILO_TEST_RUN_ROOT: process.env.VANTILO_TEST_RUN_ROOT,
+    VANTILO_TEST_PROFILE_ROOT: process.env.VANTILO_TEST_PROFILE_ROOT,
+    VANTILO_TEST_CHROMIUM_ROOT: process.env.VANTILO_TEST_CHROMIUM_ROOT,
+    VANTILO_TEST_READER_ROOT: process.env.VANTILO_TEST_READER_ROOT,
+    VANTILO_TEST_ARTIFACT_ROOT: process.env.VANTILO_TEST_ARTIFACT_ROOT,
+    VANTILO_TEST_RESULTS_ROOT: process.env.VANTILO_TEST_RESULTS_ROOT,
+    VANTILO_RUNTIME_MODULE_INVENTORY_PATH: process.env.VANTILO_RUNTIME_MODULE_INVENTORY_PATH,
     VANTILO_DEV_SERVER_URL: 'http://127.0.0.1:5173',
     VANTILO_DEV_READER_ASSETS: dirs.reader,
     VANTILO_VOCABULARY_E2E_ROOT: base,
@@ -179,7 +189,7 @@ try {
   const ready = { promise: new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; }), resolve: null, reject: null };
   ready.resolve = resolveReady;
   ready.reject = rejectReady;
-  vite = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, SWC_NATIVE_BINDING_CACHE: process.env.SWC_NATIVE_BINDING_CACHE, LANG: process.env.LANG || 'en_US.UTF-8' } });
+  vite = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, SWC_NATIVE_BINDING_CACHE: process.env.SWC_NATIVE_BINDING_CACHE, VANTILO_TEST_ARTIFACT_ROOT: process.env.VANTILO_TEST_ARTIFACT_ROOT, VANTILO_RUNTIME_MODULE_INVENTORY_PATH: process.env.VANTILO_RUNTIME_MODULE_INVENTORY_PATH, LANG: process.env.LANG || 'en_US.UTF-8' } });
   await waitForVite(vite, ready);
   const results = [];
   const only = process.env.VANTILO_VOCABULARY_E2E_ONLY;

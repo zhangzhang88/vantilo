@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Opt-in integration check. Uses the locally installed Codex app-server and existing authentication without editing Codex configuration.
 const fs = require('node:fs/promises');
 const os = require('node:os');

@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Isolated Electron UI smoke check of the *real* first-run renderer and preload.
 // Never uses the actual user's profile, Qwen files, EPUBs, or Codex engine.
 const {app,BrowserWindow,ipcMain}=require('electron');

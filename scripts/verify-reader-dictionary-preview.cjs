@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Real compiled Reader in an isolated Electron profile with synthetic EPUB and dictionary data.
 const { app, BrowserWindow, session } = require('electron');
 const fs = require('node:fs');

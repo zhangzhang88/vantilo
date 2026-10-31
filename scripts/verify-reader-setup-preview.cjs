@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Validate the packaged Reader Setup Preview itself, with no developer profile,
 // network download, Codex login, or personal library access.
 const fs = require('node:fs/promises');

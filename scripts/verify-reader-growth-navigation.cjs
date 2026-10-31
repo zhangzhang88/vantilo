@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Isolated Electron end-to-end check of the built Reader, navigation bridge and actual growth-session functions.
 // Uses only the synthetic minimal-magazine fixture in a disposable profile/library.
 const { app, BrowserWindow, session } = require('electron');

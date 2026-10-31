@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // True packaged Electron utilityProcess integration test for the resident MLX
 // Reader helper. Uses only a synthetic Reader seed + an ephemeral model reference.
 const {app,utilityProcess}=require('electron');

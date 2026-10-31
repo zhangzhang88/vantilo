@@ -1,9 +1,11 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Real Electron Reader layout check using only a synthetic EPUB and isolated profile.
 const {app,BrowserWindow,session}=require('electron');
 const fs=require('node:fs/promises');const {mkdirSync,mkdtempSync}=require('node:fs');const path=require('node:path');const {randomBytes}=require('node:crypto');
 const {startPortableReader}=require('../electron/portable-reader-service.cjs');
-const repo=path.resolve(__dirname,'..');mkdirSync(path.join(repo,'build'),{recursive:true});
-const root=mkdtempSync(path.join(repo,'build','toolbar-check-'));mkdirSync(path.join(root,'profile'));app.setPath('userData',path.join(root,'profile'));
+const repo=path.resolve(__dirname,'..');
+const artifactRoot=process.env.VANTILO_TEST_ARTIFACT_ROOT;if(!artifactRoot)throw new Error('Workspace test artifact root is required.');
+const root=mkdtempSync(path.join(artifactRoot,'toolbar-check-'));mkdirSync(path.join(root,'profile'));app.setPath('userData',path.join(root,'profile'));
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));let win,service;
 const deadline=setTimeout(()=>{console.error('FAIL: toolbar check timed out');app.exit(1);},35000);
 async function waitFor(fn,label){for(let i=0;i<100;i++){const v=await fn();if(v)return v;await sleep(100);}throw new Error('Timed out: '+label);}

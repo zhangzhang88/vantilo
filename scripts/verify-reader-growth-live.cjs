@@ -1,8 +1,8 @@
-// Actual Electron/Chromium UI acceptance against a read-only view of the existing local book library.
-// Set VANTILO_READER_LIBRARY to userData/reader-library and
-// VANTILO_GROWTH_SCREENSHOT_DIR to a directory outside this repository.
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
+// Actual Electron/Chromium UI acceptance using an isolated synthetic library.
 const { app, BrowserWindow, session } = require('electron');
 const fs = require('node:fs/promises');
+const { mkdirSync } = require('node:fs');
 const { mkdtempSync, rmSync } = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -11,11 +11,10 @@ const { startPortableReader } = require('../electron/portable-reader-service.cjs
 const { READER_SESSION_COOKIE } = require('../electron/reader-session-cookie.cjs');
 
 const repo = path.resolve(__dirname, '..');
-const libraryRoot = process.env.VANTILO_READER_LIBRARY;
-const screenshotDir = process.env.VANTILO_GROWTH_SCREENSHOT_DIR;
-if (!path.isAbsolute(libraryRoot || '') || !path.isAbsolute(screenshotDir || '') || screenshotDir.startsWith(repo + path.sep)) {
-  throw new Error('Set absolute VANTILO_READER_LIBRARY and an external VANTILO_GROWTH_SCREENSHOT_DIR.');
-}
+const libraryRoot = path.join(process.env.VANTILO_TEST_READER_ROOT, 'growth-live-library');
+const screenshotDir = process.env.VANTILO_GROWTH_SCREENSHOT_DIR || path.join(process.env.VANTILO_TEST_ARTIFACT_ROOT, 'growth-live-screenshots');
+if (!path.isAbsolute(libraryRoot) || !path.isAbsolute(screenshotDir)) throw new Error('Workspace test data and artifact roots are required.');
+mkdirSync(libraryRoot, { recursive: true, mode: 0o700 });
 const profile = mkdtempSync(path.join(os.tmpdir(), 'vantilo-growth-live-profile-'));
 app.setPath('userData', profile);
 let root, service, win;
@@ -36,11 +35,16 @@ app.whenReady().then(async () => {
     getAccountStatus: async () => ({ connected: false, email: null }), listModels: async () => ({ models: [] }),
   });
   const cookie = `${READER_SESSION_COOKIE}=${token}`;
+  const fixture = await fs.readFile(path.join(repo, 'tests/fixtures/minimal-magazine.epub'));
+  const imported = await fetch(`${service.apiOrigin}/api/books/import?filename=GrowthFixture.epub`, {
+    method: 'POST', headers: { 'content-type': 'application/epub+zip', cookie }, body: fixture,
+  });
+  if (!imported.ok) throw new Error(`Could not import the synthetic growth fixture (${imported.status}).`);
   const booksResponse = await fetch(service.apiOrigin + '/api/books', { headers: { cookie } });
-  if (!booksResponse.ok) throw new Error('Could not list the existing local books.');
+  if (!booksResponse.ok) throw new Error('Could not list the synthetic test library.');
   const books = await booksResponse.json();
   const book = books.find(item => /^(en|eng)(-|$)/i.test(item.language || ''));
-  if (!book) throw new Error('No English book is available in the selected local library.');
+  if (!book) throw new Error('The synthetic English fixture was not available in the test library.');
 
   const partition = `vantilo-growth-live-${Date.now()}`;
   const webSession = session.fromPartition(partition);

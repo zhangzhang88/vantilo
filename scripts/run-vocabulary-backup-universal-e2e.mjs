@@ -6,6 +6,9 @@ import crypto from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import workspaceGuard from './workspace-test-environment.cjs';
+
+workspaceGuard.assertWorkspaceTestEnvironment();
 
 const execFileAsync = promisify(execFile);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,8 +23,9 @@ if (path.resolve(appPathInput) !== appPathInput || await fs.realpath(appPathInpu
 const appPath = appPathInput;
 const appBinary = path.join(appPath, 'Contents/MacOS/Vantilo Beta');
 await fs.access(appBinary);
-const packageAcceptanceRoot = path.dirname(appPath);
-const testRoot = path.join(packageAcceptanceRoot, `universal-vocabulary-e2e-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${process.pid}`);
+const artifactRoot = process.env.VANTILO_TEST_ARTIFACT_ROOT;
+if (!artifactRoot || !artifactRoot.startsWith(`${process.env.VANTILO_TEST_RUN_ROOT}${path.sep}`)) throw new Error('Universal E2E artifacts must be inside the current Workspace test run.');
+const testRoot = path.join(artifactRoot, `universal-vocabulary-e2e-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${process.pid}`);
 await fs.mkdir(testRoot, { recursive: false, mode: 0o700 });
 
 const backup = path.join(testRoot, 'Vantilo-Vocabulary-Backup-Universal-E2E.json');

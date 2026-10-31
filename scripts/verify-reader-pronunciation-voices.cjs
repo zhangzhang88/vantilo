@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 const {app,BrowserWindow}=require('electron');
 const {mkdtempSync, rmSync}=require('node:fs');
 const path=require('node:path');

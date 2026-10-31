@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Isolated real Reader/Chromium translation-reuse test. The only fake boundary is the server translationProvider.
 const { app, BrowserWindow, session } = require('electron');
 const fs = require('node:fs/promises');

@@ -1,25 +1,47 @@
 # Vantilo 测试环境与磁盘占用规则
 
-## 默认测试入口
+## 默认入口
 
-从规范源码仓库运行 `npm test`。入口脚本 `scripts/run-tests-on-workspace.mjs` 会先执行 `/Volumes/Workspace/_System/verify-workspace-volume.sh`，核对已知 Workspace UUID、APFS 和可写状态；随后创建唯一运行目录：
+Vantilo 中所有会创建 E2E 数据的测试必须先通过共享入口 `scripts/run-tests-on-workspace.mjs`。包括根目录 Vitest、Reader 离线测试、Electron 界面测试、打包应用验收，以及测试生成的 userData、Chromium Profile、合成书库、截图、解压目录和日志。优先使用 `package.json` 中的 `npm run test:*` 命令；根目录测试为 `npm test`，Reader 离线测试为 `npm run test:reader:offline`。
 
-`/Volumes/Workspace/Development/Vantilo/test-runs/run-<时间>-<PID>/`
+没有专属 npm 命令时，可使用仓库内的 allowlist 入口，例如：
 
-Node/Vitest 子进程的 `TMPDIR`、`TMP`、`TEMP`、`XDG_CACHE_HOME` 及 `VANTILO_TEST_*` 路径均指向该次运行目录。由 `os.tmpdir()` 创建的临时测试资料因此落在外置盘。每次运行的输出同时写入 `logs/test-run.log`。运行记录保留在该目录；清理前必须按保留规则检查，不得删除未知资料。
+```sh
+node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-layout.cjs
+node scripts/run-tests-on-workspace.mjs --node scripts/verify-tts-server.cjs
+node scripts/run-tests-on-workspace.mjs --e2e scripts/run-vocabulary-backup-e2e.mjs
+node scripts/run-tests-on-workspace.mjs --vitest tests/workspace-test-infrastructure.test.mjs
+```
 
-SWC 1.16.20 的原生 binding 缓存使用受用户权限保护的小型本地目录 `~/Library/Caches/Vantilo/swc-native/1.16.20`。这是为兼容 SWC 对缓存父目录权限的检查而保留的例外，不会把大型测试输出迁回内置盘；目录按 Vantilo 和 SWC 版本隔离，入口拒绝权限过宽或路径含符号链接的缓存目录。
+只允许共享入口中列明的脚本；未知脚本拒绝启动。所有受管独立 E2E 脚本在开始创建测试数据前自行调用同一环境守卫。根目录和 Reader Vitest 配置也会检查活动运行标记，因此直接执行 Vitest 不会绕过外置卷门禁。纯单元逻辑若使用系统临时目录，也应从 `npm test` 或 Reader 包装入口启动。
 
-若 Workspace 未挂载、UUID/APFS/可写验证失败或目标目录异常，入口立即失败；不得在 `/Volumes/Workspace` 的内置盘同名目录回退运行，不得改用正式 userData。
+## 每次运行的路径和门禁
 
-## 范围与限制
+入口先运行 `/bin/sh /Volumes/Workspace/_System/verify-workspace-volume.sh`，并检查已知卷 UUID `2BA2763B-3ED8-47DF-B569-EC8A2F0AFAAE`、APFS、真实挂载点 `/Volumes/Workspace` 和可写状态。再检查运行所需可用空间、规范真实路径和符号链接边界。任一条件不满足即停止，不会回退到系统 `/tmp`、内置 SSD、源码目录 `build/` 或正式用户数据。
 
-- 普通根目录 Vitest 测试通过 Node `TMPDIR` 使用外置临时目录。测试中硬编码 `/private/tmp` 的脚本和其他独立 E2E 入口不因这个 wrapper 自动迁移；运行前须检查具体脚本。打包词汇 E2E 已要求应用包和测试根位于 Workspace 工作副本。
-- Electron/SWC 原生 binding 可能拒绝 Workspace 的共享父目录作为缓存位置。SWC 当前使用上述受限的小型本地缓存；其余测试输出仍在 Workspace。完整词汇 E2E 的受限 APFS 空间测试需要系统允许挂载隔离镜像；如果系统拒绝，完整套件必须标记 BLOCKED，不得降低断言。
-- `npm run build` 和 `npm run build:reader` 在源码 checkout 中会先由 `prebuild`/`prebuild:reader` 拒绝，避免写入未知的 `dist/` 或覆盖 `build/reader/`。应用构建必须从 Workspace 的独立构建副本运行；Reader 构建必须从该副本运行，或显式指定已验证 Workspace 内的 `VANTILO_READER_BUILD_OUTPUT`。构建保护会解析真实父目录并拒绝通过符号链接逃离 Workspace 的输出路径。
-- `build/reader/seed` 是保护数据，不得清理或覆盖。源码目录 `dist/` 的历史内容有不确定性，默认保留；忽略规则不等于可删除授权。
-- 不修改系统级 `TMPDIR`、用户 shell 配置或其他项目缓存。共享 npm cache `/Volumes/Workspace/Development/npm-cache` 保持原位；只有经过确认的 Vantilo 独占缓存才能单独迁移。
+每次运行创建独立目录：
 
-## 磁盘清理
+`/Volumes/Workspace/Development/Vantilo/test-runs/e2e/run-<UTC时间>-<PID>-<UUID>/`
 
-按路径、版本、文件类型、大小、修改时间、进程占用、Git 状态、唯一日志/源码资料和远端资产校验逐项分类。`du` 的目录占用可能受 APFS 克隆/共享块影响，不能等同于删除可释放的物理空间。归属未知、含用户 profile 数据或有唯一审计价值的资料保留并报告。严禁对整个构建管理根目录执行递归删除。
+目录按需容纳 `temp/`、隔离 `home/`、`codex-home/`、XDG 配置与缓存、Electron userData、Chromium Profile、合成 Reader 数据、`artifacts/`、`logs/` 和 `results/`。子进程的 `TMPDIR`、`TMP`、`TEMP`、`HOME`、`CODEX_HOME`、`XDG_CONFIG_HOME`、`XDG_CACHE_HOME` 及 `VANTILO_TEST_*` 都指向本次目录。共享守卫核对这些实际解析路径及所有权标记。Electron E2E 脚本还必须在 `app.whenReady()` 前设置 userData，并将实际 `app.getPath('userData')` 与本次隔离目录核对；不得仅凭环境变量宣称隔离成功。
+
+每个目录带有 `.vantilo-test-run.json` 所有权和生命周期记录，日志写入 `logs/test-run.log`。入口不会自动递归清理历史目录。启动时只提示仍标记 RUNNING 的旧目录，不会据时间戳或名称删除任何运行。
+
+## 生命周期和人工清理
+
+- 测试正常成功后，先确认测试进程组已退出，再清理本次所有受控临时 Profile、合成书库、temp 和解压/构建负载；保留 owner 标记、日志和结果摘要。
+- 测试失败时，保留受限大小的诊断 JSON/TXT/Markdown 到 `results/`，保留日志，然后清理可重新生成的大型负载。若子进程组仍存活或无法确认退出，则保留全部数据并将状态标记为 `CLEANUP_BLOCKED_ACTIVE_PROCESS`。
+- 运行器崩溃或机器重启留下的目录不会自动清理。先检查 owner 状态、记录的 PID 与启动时间、进程组及 `lsof` 文件占用。只有来源和所有权明确、进程已结束且没有打开文件时，才可使用 `npm run test:cleanup -- --run-id <完整运行ID>` 清理该目录的受控 payload；日志、结果和 owner 标记保留。未知目录、路径异常、符号链接、日志和结果不会被该命令递归删除。
+- `package:e2e:vocabulary-backup` 使用 `--keep-artifacts`，以便后续打包验收；该 artifacts 目录由下一步独立验收消费，不视作普通成功运行的临时负载。
+
+## 内置缓存例外与外部组件限制
+
+SWC 1.16.20 原生 binding 使用小型本地版本目录 `~/Library/Caches/Vantilo/swc-native/1.16.20`。SWC 曾因 Workspace 的共享挂载父目录权限/所有者特性拒绝原生缓存；该缓存路径经权限检查、拒绝符号链接，按 SWC 版本隔离。它是唯一明确允许的小型本地缓存，不代表大型测试文件可留在内置盘。
+
+依赖 macOS 原生应用或系统服务的测试可能产生系统无法按进程环境重定向的文件。例如通过 Playwright 启动已安装 Google Chrome 时，macOS code-sign clone 数据由系统/Chrome 管理，不保证跟随测试 TMPDIR。此类测试必须单独识别、注明实际路径和影响；不要把系统托管写入描述为已迁移，也不要为了迁移它删除或改动 Chrome 用户数据。需要特殊 APFS 镜像权限的 ENOSPC 测试若系统拒绝挂载，应标记 BLOCKED，不能用故障注入替代真实容量测试，也不得填满 Workspace 或内置 SSD。
+
+## 构建与受保护目录
+
+普通测试不得写源码 `dist/`、覆盖 `build/reader/seed`，也不得更改正式 Universal 发布产物。源码 checkout 的 `npm run build` / `npm run build:reader` 保留 `prebuild` 门禁；正式构建从独立 Workspace 工作副本执行。需要测试构建时也必须把输出明确放入本次 Workspace `artifacts/` 或已验证的 Workspace 副本。
+
+不要修改 macOS 全局 `TMPDIR`、用户 shell 配置或其他项目缓存。共享 npm 缓存 `/Volumes/Workspace/Development/npm-cache` 保持原位；只有确认 Vantilo 独占的缓存才可单独迁移。清理磁盘时逐项检查归属、大小、修改时间、进程占用、唯一审计价值和可重建性；`du` 逻辑大小不等于 APFS 实际释放空间。

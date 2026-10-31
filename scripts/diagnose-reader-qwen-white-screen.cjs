@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Diagnose the already-running isolated Reader port in a hidden Electron renderer.
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'), os=require('node:os'),path=require('node:path');

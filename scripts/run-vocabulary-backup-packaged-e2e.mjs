@@ -2,12 +2,23 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
+import workspaceGuard from './workspace-test-environment.cjs';
+
+workspaceGuard.assertWorkspaceTestEnvironment();
 
 const appPath = process.env.VANTILO_VOCABULARY_E2E_PACKAGE_APP;
-if (!appPath || !path.isAbsolute(appPath) || !appPath.startsWith('/Volumes/Workspace/Development/Vantilo/workspaces/')) {
-  throw new Error('请提供位于 Workspace 外置工作副本内的隔离 E2E 应用路径。');
+const testRunsRoot = '/Volumes/Workspace/Development/Vantilo/test-runs/e2e/';
+if (!appPath || !path.isAbsolute(appPath) || !appPath.startsWith(testRunsRoot)) {
+  throw new Error('请提供位于已保留 Workspace 测试运行目录中的隔离 E2E 应用路径。');
 }
 if (await fs.realpath(appPath) !== path.resolve(appPath)) throw new Error('打包 E2E 应用路径含有符号链接或非规范路径。');
+const artifactSegment = appPath.indexOf('/artifacts/');
+if (artifactSegment < 0) throw new Error('打包应用未位于 artifacts 目录。');
+const sourceRunRoot = appPath.slice(0, artifactSegment);
+const sourceRunMarker = JSON.parse(await fs.readFile(path.join(sourceRunRoot, '.vantilo-test-run.json'), 'utf8'));
+if (sourceRunMarker.owner !== 'vantilo-e2e-run-v1' || sourceRunMarker.status !== 'COMPLETED_ARTIFACTS_PRESERVED' || sourceRunMarker.runRoot !== sourceRunRoot) {
+  throw new Error('打包应用来源测试运行未完成或不具备保留状态。');
+}
 const appBinary = path.join(appPath, 'Contents/MacOS/Vantilo Vocabulary E2E');
 await fs.access(appBinary);
 const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `vantilo-vocabulary-packaged-e2e-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-`)));
@@ -37,6 +48,13 @@ function run(mode, profile, downloads) {
     XDG_CONFIG_HOME: dirs.xdgConfig,
     XDG_CACHE_HOME: dirs.xdgCache,
     TMPDIR: dirs.tmp,
+    VANTILO_TEST_RUN_ROOT: process.env.VANTILO_TEST_RUN_ROOT,
+    VANTILO_TEST_PROFILE_ROOT: process.env.VANTILO_TEST_PROFILE_ROOT,
+    VANTILO_TEST_CHROMIUM_ROOT: process.env.VANTILO_TEST_CHROMIUM_ROOT,
+    VANTILO_TEST_READER_ROOT: process.env.VANTILO_TEST_READER_ROOT,
+    VANTILO_TEST_ARTIFACT_ROOT: process.env.VANTILO_TEST_ARTIFACT_ROOT,
+    VANTILO_TEST_RESULTS_ROOT: process.env.VANTILO_TEST_RESULTS_ROOT,
+    VANTILO_RUNTIME_MODULE_INVENTORY_PATH: process.env.VANTILO_RUNTIME_MODULE_INVENTORY_PATH,
     VANTILO_VOCABULARY_E2E_ROOT: base,
     VANTILO_VOCABULARY_E2E_MODE: mode,
     VANTILO_VOCABULARY_E2E_USER_DATA: profile,

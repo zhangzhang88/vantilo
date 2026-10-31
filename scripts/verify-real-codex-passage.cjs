@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Opt-in real Codex check for read_workspace_passage. Uses isolated local Vantilo data,
 // but the locally installed Codex CLI/authentication and remote service are real.
 const assert = require('node:assert/strict');

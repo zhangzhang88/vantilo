@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Test magazine issue progress using synthetic issue records and the built Reader UI.
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path');
 const {createRequire}=require('node:module');

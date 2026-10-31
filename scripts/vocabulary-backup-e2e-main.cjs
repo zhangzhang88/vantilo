@@ -1,5 +1,6 @@
 'use strict';
 
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');

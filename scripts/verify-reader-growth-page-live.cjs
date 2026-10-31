@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 const { app, BrowserWindow } = require('electron');
 const { createServer } = require('vite');
 const reactPlugin = require('@vitejs/plugin-react');
@@ -7,7 +8,7 @@ const path = require('node:path');
 
 async function main() {
   const repo = path.resolve(__dirname, '..');
-  const screenshotDir = process.env.VANTILO_GROWTH_PAGE_SCREENSHOT_DIR || '/tmp/vantilo-growth-page-acceptance';
+  const screenshotDir = process.env.VANTILO_GROWTH_PAGE_SCREENSHOT_DIR || path.join(process.env.VANTILO_TEST_ARTIFACT_ROOT, 'growth-page-acceptance');
   if (!path.isAbsolute(screenshotDir) || screenshotDir.startsWith(repo + path.sep)) throw new Error('Screenshot directory must be absolute and outside the repository.');
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'vantilo-growth-page-electron-'));
   app.setPath('userData', profile);
@@ -17,6 +18,7 @@ async function main() {
     await app.whenReady();
     server = await createServer({
       configFile: false,
+      cacheDir: path.join(process.env.VANTILO_TEST_ARTIFACT_ROOT, 'vite-cache-growth-page'),
       root: repo,
       plugins: [reactPlugin()],
       server: { host: '127.0.0.1', port: 0, strictPort: false, fs: { allow: [repo] } },

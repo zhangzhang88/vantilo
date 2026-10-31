@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Real isolated Electron/Chromium regression test for durable sentence-mode positions.
 // Each worker is a fresh Electron process sharing only a temporary profile/library and synthetic EPUBs.
 const { app, BrowserWindow, session } = require('electron');

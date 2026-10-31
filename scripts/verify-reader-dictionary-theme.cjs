@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Real Chromium computed-style verification, isolated from Vantilo user data.
 const { app, BrowserWindow } = require('electron');
 const { readFileSync, mkdtempSync, rmSync } = require('node:fs');

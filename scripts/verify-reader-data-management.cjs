@@ -1,15 +1,17 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Verify the actual Electron iframe using an isolated, synthetic profile and library.
 const { app, BrowserWindow, session } = require('electron');
 const fs = require('node:fs/promises');
-const { mkdirSync, mkdtempSync } = require('node:fs');
+const { mkdtempSync } = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { startPortableReader } = require('../electron/portable-reader-service.cjs');
 const { installReaderBackupDownloads } = require('../electron/reader-backup-download.cjs');
 const repo = path.resolve(__dirname, '..');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-mkdirSync(path.join(repo, 'build'), { recursive: true });
-let root = mkdtempSync(path.join(repo, 'build', 'data-ui-check-')), service, win;
+const artifactRoot = process.env.VANTILO_TEST_ARTIFACT_ROOT;
+if (!artifactRoot) throw new Error('Workspace test artifact root is required.');
+let root = mkdtempSync(path.join(artifactRoot, 'data-ui-check-')), service, win;
 mkdirSync(path.join(root, 'profile'), { recursive: true });
 app.setPath('userData', path.join(root, 'profile'));
 const timeout = setTimeout(() => { console.error('FAIL: data management UI timed out'); app.exit(1); }, 40000);

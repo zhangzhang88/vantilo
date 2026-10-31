@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // End-to-end ordinary Reader session authentication in a disposable Electron
 // profile. Uses the real supervisor, utility entry and Chromium iframe with a
 // synthetic EPUB. It never loads personal libraries or real Codex.

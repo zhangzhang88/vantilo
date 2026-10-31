@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Real Electron utility-process check of packaged assets; no model calls or upstream downloads.
 const fs = require('node:fs/promises');
 const path = require('node:path');

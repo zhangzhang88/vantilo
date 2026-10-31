@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Automated real Chromium check of the built Reader frontend. No Codex, sync or real user data.
 const {app,BrowserWindow,session}=require('electron');
 const fs=require('node:fs/promises');const {mkdtempSync,rmSync}=require('node:fs');const path=require('node:path');const os=require('node:os');const {randomBytes}=require('node:crypto');

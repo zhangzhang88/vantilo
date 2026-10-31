@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Run with: node node_modules/electron/cli.js scripts/verify-reader-layout.cjs
 // Uses actual Reader host markup and styles, without loading Reader or Codex.
 const { app, BrowserWindow } = require('electron');

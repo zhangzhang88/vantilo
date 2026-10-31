@@ -1,9 +1,10 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Exercise the built Reader TTS route with synthetic data and a cancellable mock provider.
 const fs=require('node:fs/promises');const path=require('node:path');
 const {buildServer}=require(process.env.VANTILO_READER_API_PATH ? path.resolve(process.env.VANTILO_READER_API_PATH) : '../build/reader/api.cjs');
-const root=path.resolve(__dirname,'../build');
+const artifactRoot=process.env.VANTILO_TEST_ARTIFACT_ROOT;if(!artifactRoot)throw new Error('Workspace test artifact root is required.');
 (async()=>{
- const dir=await fs.mkdtemp(path.join(root,'tts-server-check-'));let api;let mode='success';let notifyStart,notifyAbort;
+ const dir=await fs.mkdtemp(path.join(artifactRoot,'tts-server-check-'));let api;let mode='success';let notifyStart,notifyAbort;
  let started=new Promise(resolve=>notifyStart=resolve),aborted=new Promise(resolve=>notifyAbort=resolve);
  try{
   process.env.VANTILO_EDGE_TTS_EXECUTABLE='/nonexistent-edge-tts';

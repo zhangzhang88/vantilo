@@ -5,6 +5,9 @@ import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { build } from 'esbuild';
 import { packager } from '@electron/packager';
+import workspaceGuard from './workspace-test-environment.cjs';
+
+workspaceGuard.assertWorkspaceTestEnvironment();
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = '/Volumes/Workspace/Development/Vantilo/workspaces/';
@@ -17,10 +20,13 @@ const packageInfo = JSON.parse(await fs.readFile(path.join(repo, 'package.json')
 const electronInfo = require('electron/package.json');
 const buildRoot = path.join(repo, 'build');
 const readerRoot = path.join(buildRoot, 'vocabulary-backup-e2e-reader');
+const artifactRoot = process.env.VANTILO_TEST_ARTIFACT_ROOT;
+const resultsRoot = process.env.VANTILO_TEST_RESULTS_ROOT;
+if (!artifactRoot || !resultsRoot) throw new Error('Workspace test artifact and results roots are required.');
 const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 const unique = `${stamp}-${randomUUID().slice(0, 8)}`;
-const stage = path.join(buildRoot, `vocabulary-backup-e2e-stage-${unique}`);
-const output = path.join(buildRoot, `vocabulary-backup-e2e-package-${unique}`);
+const stage = path.join(artifactRoot, `vocabulary-backup-e2e-stage-${unique}`);
+const output = path.join(artifactRoot, `vocabulary-backup-e2e-package-${unique}`);
 
 for (const directory of [path.join(repo, 'dist'), path.join(repo, 'resources'), path.join(repo, 'licenses'), readerRoot]) {
   const stat = await fs.stat(directory).catch(() => null);
@@ -59,7 +65,7 @@ for (const entry of ['main.cjs', 'preload.cjs', 'runtime-entry.cjs', 'portable-r
   });
 }
 await fs.copyFile(path.join(repo, 'electron/vocabulary-backup-service.cjs'), path.join(stage, 'electron/vocabulary-backup-service.cjs'));
-for (const entry of ['vocabulary-backup-e2e-main.cjs', 'vocabulary-backup-e2e-driver.cjs', 'vocabulary-backup-e2e-fixtures.cjs']) {
+for (const entry of ['vocabulary-backup-e2e-main.cjs', 'vocabulary-backup-e2e-driver.cjs', 'vocabulary-backup-e2e-fixtures.cjs', 'workspace-test-environment.cjs']) {
   await fs.copyFile(path.join(repo, 'scripts', entry), path.join(stage, 'scripts', entry));
 }
 
@@ -80,5 +86,5 @@ const outputs = await packager({
 });
 const appPath = path.join(outputs[0], 'Vantilo Vocabulary E2E.app');
 await fs.access(path.join(appPath, 'Contents', 'MacOS', 'Vantilo Vocabulary E2E'));
-await fs.writeFile(path.join(buildRoot, `vocabulary-backup-e2e-package-path-${unique}.txt`), `${appPath}\n`, { flag: 'wx', mode: 0o600 });
+await fs.writeFile(path.join(resultsRoot, `vocabulary-backup-e2e-package-path-${unique}.txt`), `${appPath}\n`, { flag: 'wx', mode: 0o600 });
 console.log(`VOCABULARY_BACKUP_E2E_APP=${appPath}`);

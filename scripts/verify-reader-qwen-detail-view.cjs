@@ -1,3 +1,4 @@
+require('./workspace-test-environment.cjs').assertWorkspaceTestEnvironment();
 // Isolated actual Chromium/Reader synthetic-only Qwen Word Detail smoke.
 // No production profile, no personal EPUB, no network or actual model weights.
 const {app,BrowserWindow,session}=require('electron');
