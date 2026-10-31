@@ -2,7 +2,7 @@
 
 Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、杂志阅读、翻译、词汇学习和 Codex 工作台放在一个界面中，帮助你阅读英文内容，并使用自定义 API 或 ChatGPT 辅助理解。
 
-> **项目状态：0.1.13 Beta 预发布。** Universal ZIP 与 SHA-256 校验文件见 [GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.13)。该版本包含本地 macOS Dictionary Services 点词释义和有道英式/美式发音接入；有道 `dictvoice` 接口用于公开分发桌面应用的授权尚未取得书面确认，本项目不声称已获授权。项目所有者已确认拥有 Magazine Reader 与集成 Reader 源码的版权；这不自动涵盖第三方代码、依赖、媒体、杂志或在线服务。
+> **项目状态：0.1.14 Beta 预发布。** Universal ZIP 与 SHA-256 校验文件见 [GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.14)。本版新增个人词汇备份与合并恢复；备份不包含书刊原件、阅读进度、API 密钥或 Agent/Codex 数据。应用使用 ad-hoc 签名，未公证，Gatekeeper 接受状态未验证，Intel 真机未测试；详细限制见中文发布说明。有道 `dictvoice` 接口用于公开分发桌面应用的授权尚未取得书面确认，本项目不声称已获授权。
 
 ## 功能介绍
 
@@ -15,25 +15,25 @@ Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、�
 - **听书**：在支持的阅读页面播放中文朗读，使用 Ciallo TTS 的“晓辰多语言”音色。朗读文本会发送至该第三方服务，连续播放会预生成后续音频；服务可用性取决于网络和第三方服务状态。阅读中的英文单词发音是独立功能。
 - **Codex 工作台**：登录 ChatGPT 后，可以在独立工作台与 Codex 对话、选择可用模型，并在应用的权限边界内处理所选工作区内容。
 
-## 当前版本：0.1.13 macOS Universal Beta
+## 当前版本：0.1.14 macOS Universal Beta
 
 Universal ZIP 面向 Apple Silicon `arm64` 与 Intel `x86_64`。本次构建包内 Mach-O 架构已逐项检查；Intel 实机安装和功能测试**未运行**。候选包不包含内置本地 Qwen 模型；阅读功能使用用户配置的云端或局域网 API。签名为 ad-hoc，尚未 Developer ID 签名或 Apple 公证。
 
 ### 下载
 
-从 [v0.1.13 GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.13) 下载 Universal ZIP；[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.13/Vantilo-Beta-0.1.13-universal.zip)；[下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.13/Vantilo-Beta-0.1.13-universal.zip.sha256)。发布只包含 ZIP 与 sidecar，不生成或上传 DMG。本地构建报告保存在独立的 Vantilo 外置发布工作区。
+从 [v0.1.14 GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.14) 下载 Universal ZIP；[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.14/Vantilo-Beta-0.1.14-universal.zip)；[下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.14/Vantilo-Beta-0.1.14-universal.zip.sha256)。发布只包含 ZIP 与 sidecar，不生成或上传 DMG。本地构建报告保存在独立的 Vantilo 外置发布工作区。
 
 ## 安装说明与已知限制
 
 候选应用使用 ad-hoc 签名，没有 Apple Developer ID Team ID，也没有 Apple 公证票据。macOS 可能通过 Gatekeeper 阻止首次启动；用户可在 Finder 中 Control-click → Open，并根据系统提示在“系统设置 → 隐私与安全性”中处理。受管理设备的安全策略仍可能阻止启动。不要通过关闭 Gatekeeper 或其他系统安全保护来规避限制。
 
-Intel 实机安装测试尚未完成。项目所有者已确认 Reader 源码版权归属，并确认 `assembly-typing-game.tsx` 中 Worm 项目的布局/键盘生命周期代码为其自有版权且授权 Vantilo 公开发布；该确认不涵盖第三方依赖或其他媒体素材，仍须分别审查。
+Intel 实机安装测试尚未完成；本次 Beta 风险豁免不代表该项通过。项目所有者已确认 Reader 源码版权归属，并确认 `assembly-typing-game.tsx` 中 Worm 项目的布局/键盘生命周期代码为其自有版权且授权 Vantilo 公开发布；该确认不涵盖第三方依赖或其他媒体素材，仍须分别审查。
 
 打开已获准使用的测试候选后，可以从设置进入阅读设置，添加并测试自定义 API 服务。局域网 API 需要服务端监听可从本机访问的地址，并允许相应网络连接。使用 Codex / ChatGPT 时，在应用中登录 ChatGPT，并在阅读页面选择可用模型。在线服务需要网络、可用账号和相应服务权限。正式发行前还需完成干净安装、升级与数据保留测试。
 
 ## 杂志与更新
 
-应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.13 Universal ZIP 不包含 EPUB 文件**；用户可在应用中导入自己有权使用的电子书和期刊。
+应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.14 Universal ZIP 不包含 EPUB 文件**；用户可在应用中导入自己有权使用的电子书和期刊。
 
 应用内的**软件更新检查**与杂志新刊检查是两件事。Beta 版检查 Beta 预发布，发现新版本后可在应用中下载并校验文件；用户需要退出应用，手动解压并替换旧版。校验值用于检查文件完整性，不是独立的数字签名。历史版本的更新器可能仍只检查稳定版，可通过上方链接下载。
 
