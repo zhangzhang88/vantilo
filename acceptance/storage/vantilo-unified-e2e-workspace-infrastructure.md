@@ -108,3 +108,13 @@
 **以后要求 Agent 运行 Vantilo 的标准根目录、Reader 离线、Electron UI、词汇备份/打包/Universal E2E 时，默认使用统一 Workspace 入口，不需要再次提醒。** 直接运行受管脚本或 Vitest 会因缺少活动 Workspace 运行标记而停止；未知入口也不会被包装器放行。
 
 明确例外：依赖 macOS/Chrome 管理自身缓存的测试不能保证系统级副产物重定向；APFS 满盘镜像受系统挂载权限限制；本轮未运行真实 Codex/外部网络 E2E。这些限制不会被报告成 PASS。
+
+## Workspace 写入 EPERM 复核（2026-10-31）
+
+- 外置卷验证器通过：预期 UUID、APFS、`/Volumes/Workspace` 挂载点和可写探测均符合项目门禁；挂载信息包含 `noowners`。`test-runs`、`test-runs/e2e` 均为 UID 501 当前账户所有，权限为 `0700`，真实路径与预期一致，不是符号链接；未发现 ACL 或不可变文件标志。目录上的 `com.apple.provenance` 扩展属性存在，但没有证据表明它阻止写入。
+- 无额外路径授权的运行在 `scripts/run-tests-on-workspace.mjs` 创建唯一运行目录时返回 `EPERM`；失败目录不存在，测试负载尚未创建。失败位置是 Workspace `test-runs/e2e` 下的运行目录 `mkdir`，不是具体测试文件写入。
+- 通过 Codex 支持的受控路径授权重试同一个定向命令 `npm run test:workspace-infrastructure` 后，包装器成功在 Workspace 建立唯一运行目录，根目录基础设施测试 **9/9 通过**。启动日志确认 `TMPDIR`、隔离 `HOME` 和测试日志都位于本次 Workspace 运行目录；结束状态为 `COMPLETED`。临时 payload 已按既有成功清理规则移除，只保留 owner 标记、日志和结果目录。
+- 单独的唯一小文件探测也在 `/Volumes/Workspace/Development/Vantilo/test-runs/` 下完成写入、读回和精确删除，三步均 **PASS**。只删除了该探测创建的文件。
+- 因为同一 UID 和路径在授权前后结果不同，且授权后 filesystem 写入及项目定向测试均成功，EPERM 根因判定为 **Codex 执行环境的外部路径写入授权边界**，不是 Workspace POSIX 权限异常或运行器路径逻辑缺陷。`ps` 在未授权执行中也返回 EPERM；授权后的定向测试正常完成。没有独立启动普通 Terminal 进行对照，因此该比较为 **NOT RUN**；没有发现需要修改 macOS 隐私设置的证据。
+- 没有更改 Workspace 所有权、权限、ACL、扩展属性、挂载选项或项目代码。未授权入口继续安全失败，不回退内置盘。成功测试的临时数据通过启动日志确认位于 Workspace；本轮没有足以比较的内置盘 `df` 前后基线，因此不声称测得精确空间净变化。包装器记录的小型 SWC 原生缓存仍是项目文档规定的本地例外。
+- 以后 Codex 默认能否无提示写 Workspace 取决于会话的外部路径授权配置。本次已证明：授权可用时，现有 E2E 入口能在 Workspace 工作；授权缺失时会在创建运行目录前 fail-closed。若未来会话再次返回 `EPERM`，应通过 Codex 支持的 Workspace 访问授权重试，不要改权限、取消 UUID 门禁或回退到内置盘。

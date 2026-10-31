@@ -13,6 +13,8 @@ node scripts/run-tests-on-workspace.mjs --e2e scripts/run-vocabulary-backup-e2e.
 node scripts/run-tests-on-workspace.mjs --vitest tests/workspace-test-infrastructure.test.mjs
 ```
 
+如果验证器确认 Workspace 身份和可写状态，但创建唯一 `test-runs/e2e/run-*` 目录时返回 `EPERM`，先区分执行环境的外部路径授权与卷/目录权限。不要用 `chmod`、修改卷所有权或回退到内置盘处理；通过 Codex 支持的 Workspace 路径访问授权重试。授权前失败应发生在测试负载创建前，授权后仍失败时再根据实际文件系统错误调查项目门禁或目录状态。
+
 只允许共享入口中列明的脚本；未知脚本拒绝启动。所有受管独立 E2E 脚本在开始创建测试数据前自行调用同一环境守卫。根目录和 Reader Vitest 配置也会检查活动运行标记，因此直接执行 Vitest 不会绕过外置卷门禁。纯单元逻辑若使用系统临时目录，也应从 `npm test` 或 Reader 包装入口启动。
 
 ## 每次运行的路径和门禁
