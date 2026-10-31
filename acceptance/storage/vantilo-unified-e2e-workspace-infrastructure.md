@@ -109,7 +109,7 @@ Electron ready 日志实际记录：
 
 新增和调整的路径校验、失败保留和清理逻辑均在上述测试中验证。`acceptance/storage/internal-ssd-space-audit-20261031.md` 和 `acceptance/storage/vantilo-legacy-e2e-cleanup-20261031.md` 是开始本轮前已经存在的未跟踪审计资料，保持原样。
 
-本轮尚未创建 Git 提交；工作区中的既有未提交文件已经单独盘点。未 Push、未创建 Tag、未发布版本。
+本轮测试基础设施已由本地提交 `01313fc4bbe4c843fe8cde1d76222a0a24da179f` 纳入（44 个文件，含本报告）。提交后仍保留两份此前未跟踪的审计报告：`internal-ssd-space-audit-20261031.md` 与 `vantilo-legacy-e2e-cleanup-20261031.md`；它们未被暂存或修改。没有 Push、创建 Tag 或发布版本。
 
 ## 结论
 
