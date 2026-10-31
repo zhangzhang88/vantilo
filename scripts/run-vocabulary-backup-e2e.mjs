@@ -59,6 +59,7 @@ function electronEnv(mode, profile, downloads, resultPath, { backupPath = backup
     XDG_CONFIG_HOME: path.join(base, 'xdg-config'),
     XDG_CACHE_HOME: path.join(base, 'xdg-cache'),
     TMPDIR: dirs.tmp,
+    SWC_NATIVE_BINDING_CACHE: process.env.SWC_NATIVE_BINDING_CACHE,
     VANTILO_DEV_SERVER_URL: 'http://127.0.0.1:5173',
     VANTILO_DEV_READER_ASSETS: dirs.reader,
     VANTILO_VOCABULARY_E2E_ROOT: base,
@@ -171,14 +172,14 @@ try {
   console.log(`E2E isolation root: ${base}`);
   console.log('Building Reader production assets into a fresh temporary directory.');
   await run(process.execPath, [path.join(root, 'scripts/build-reader.mjs')], {
-    env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, LANG: process.env.LANG || 'en_US.UTF-8', VANTILO_READER_BUILD_OUTPUT: dirs.reader, VANTILO_SWIFT_MODULE_CACHE_PATH: path.join(base, 'swift-module-cache') },
+    env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, SWC_NATIVE_BINDING_CACHE: process.env.SWC_NATIVE_BINDING_CACHE, LANG: process.env.LANG || 'en_US.UTF-8', VANTILO_READER_BUILD_OUTPUT: dirs.reader, VANTILO_SWIFT_MODULE_CACHE_PATH: path.join(base, 'swift-module-cache') },
   });
 
   let resolveReady, rejectReady;
   const ready = { promise: new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; }), resolve: null, reject: null };
   ready.resolve = resolveReady;
   ready.reject = rejectReady;
-  vite = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, LANG: process.env.LANG || 'en_US.UTF-8' } });
+  vite = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin', HOME: dirs.home, TMPDIR: dirs.tmp, SWC_NATIVE_BINDING_CACHE: process.env.SWC_NATIVE_BINDING_CACHE, LANG: process.env.LANG || 'en_US.UTF-8' } });
   await waitForVite(vite, ready);
   const results = [];
   const only = process.env.VANTILO_VOCABULARY_E2E_ONLY;
@@ -186,6 +187,10 @@ try {
   if (only === 'target') {
     if (!existingBackup) throw new Error('target 单项调试需要 VANTILO_VOCABULARY_E2E_EXISTING_BACKUP');
     results.push(await runElectron('target', dirs.profileB, dirs.downloadsB, { backupPath: existingBackup }));
+  } else if (only === 'source-target') {
+    results.push(await runElectron('source', dirs.profileA, dirs.downloadsA));
+    results.push(await runElectron('target', dirs.profileB, dirs.downloadsB));
+    results.push(await runElectron('verify', dirs.profileB, dirs.downloadsB));
   } else if (only === 'rollback') {
     if (!existingBackup) throw new Error('rollback 单项测试需要 VANTILO_VOCABULARY_E2E_EXISTING_BACKUP');
     const profile = path.join(base, 'user-data-rollback-failure');

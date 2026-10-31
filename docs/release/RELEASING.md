@@ -26,6 +26,8 @@ Beta 版可以在以下条件全部满足时继续发布，同时保留对应门
 
 ## Before building
 
+For routine tests, use `npm test` from the canonical checkout. It first runs the Workspace verifier and places per-run temp files under the unique `/Volumes/Workspace/Development/Vantilo/test-runs/` directory. It must fail closed when Workspace is unavailable. This does not redirect `npm run build` or Reader build outputs: production builds must use the separate external work copy and documented output routing. See [测试环境与磁盘占用规则](../testing/workspace-test-environment.md).
+
 1. Inspect Git status, staged and unstaged changes, current branch and HEAD, version metadata, remote main, local and remote tags, and GitHub Releases. Preserve unrelated changes. Confirm the intended release commit and do not overwrite an existing version.
 2. Run relevant Reader tests, full root tests, typecheck and production build; record passes, failures and skips. Commit only reviewed files when explicitly authorized.
 3. Run `/bin/sh /Volumes/Workspace/_System/verify-workspace-volume.sh` before build writes or downloads, and inspect `df -h`. Confirm the expected Workspace UUID, APFS, `/Volumes/Workspace`, writable state and adequate free space. Stop if validation fails; do not silently put builds, caches or downloads on the internal disk.

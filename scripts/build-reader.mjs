@@ -17,6 +17,7 @@ const source = readerSourceRoot;
 const output = process.env.VANTILO_READER_BUILD_OUTPUT
   ? path.resolve(process.env.VANTILO_READER_BUILD_OUTPUT)
   : path.join(repo, 'build/reader');
+const viteCache = path.join(path.dirname(output), `${path.basename(output)}-vite-cache`);
 const legacySeedPath = path.join(output, 'seed');
 try {
   await fs.lstat(legacySeedPath);
@@ -38,7 +39,7 @@ const readerInventoryPlugin = {
   },
 };
 await buildWeb({ root: source, configFile: false, envFile: false, publicDir: false,
-  cacheDir: path.join(repo, 'build/reader-vite-cache'), resolve:{dedupe:['react','react-dom']}, plugins: [sharedReaderComposerPlugin(), parcelMacros.vite(), readerVariantPlugin(), react(), readerInventoryPlugin], base: '/',
+  cacheDir: viteCache, resolve:{dedupe:['react','react-dom']}, plugins: [sharedReaderComposerPlugin(), parcelMacros.vite(), readerVariantPlugin(), react(), readerInventoryPlugin], base: '/',
   build: { outDir: path.join(output, 'web'), emptyOutDir: true, sourcemap: false },
 });
 const api = await build({ stdin: {
