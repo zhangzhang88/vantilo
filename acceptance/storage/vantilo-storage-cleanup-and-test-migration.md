@@ -1,7 +1,7 @@
 # Vantilo 磁盘清理与测试环境外置迁移报告
 
 日期：2026-10-31
-正式仓库：`/Users/world/Downloads/code/Vantilo`
+正式仓库：Vantilo 规范源码仓库
 外置管理根：`/Volumes/Workspace/Development/Vantilo`
 
 ## 执行结论
@@ -15,7 +15,7 @@
 
 ## 卷身份与清理前后空间
 
-Workspace 验证脚本确认 UUID `2BA2763B-3ED8-47DF-B569-EC8A2F0AFAAE`、APFS、挂载路径 `/Volumes/Workspace` 和可写状态。系统 `diskutil info` 不可用，项目验证脚本通过 I/O Registry、挂载表和可写探测完成检查。没有卸载真实 Workspace。
+Workspace 验证脚本确认预期外置卷、APFS、挂载路径 `/Volumes/Workspace` 和可写状态。具体卷标识不写入仓库报告。系统 `diskutil info` 不可用，项目验证脚本通过 I/O Registry、挂载表和可写探测完成检查。没有卸载真实 Workspace。
 
 | 指标 | 清理前记录 | 清理后实测 | 说明 |
 |---|---:|---:|---|
@@ -93,11 +93,7 @@ SWC 1.16.20 的报错来自其原生 binding 缓存目录安全校验：Workspac
 
 其中包括 `temp/`、`electron-profiles/`、`reader-test-data/`、`artifacts/`、`cache/` 和 `logs/test-run.log`。脚本在创建测试目录前验证 Workspace UUID、APFS、可写和路径；失败即退出，不切换到内置盘或正式 userData。E2E 还在该目录下独立设置 Electron `userData`、Chromium `--user-data-dir`、session data、临时目录、下载目录和日志目录，并用 `app.getPath('userData')` 与预期绝对路径精确比较。Reader Vite cache 跟随 `VANTILO_READER_BUILD_OUTPUT` 放在输出目录旁边；E2E 不再把它写到源码 checkout 的 `build/`。
 
-已实测 E2E 隔离路径，例如：
-
-`/Volumes/Workspace/Development/Vantilo/test-runs/run-20261031002440-70589/temp/vantilo-vocabulary-backup-e2e-20261031002440-cEHrrb/`
-
-源环境和目标环境实际 `userData`、Chromium 用户目录、session、HOME、appData、tmp、crash dumps、downloads 和 logs 均位于该唯一根目录。测试未使用正式用户数据。
+已实测 E2E 隔离路径：源环境和目标环境实际 `userData`、Chromium 用户目录、session、HOME、appData、tmp、crash dumps、downloads 和 logs 均位于本次唯一 Workspace 运行根目录。测试未使用正式用户数据。运行时临时目录名、PID 和随机后缀不保留在仓库报告中。
 
 Workspace 未挂载及不可写状态没有通过实际卸载/改权限模拟，因为当前 Workspace 正在使用，不能为测试破坏它。入口和 verifier 的代码路径在验证失败时明确退出、无内置路径 fallback；这两种环境故障注入标记 **NOT RUN**。
 
@@ -113,11 +109,11 @@ Workspace 未挂载及不可写状态没有通过实际卸载/改权限模拟，
 
 | 检查 | 结果 | 证据/说明 |
 |---|---|---|
-| Workspace verifier | PASS | UUID、APFS、挂载路径和可写探测通过。 |
+| Workspace verifier | PASS | 预期外置卷、APFS、挂载路径和可写探测通过；设备专属卷标识不写入报告。 |
 | 定向根目录测试 `npm test -- tests/workspace.test.ts` | PASS | 7/7；SWC 修复后的前序验证。 |
-| 根目录完整测试 `npm test` | PASS | 87 个测试文件，584/584；运行目录 `run-20261031002204-68600`，日志在其 `logs/test-run.log`。 |
-| Reader 离线测试 `npm run test:reader:offline` | PASS | 95 个文件通过、1 个跳过；575 通过、7 跳过；运行目录 `run-20261031002220-69305`。 |
-| 词汇备份真实 Electron 常规 E2E | PASS | `VANTILO_VOCABULARY_E2E_ONLY=source-target npm run test:e2e:vocabulary-backup`；真实 UI/IPC/备份/恢复流程 source、target、verify 均 PASS，目录 `run-20261031002440-70589`。 |
+| 根目录完整测试 `npm test` | PASS | 87 个测试文件，584/584；日志保存在该次 Workspace 运行目录的 `logs/test-run.log`。 |
+| Reader 离线测试 `npm run test:reader:offline` | PASS | 95 个文件通过、1 个跳过；575 通过、7 跳过。 |
+| 词汇备份真实 Electron 常规 E2E | PASS | `VANTILO_VOCABULARY_E2E_ONLY=source-target npm run test:e2e:vocabulary-backup`；真实 UI/IPC/备份/恢复流程 source、target、verify 均 PASS，使用独立 Workspace 运行目录。 |
 | 完整词汇 E2E 的容量受限 APFS 镜像测试 | BLOCKED | 系统拒绝 `hdiutil attach`（权限被拒绝）。没有填满内置卷或 Workspace；没有删除或弱化该测试断言。 |
 | 类型检查 | PASS | `npm run typecheck`。 |
 | 源码仓库应用构建保护 | PASS | `npm run build` 在写入前拒绝。 |

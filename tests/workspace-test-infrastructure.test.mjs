@@ -63,7 +63,7 @@ describe('Workspace E2E run safety', () => {
     const outsideTemp = spawnSync(process.execPath, ['-e', code], { cwd: repo, env: { ...base, TMPDIR: '/private/tmp' }, encoding: 'utf8' });
     expect(outsideTemp.status).not.toBe(0);
     expect(`${outsideTemp.stdout}\n${outsideTemp.stderr}`).toMatch(/TMPDIR/);
-    const outsideHome = spawnSync(process.execPath, ['-e', code], { cwd: repo, env: { ...base, HOME: '/Users/world' }, encoding: 'utf8' });
+    const outsideHome = spawnSync(process.execPath, ['-e', code], { cwd: repo, env: { ...base, HOME: '/private/tmp/vantilo-outside-home-fixture' }, encoding: 'utf8' });
     expect(outsideHome.status).not.toBe(0);
     expect(`${outsideHome.stdout}\n${outsideHome.stderr}`).toMatch(/HOME/);
   });

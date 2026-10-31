@@ -1,7 +1,7 @@
 # Vantilo 统一 E2E Workspace 测试基础设施验收
 
 日期：2026-10-31
-项目：`/Users/world/Downloads/code/Vantilo`
+项目：Vantilo 规范源码仓库
 外置卷：`/Volumes/Workspace`
 结果：基础设施和常规测试 PASS；特殊 APFS 满盘镜像场景本轮 NOT RUN（既有系统挂载限制仍为 BLOCKED）。
 
@@ -9,7 +9,7 @@
 
 本轮只修改了测试入口、测试脚本路径、Vitest 配置及相关规则，没有修改 Reader、词汇备份恢复等产品业务功能。初始仓库为 `main`，HEAD `1d14d1c8454fffde54f8426a1b6987df8071a7bc`，比 `origin/main` 超前一个此前已有提交。初始工作区包含前一轮的 Workspace 测试修改，以及两份未跟踪审计报告；均保留，没有 reset、clean、Push 或发布。
 
-外置卷验证脚本确认 UUID `2BA2763B-3ED8-47DF-B569-EC8A2F0AFAAE`、挂载点 `/Volumes/Workspace`、APFS 和可写状态。入口按测试类别检查可用空间：根目录 Vitest 至少 2 GiB，其他 E2E 至少 8 GiB。挂载、身份、空间、路径、符号链接或写入探针任一检查失败均停止，不回退到内置盘。
+外置卷验证脚本确认预期挂载点 `/Volumes/Workspace`、APFS 和可写状态；卷 UUID 等设备专属标识不写入仓库报告。入口按测试类别检查可用空间：根目录 Vitest 至少 2 GiB，其他 E2E 至少 8 GiB。挂载、身份、空间、路径、符号链接或写入探针任一检查失败均停止，不回退到内置盘。
 
 ## 测试入口盘点与修复
 
@@ -40,15 +40,7 @@
 
 ## 实际隔离和故障证据
 
-最终真实 Electron E2E：
-
-`/Volumes/Workspace/Development/Vantilo/test-runs/e2e/run-20261031015401-17560-19a9f52d-bc00-489c-8072-a4f985220d7f`
-
-Electron ready 日志实际记录：
-
-- `app.getPath('userData')`: `/Volumes/Workspace/Development/Vantilo/test-runs/e2e/run-20261031015401-17560-19a9f52d-bc00-489c-8072-a4f985220d7f/temp/vantilo-layout-G8Mc3d`
-- `app.getPath('sessionData')`: `/Volumes/Workspace/Development/Vantilo/test-runs/e2e/run-20261031015401-17560-19a9f52d-bc00-489c-8072-a4f985220d7f/chromium-profile`
-- 两条路径均与该次 owner 标记的运行根目录一致；Electron/Chromium 实际渲染 28 个布局状态后正常退出，最终目录仅保留标记、日志、结果目录。
+最终真实 Electron E2E 使用 Workspace 下唯一的运行目录。Electron ready 日志实际记录的 `app.getPath('userData')` 与 `app.getPath('sessionData')` 均与该次 owner 标记的运行根目录一致；精确临时路径、PID 和随机标识不保留在仓库报告中。Electron/Chromium 实际渲染 28 个布局状态后正常退出，最终目录仅保留标记、日志、结果目录。
 
 故障注入/负向检查：
 
