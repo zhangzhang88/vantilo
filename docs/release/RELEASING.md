@@ -115,7 +115,7 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 ## 0.1.15 Beta 发布记录与流程改进
 
 - 发布版本 `v0.1.15`，构建提交 `997ca8e0c7fdf42f9d5c69b583f27c051d4475c8`；GitHub 预发布于 2026-11-09 12:41:55 UTC 上线，非草稿。完整记录见 [0.1.15 Beta 发布记录](0.1.15-beta.md)。
-- Universal ZIP 大小 485,635,387 字节，SHA-256 `81878a2cf4e1fa587bf24b59512a85648ab25bbe8067d95375c0cb182c138ade`。ZIP、sidecar 与 GitHub API 资产摘要、大小一致；ZIP 匿名 Range 返回 HTTP 206，首次 sidecar 匿名 GET 超时，未将其标为通过。
+- Universal ZIP 大小 485,635,387 字节，SHA-256 `81878a2cf4e1fa587bf24b59512a85648ab25bbe8067d95375c0cb182c138ade`。ZIP、sidecar 与 GitHub API 资产摘要、大小一致；ZIP 匿名 Range 返回 HTTP 206，首次 sidecar 匿名 GET 超时；随后经当前本机代理重试得到正确 SHA-256 校验行，匿名下载验证通过。
 - 根目录测试 619 项通过；Reader 离线测试 728 项通过、11 项跳过；类型检查通过。最终 ZIP 与源码身份匹配，17 个 Mach-O 均有 arm64/x86_64 切片；Intel helper 严格完整性、SHA-256、第三方许可、原创音效和 EPUB 排除门禁通过。
 - 从最终 ZIP 解压的真实应用在隔离 userData 下运行 E2E：Practice Lab 入口与 TTS API 设置 UI、词汇备份/恢复、失败回滚、重启持久化、并发写入、真实 APFS ENOSPC 和 EACCES 通过。最终包未执行真实 TTS 试听或 AI 内容生成质量验收；开发版已由用户真人验收，不扩大 PASS 范围。
 - 用户针对本次 `v0.1.15 Beta` 于 2026-11-09 明确接受四项分发风险：ad-hoc 无 Developer ID、未公证无票据、Gatekeeper 本机实测 rejected、Intel 真机 NOT RUN；仍保留真实状态，不沿用 v0.1.14 的风险豁免。既有有道 dictvoice 公开分发书面许可未获确认，如实披露。
