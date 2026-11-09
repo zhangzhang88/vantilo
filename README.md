@@ -2,7 +2,7 @@
 
 Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、杂志阅读、翻译、词汇学习和 Codex 工作台放在一个界面中，帮助你阅读英文内容，并使用自定义 API 或 ChatGPT 辅助理解。
 
-> **项目状态：0.1.14 Beta 预发布。** Universal ZIP 与 SHA-256 校验文件见 [GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.14)。本版新增个人词汇备份与合并恢复；备份不包含书刊原件、阅读进度、API 密钥或 Agent/Codex 数据。应用使用 ad-hoc 签名，未公证，Gatekeeper 接受状态未验证，Intel 真机未测试；详细限制见中文发布说明。有道 `dictvoice` 接口用于公开分发桌面应用的授权尚未取得书面确认，本项目不声称已获授权。
+> **项目状态：0.1.15 Beta 预发布。** Universal ZIP 与 SHA-256 校验文件见 [GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.15)。本版新增 Practice Lab、统一 Qwen3-TTS 朗读和游戏原创音效，并保留词汇备份与恢复。应用为 ad-hoc 签名、未公证，Gatekeeper 本机实测 rejected，Intel 真机未测；项目所有者已明确接受这四项仅限本版 Beta 的分发风险。现有有道 dictvoice 的公开分发书面授权尚未确认。
 
 ## 功能介绍
 
@@ -12,31 +12,32 @@ Vantilo 是一款面向 macOS 的阅读与 AI 助手应用。它把电子书、�
 - **自定义模型服务**：保存多个 MiniMax、DeepSeek 或局域网 OpenAI 兼容 API 服务，在阅读设置中切换使用；API 密钥由 macOS 安全存储管理。
 - **逐句阅读和点词释义**：逐句查看译文，点击英文单词查看系统词典和由当前阅读模型生成的语境释义；支持设置点击单词时自动发音。
 - **精选英文基础练习（开发版）**：直接从精选内容的英文生成原文填空和逐词输入，不依赖 AI 备课；未验证的中文释义不会显示。基础模式与 AI 精讲使用独立进度，原有精讲教材和草稿保留。精选内容可能是标明的 AI 简易改写，不应误认为原著引文。
+- **Practice Lab（0.1.15 Beta）**：输入英文文章，选择原文填词或句子组装，通过手动选择的 AI 服务生成、预览并编辑练习；不自动写入正式课程，AI 输出仍需检查。
 - **中文目录**：可手动选择目录翻译模型并生成目录；导入书籍或检查新刊不会自动翻译整本内容。
-- **听书与逐句英语朗读（开发版）**：中文听书和逐句英文朗读使用 Qwen3-TTS 0.6B 的 PCM 流式播放。设置页可以填写独立 TTS API 的局域网地址、模型和 API Key，保存在本机 Reader 私有用户数据目录，不把密钥发送到渲染页面；有已配置的 API 时不会启动额外的本地 Worker，也不会静默回退 Ciallo。中文听书只显示五种中文音色，逐句英语只显示 Aiden 和 Ryan。已发布的 v0.1.14 仍是旧版实现；点词发音是独立功能。
+- **听书与逐句英语朗读（0.1.15 Beta）**：中文听书和逐句英文朗读使用 Qwen3-TTS 0.6B 的 PCM 流式播放。设置页可以填写独立 TTS API 的局域网地址、模型和 API Key，保存在本机 Reader 私有用户数据目录，不把密钥发送到渲染页面；有已配置的 API 时不会启动额外的本地 Worker，也不会静默回退 Ciallo。中文听书只显示五种中文音色，逐句英语只显示 Aiden 和 Ryan。该功能已包含在 v0.1.15 Beta；点词发音是独立功能。
 
   推荐 Mac mini 在 Workspace 外置盘独立部署 speech.cpp HTTP 服务及鉴权 LAN 网关（例如 `http://192.168.3.54:18439/v1`，模型 `qwen3-tts-0.6b`），每台 Vantilo 通过设置页手动配置自己的 API。音频仅通过本机 Reader 服务端转发，不将 API Key 返回到浏览器或写入 localStorage。开发版如未配置 API，则保留独立本机 Worker 兼容路径，可使用 `VANTILO_SPEECH_CPP_BIN`、`VANTILO_SPEECH_CPP_MODEL` 指定模型和可执行文件；不自动下载或打包模型。当前服务仅供可信局域网使用，弱密钥与 HTTP 不适合公网。
 - **Codex 工作台**：登录 ChatGPT 后，可以在独立工作台与 Codex 对话、选择可用模型，并在应用的权限边界内处理所选工作区内容。
 
-## 当前版本：0.1.14 macOS Universal Beta
+## 当前版本：0.1.15 macOS Universal Beta
 
 Universal ZIP 面向 Apple Silicon `arm64` 与 Intel `x86_64`。本次构建包内 Mach-O 架构已逐项检查；Intel 实机安装和功能测试**未运行**。候选包不包含内置本地 Qwen 模型；阅读功能使用用户配置的云端或局域网 API。签名为 ad-hoc，尚未 Developer ID 签名或 Apple 公证。
 
 ### 下载
 
-从 [v0.1.14 GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.14) 下载 Universal ZIP；[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.14/Vantilo-Beta-0.1.14-universal.zip)；[下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.14/Vantilo-Beta-0.1.14-universal.zip.sha256)。发布只包含 ZIP 与 sidecar，不生成或上传 DMG。本地构建报告保存在独立的 Vantilo 外置发布工作区。
+从 [v0.1.15 GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.15) 下载 Universal ZIP；[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.15/Vantilo-Beta-0.1.15-universal.zip)；[下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.15/Vantilo-Beta-0.1.15-universal.zip.sha256)。发布只包含 ZIP 与 sidecar，不生成或上传 DMG。本地构建报告保存在独立的 Vantilo 外置发布工作区。
 
 ## 安装说明与已知限制
 
 候选应用使用 ad-hoc 签名，没有 Apple Developer ID Team ID，也没有 Apple 公证票据。macOS 可能通过 Gatekeeper 阻止首次启动；用户可在 Finder 中 Control-click → Open，并根据系统提示在“系统设置 → 隐私与安全性”中处理。受管理设备的安全策略仍可能阻止启动。不要通过关闭 Gatekeeper 或其他系统安全保护来规避限制。
 
-Intel 实机安装测试尚未完成；本次 Beta 风险豁免不代表该项通过。项目所有者已确认 Reader 源码版权归属，并确认 `assembly-typing-game.tsx` 中 Worm 项目的布局/键盘生命周期代码为其自有版权且授权 Vantilo 公开发布；该确认不涵盖第三方依赖或其他媒体素材，仍须分别审查。
+Intel 真机安装测试尚未完成（NOT RUN）；项目所有者针对 v0.1.15 Beta 明确接受该项分发风险，并未将其记为通过。项目所有者已确认 Reader 源码版权归属，并确认 `assembly-typing-game.tsx` 中 Worm 项目的布局/键盘生命周期代码为其自有版权且授权 Vantilo 公开发布；该确认不涵盖第三方依赖或其他媒体素材，仍须分别审查。
 
-打开已获准使用的测试候选后，可以从设置进入阅读设置，添加并测试自定义 API 服务。局域网 API 需要服务端监听可从本机访问的地址，并允许相应网络连接。使用 Codex / ChatGPT 时，在应用中登录 ChatGPT，并在阅读页面选择可用模型。在线服务需要网络、可用账号和相应服务权限。正式发行前还需完成干净安装、升级与数据保留测试。
+打开已获准使用的测试候选后，可以从设置进入阅读设置，添加并测试自定义 API 服务。局域网 API 需要服务端监听可从本机访问的地址，并允许相应网络连接。使用 Codex / ChatGPT 时，在应用中登录 ChatGPT，并在阅读页面选择可用模型。在线服务需要网络、可用账号和相应服务权限。本次 Beta 已完成最终 ZIP 解包应用的隔离词汇备份、恢复与重启持久化 E2E；跨设备升级和 Intel 真机测试仍未执行。
 
 ## 杂志与更新
 
-应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.14 Universal ZIP 不包含 EPUB 文件**；用户可在应用中导入自己有权使用的电子书和期刊。
+应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.15 Universal ZIP 不包含 EPUB 文件**；用户可在应用中导入自己有权使用的电子书和期刊。
 
 应用内的**软件更新检查**与杂志新刊检查是两件事。Beta 版检查 Beta 预发布，发现新版本后可在应用中下载并校验文件；用户需要退出应用，手动解压并替换旧版。校验值用于检查文件完整性，不是独立的数字签名。历史版本的更新器可能仍只检查稳定版，可通过上方链接下载。
 
@@ -46,7 +47,7 @@ Intel 实机安装测试尚未完成；本次 Beta 风险豁免不代表该项�
 
 - 导入的书籍、阅读记录、外观设置、API 服务配置和对话记录保存在本机应用数据目录。数据管理中的词汇备份仅包含个人词汇及相关学习记录和短来源片段；不包含 EPUB/杂志原文件、文章全文、阅读进度、Reader 设置、API Key 或密文、ChatGPT 登录、Agent 会话或 Chromium 数据。
 - 选择自定义 API 或 Codex / ChatGPT 时，阅读内容会发送到所选服务端点。使用前请核对服务地址、隐私与账号权限。
-- 开发版配置独立 TTS API 后，中文听书和英文逐句朗读通过本机 Reader 后端访问用户填写的局域网服务，不直接在前端持有密钥；未配置 API 时才沿用本机 Worker。v0.1.14 已发布版本仍使用原有 Ciallo 服务，不受本地源码变更影响。
+- v0.1.15 Beta 配置独立 TTS API 后，中文听书和英文逐句朗读通过本机 Reader 后端访问所配置的可信局域网服务，不向页面返回密钥；未配置 API 时使用独立本机 Worker 兼容路径。发布包不附带 Qwen3-TTS 模型权重。
 - 英文点词发音会将所选单词发送至 `dict.youdao.com/dictvoice`。自动发音默认开启，可在阅读设置关闭；英式/美式手动发音按钮也会请求该服务。有道接口用于公开分发桌面应用的授权尚未获得书面确认，属于本 Beta 的已知第三方服务风险；未声称已获授权。请勿发送敏感内容。
 - Codex 工作台使用应用独立的登录目录。阅读任务和工作台使用独立执行通道，不共用项目会话；权限、工作区边界及用户批准仍然适用。
 - 本地阅读服务绑定回环地址并使用会话验证；这并不等于可以忽略系统安全设置或向不可信程序开放本机数据。

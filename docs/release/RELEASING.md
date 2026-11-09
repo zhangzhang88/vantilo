@@ -112,6 +112,15 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 - GitHub Device Authorization 恢复后，CLI 登录有效；规则变更及原 12 个源码提交已推送。Tag 固定在构建提交；README、中文发布记录及本 SOP 作为后续文档提交更新。
 - 本次流程改进：仅允许针对明确版本且由用户具体接受的 Beta 分发风险解除阻断；必须保留 FAIL/NOT RUN/UNKNOWN 状态和风险说明。源测试、外置盘、Intel helper、产物身份/校验、打包功能与数据安全等门禁不在豁免范围内。
 
+## 0.1.15 Beta 发布记录与流程改进
+
+- 发布版本 `v0.1.15`，构建提交 `997ca8e0c7fdf42f9d5c69b583f27c051d4475c8`；GitHub 预发布于 2026-11-09 12:41:55 UTC 上线，非草稿。完整记录见 [0.1.15 Beta 发布记录](0.1.15-beta.md)。
+- Universal ZIP 大小 485,635,387 字节，SHA-256 `81878a2cf4e1fa587bf24b59512a85648ab25bbe8067d95375c0cb182c138ade`。ZIP、sidecar 与 GitHub API 资产摘要、大小一致；ZIP 匿名 Range 返回 HTTP 206，首次 sidecar 匿名 GET 超时，未将其标为通过。
+- 根目录测试 619 项通过；Reader 离线测试 728 项通过、11 项跳过；类型检查通过。最终 ZIP 与源码身份匹配，17 个 Mach-O 均有 arm64/x86_64 切片；Intel helper 严格完整性、SHA-256、第三方许可、原创音效和 EPUB 排除门禁通过。
+- 从最终 ZIP 解压的真实应用在隔离 userData 下运行 E2E：Practice Lab 入口与 TTS API 设置 UI、词汇备份/恢复、失败回滚、重启持久化、并发写入、真实 APFS ENOSPC 和 EACCES 通过。最终包未执行真实 TTS 试听或 AI 内容生成质量验收；开发版已由用户真人验收，不扩大 PASS 范围。
+- 用户针对本次 `v0.1.15 Beta` 于 2026-11-09 明确接受四项分发风险：ad-hoc 无 Developer ID、未公证无票据、Gatekeeper 本机实测 rejected、Intel 真机 NOT RUN；仍保留真实状态，不沿用 v0.1.14 的风险豁免。既有有道 dictvoice 公开分发书面许可未获确认，如实披露。
+- 修复流程问题：旧 `hdiutil attach` 在新版 macOS 测试镜像上权限受限，改用 `diskutil image attach` 实测 ENOSPC；SWC 原生缓存安全路径校验受外置卷父目录权限影响，改用安全的独立 APFS 缓存卷解决，不降低安全门禁。构建始终在 Workspace 外置副本，未覆盖历史发行产物。标签固定构建提交，README 和文档在发布后独立提交。
+
 ## 用户数据保护发布门禁
 
 - 不得未经授权删除用户数据。Keychain 或密钥解密失败不得重建空 API 配置；保存失败必须保留原配置。
