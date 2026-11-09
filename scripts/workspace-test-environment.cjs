@@ -87,11 +87,20 @@ function assertWorkspaceTestEnvironment() {
   const availableBytes = statfs.bavail * statfs.bsize;
   try { assertAvailableSpace(availableBytes, requiredFreeBytes); }
   catch (error) { throw new Error(`拒绝运行 E2E：${error.message}`); }
-  for (const [label, variable] of [['HOME', 'HOME'], ['CODEX_HOME', 'CODEX_HOME'], ['XDG_CONFIG_HOME', 'XDG_CONFIG_HOME'], ['XDG_CACHE_HOME', 'XDG_CACHE_HOME']]) {
+  for (const [label, variable] of [['HOME', 'HOME'], ['XDG_CONFIG_HOME', 'XDG_CONFIG_HOME'], ['XDG_CACHE_HOME', 'XDG_CACHE_HOME']]) {
     const value = process.env[variable];
     if (!value || !path.isAbsolute(value) || !isWithin(canonicalRun, path.resolve(value))) throw new Error(`拒绝运行 E2E：${label} 未隔离到本次 Workspace 运行目录。`);
     const canonical = fs.realpathSync(value);
     if (canonical !== path.resolve(value) || fs.lstatSync(value).isSymbolicLink() || !isWithin(canonicalRun, canonical)) throw new Error(`拒绝运行 E2E：${label} 存在符号链接逃逸。`);
+  }
+  const codexHome = process.env.CODEX_HOME;
+  const externalCodexHome = process.env.VANTILO_TEST_EXTERNAL_CODEX_HOME;
+  if (externalCodexHome) {
+    const expectedRoot = path.join(WORKSPACE_ROOT, 'acceptance');
+    const info = fs.lstatSync(externalCodexHome);
+    if (codexHome !== externalCodexHome || !path.isAbsolute(externalCodexHome) || !isWithin(expectedRoot, externalCodexHome) || fs.realpathSync(externalCodexHome) !== externalCodexHome || info.isSymbolicLink() || !info.isDirectory() || (info.mode & 0o077)) throw new Error('拒绝运行 E2E：外置 CODEX_HOME 必须是 acceptance 内权限私有的真实目录。');
+  } else if (!codexHome || !path.isAbsolute(codexHome) || !isWithin(canonicalRun, path.resolve(codexHome)) || fs.realpathSync(codexHome) !== path.resolve(codexHome) || fs.lstatSync(codexHome).isSymbolicLink()) {
+    throw new Error('拒绝运行 E2E：CODEX_HOME 未隔离到本次运行目录。');
   }
   for (const variable of ['VANTILO_TEST_PROFILE_ROOT', 'VANTILO_TEST_CHROMIUM_ROOT', 'VANTILO_TEST_READER_ROOT', 'VANTILO_TEST_ARTIFACT_ROOT', 'VANTILO_TEST_RESULTS_ROOT']) {
     const value = process.env[variable];

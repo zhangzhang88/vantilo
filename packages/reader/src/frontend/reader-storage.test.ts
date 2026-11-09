@@ -24,6 +24,27 @@ describe("reader storage failure recovery", () => {
     expect(JSON.parse(data.get(NOTES_STATE_KEY)!).items[0].text).toBe("Latest note");
   });
 
+  it("cancels only a pending failed deletion without erasing unrelated pending edits",()=>{
+    const data=new Map([["practice","old lesson"]]);
+    let blocked=true;
+    const storage=createReaderStorage({
+      getItem:(key)=>data.get(key)??null,
+      setItem:(key,value)=>{if(blocked)throw new Error("disk failure");data.set(key,value);},
+      removeItem:(key)=>{data.delete(key);}
+    });
+    storage.setItem("practice","deleted lesson list");
+    storage.setItem("notes","user notes");
+    expect(storage.getPendingKeys()).toEqual(["practice","notes"]);
+    expect(storage.discardPendingKey("practice")).toBe(true);
+    expect(storage.discardPendingKey("practice")).toBe(false);
+    expect(storage.getItem("practice")).toBe("old lesson");
+    expect(storage.getItem("notes")).toBe("user notes");
+    blocked=false;
+    storage.retry();
+    expect(data.get("practice")).toBe("old lesson");
+    expect(data.get("notes")).toBe("user notes");
+  });
+
   it("evicts reproducible caches without removing user meanings or unrelated keys", () => {
     const cache = "magazine-reader-paragraph-translations-v1";
     const data = new Map([[cache, "large"], ["economist-reader-word-context-v1", "user meaning"], ["unrelated", "keep"]]);

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { Page } from "./navigation-state";
 
 export interface NavigationItem { id: Page | "recent"; label: string; icon: string; count?: number; }
-const primaryIds = ["library", "books", "articles", "vocabulary", "review"];
+const primaryIds = ["library", "books", "articles", "practice", "vocabulary", "review"];
 const secondaryIds = ["recent", "history", "bookmarks", "notes"];
 
 function NavIcon({ name }: { name: "search" | "settings" | "more" | "menu" }) {

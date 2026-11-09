@@ -5,7 +5,7 @@
 .reader-page-shell.is-chinese-mode .reader-progress-line > span { background: var(--theme-accent); }
 .reader-page-shell.is-chinese-mode .reading-page { padding-top: 30px; padding-bottom: 90px; }
 .reader-page-shell.is-chinese-mode .reader-toolbar-center { display: block; }
-.reader-page-shell.is-chinese-mode .reader-toolbar-actions > :not(.reader-chinese-button):not(.reader-shortcuts-button):not(.reader-source-button):not(.reader-global-navigation) { display: none; }
+.reader-page-shell.is-chinese-mode .reader-toolbar-actions > :not(.reader-chinese-button):not(.reader-shortcuts-button):not(.reader-source-button):not(.reader-copy-english-button):not(.reader-global-navigation) { display: none; }
 .chinese-reading { color: var(--theme-ink); font: inherit; line-height: 1.9; }
 .chinese-reading-heading { margin-bottom: 20px; }
 .chinese-reading-heading > span, .chinese-reading-heading > small { color: var(--theme-muted); font: 13px/1.6 system-ui,sans-serif; }
@@ -16,8 +16,10 @@
 .chinese-player .chinese-player-toggle { color: var(--theme-on-accent); background: var(--theme-accent); }
 .chinese-player > span { flex: 1; min-width: 0; }.chinese-player > span small { display: block; color: var(--theme-muted); font-size: 12px; }
 .chinese-player details { position: relative; }.chinese-player summary { list-style: none; }.chinese-player summary::-webkit-details-marker { display: none; }
-.chinese-player-settings { position: absolute; right: 0; top: calc(100% + 8px); width: 210px; padding: 16px; border: 1px solid var(--theme-line); border-radius: 10px; background: var(--theme-surface); box-shadow: var(--theme-shadow); }
-.chinese-player-settings label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }.chinese-player-settings small { display: block; color: var(--theme-muted); font-size: 12px; margin-top: 12px; }
+.chinese-player-settings { position: absolute; right: 0; top: calc(100% + 8px); box-sizing: border-box; width: min(312px,calc(100vw - 32px)); max-height: min(360px,calc(100dvh - 130px)); overflow-y: auto; padding: 16px; border: 1px solid var(--theme-line); border-radius: 12px; background: var(--theme-surface); box-shadow: var(--theme-shadow); display: grid; gap: 14px; }
+.chinese-player-settings label { display: grid; grid-template-columns: minmax(0,1fr); gap: 6px; min-width: 0; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.chinese-player-settings select { box-sizing: border-box; display: block; width: 100%; min-width: 0; max-width: 100%; height: 40px; padding: 7px 28px 7px 10px; border: 1px solid var(--theme-line); border-radius: 8px; background: var(--theme-surface); color: var(--theme-ink); font: 400 13px/1.4 system-ui,sans-serif; text-overflow: ellipsis; }
+.chinese-player-settings small { display: block; color: var(--theme-muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 .chinese-reading-paragraph { position: relative; border-left: 3px solid transparent; padding: 10px 14px; margin: 0 0 14px; scroll-margin-top: 170px; border-radius: 6px; }
 .chinese-reading-paragraph p { margin: 0; cursor: pointer; }.chinese-reading-paragraph.is-current { border-left-color: var(--theme-line); }.chinese-reading-paragraph.is-speaking { border-left-color: var(--theme-accent); background: var(--theme-selected); }
 .chinese-paragraph-play { position: absolute; left: -26px; top: 12px; border: 0; background: transparent; color: var(--theme-muted); width: 24px; height: 32px; padding: 0; cursor: pointer; opacity: 0; }
@@ -31,4 +33,5 @@
   .reader-page-shell.is-chinese-mode .reader-toolbar { height: auto; }
   .chinese-player { top: 120px; padding: 8px; gap: 6px; }.chinese-player button,.chinese-player summary { width: 38px; flex-basis: 38px; min-height: 44px; }
   .chinese-reading-paragraph { padding: 10px 8px; }.chinese-paragraph-play { left: -19px; opacity: 1; width: 18px; }
+  .chinese-player-settings { padding: 14px; width: min(300px,calc(100vw - 24px)); max-height: min(340px,calc(100dvh - 180px)); }
 }

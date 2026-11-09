@@ -23,6 +23,15 @@ function setup({connected=true}={}) {
 }
 
 describe('contextual gloss follows the selected reading model',()=>{
+  it('accepts a hyphenated compound as one phrase and returns a brief Chinese meaning',async()=>{
+    const c=setup();
+    c.runAi.mockResolvedValueOnce('区块链情报');
+    const response=await c.call('POST','/api/vantilo-context-gloss',{
+      engineId:'codex:gpt-6-luna',word:'blockchain-intelligence',sentence:'TRM Labs, a blockchain-intelligence company, investigated the hack.',
+    });
+    expect(response).toMatchObject({status:200,result:{meaningZh:'区块链情报'}});
+    expect(c.runAi.mock.calls[0][0].input).toContain('blockchain-intelligence');
+  });
   it('uses the selected Codex model and reports its identity',async()=>{
     const c=setup();
     const state=await c.call('GET','/api/vantilo-context-gloss/status',undefined,{engineId:'codex:gpt-6-luna'});

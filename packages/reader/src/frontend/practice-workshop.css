@@ -1,0 +1,59 @@
+.practice-workshop { max-width: 1500px; margin: 0 auto; padding: 20px 30px 50px; color: var(--text-primary, inherit); container-type: inline-size; }
+.practice-workshop > header { margin-bottom: 22px; }
+.practice-workshop h1 { margin: 0 0 8px; font-size: 26px; }
+.practice-workshop h2 { margin: 2px 0 6px; font-size: 18px; }
+.practice-workshop p { line-height: 1.55; }
+.practice-workshop-mode-header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-size:15px; font-weight:650; margin-bottom:12px; }
+.practice-workshop-mode-header span { font-size:12px; font-weight:400; opacity:.7; }
+.practice-workshop-mode-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:22px; }
+.practice-workshop-mode-card { display:grid; text-align:left; gap:8px; min-width:0; padding:17px 19px; border:1.5px solid var(--border,#7776); border-radius:14px; background:var(--surface,transparent); color:inherit; font:inherit; transition:border-color .12s,background .12s; cursor:pointer; }
+.practice-workshop-mode-card:hover:not(:disabled) { border-color:var(--theme-accent,#49928e); }
+.practice-workshop-mode-card:focus-visible { outline:3px solid var(--theme-accent,#49928e); outline-offset:3px; }
+.practice-workshop-mode-card.is-selected { border-color:var(--theme-accent,#49928e); background:color-mix(in srgb,var(--theme-accent,#49928e) 9%, var(--surface,transparent)); }
+.practice-workshop-mode-card:disabled { cursor:default; opacity:.65; }
+.practice-workshop-mode-top { display:flex; align-items:center; gap:10px; font-size:17px; }
+.practice-workshop-mode-icon { display:grid; place-items:center; flex:none; width:28px; height:28px; border-radius:8px; background:var(--bg,#7772); }
+.practice-workshop-mode-check { margin-left:auto; min-width:18px; text-align:center; color:var(--theme-accent,#49928e); }
+.practice-workshop-mode-description { font-size:13px; opacity:.82; }
+.practice-workshop-mode-example { padding-top:7px; border-top:1px solid var(--border,#7773); font-size:14px; font-weight:550; }
+.practice-workshop-mode-caption { font-size:12px; opacity:.7; }
+.practice-workshop-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.12fr); gap:20px; align-items:start; }
+.practice-workshop-pane { display:grid; gap:14px; min-width:0; padding:22px; border:1px solid var(--border,#5555); border-radius:14px; background:var(--surface,transparent); }
+.practice-workshop label { display:grid; gap:6px; font-size:13px; font-weight:600; }
+.practice-workshop input,.practice-workshop textarea,.practice-workshop select { width:100%; box-sizing:border-box; border:1px solid var(--border,#7777); border-radius:8px; background:var(--bg,transparent); color:inherit; padding:10px 12px; font:inherit; font-size:14px; }
+.practice-workshop textarea { resize:vertical; }
+.practice-workshop-prompt { min-height:180px; font-family:inherit; }
+.practice-workshop-advanced { border:1px solid var(--border,#7775); border-radius:10px; padding:0 13px; min-width:0; }
+.practice-workshop-advanced > summary { cursor:pointer; padding:13px 0; font-weight:600; }
+.practice-workshop-advanced > summary span { font-weight:400; font-size:12px; opacity:.72; margin-left:12px; }
+.practice-workshop-advanced[open] { padding-bottom:15px; }
+.practice-workshop-advanced[open] > label,.practice-workshop-advanced[open] > details,.practice-workshop-advanced[open] > .practice-workshop-note,.practice-workshop-advanced[open] > .practice-workshop-actions { margin-top:12px; }
+.practice-workshop-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.practice-workshop button { cursor:pointer; }
+.practice-workshop button:disabled { opacity:.45; cursor:default; }
+.practice-workshop-note { margin:0; font-size:12px; opacity:.72; }
+.practice-workshop-error { color:#e58b8b; }
+.practice-workshop-source-warning { border:1px solid var(--border,#7777); border-radius:9px; padding:10px 12px; display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:13px; }
+.practice-workshop-empty { min-height:170px; display:grid; place-content:center; text-align:center; gap:8px; opacity:.8; }
+.practice-workshop-empty p { font-size:13px; margin:0; }
+.practice-workshop-results { list-style:none; padding:0; margin:0; max-height:58vh; overflow:auto; display:grid; gap:12px; }
+.practice-workshop-results li { border:1px solid var(--border,#7775); border-radius:10px; padding:12px; display:grid; gap:8px; }
+.practice-workshop-item-head,.practice-workshop-saved li { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.practice-workshop-item-head > div,.practice-workshop-saved li > div { display:flex; gap:8px; }
+.practice-workshop-saved { list-style:none; padding:0; margin:0; display:grid; gap:12px; }
+.practice-workshop-saved li { border-bottom:1px solid var(--border,#7774); padding:8px 0; }
+.practice-workshop-saved li { gap: 12px; min-width:0; }
+.practice-workshop-saved-detail { min-width:0; display:grid; gap:4px; flex:1; }
+.practice-workshop-saved-detail strong { font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.practice-workshop-saved-detail small { font-size:12px; opacity:.7; }
+.practice-workshop-saved-controls { display:flex; flex-shrink:0; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.practice-workshop-saved-controls button { white-space:nowrap; }
+.practice-workshop-saved li.is-confirming-delete { flex-wrap:wrap; }
+.practice-workshop-delete-confirm { flex:0 0 100%; display:flex; align-items:center; flex-wrap:wrap; gap:9px; padding:10px 12px; border:1px solid var(--border,#7775); border-radius:9px; background:var(--bg,#7771); font-size:13px; }
+.practice-workshop-delete-confirm > span { flex:1 1 180px; line-height:1.4; }
+.practice-workshop-delete-confirm button { white-space:nowrap; }
+.practice-workshop-delete-confirm button:first-of-type { border-color:#b85b5b; }
+.practice-workshop-saved-status { align-self:center; font-size:13px; opacity:.8; }
+@container (max-width:980px) { .practice-workshop-grid { grid-template-columns:1fr; } .practice-workshop-pane { padding:17px; } }
+@container (max-width:580px) { .practice-workshop-mode-cards { grid-template-columns:1fr; } .practice-workshop-mode-header { flex-wrap:wrap; } .practice-workshop-mode-card { padding:14px; } .practice-workshop-advanced > summary span { display:block; margin:5px 0 0 15px; } }
+@media(max-width:750px){ .practice-workshop { padding:16px; } }

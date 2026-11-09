@@ -125,13 +125,33 @@ it('keeps unavailable documents in history but removes the unavailable primary c
   expect(()=>adaptReaderSource('new layout', '/source/src/frontend/global-reading-list.tsx')).toThrow(/seam changed/);
 });
 
-it('restores the original assistant functionality while replacing its composer, login and external TTS',()=>{
+it('preserves the Qwen3-TTS assistant read-aloud when adapting Vantilo composer and login',()=>{
   const filename=`${readerSourceRoot}/src/frontend/codex-prep-panel.tsx`;
   const adapted=adaptReaderSource(readFileSync(filename,'utf8'),filename);
   for(const feature of ['ReaderSharedComposer','PREP_QUICK_PROMPTS','READING_ASSISTANT_PRESETS','draftStorageKey','locateParagraph','重新回答','清空讨论记录','选择备课章节','确认内容并保存到精选阅读'])expect(adapted).toContain(feature);
-  expect(adapted).not.toContain('void connect()');expect(adapted).not.toContain('/api/prep/tts');
-  expect(adapted).toContain('SpeechSynthesisUtterance');
-  expect(ts.createSourceFile('result.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  expect(adapted).not.toContain('void connect()');
+  // The previously shipped adaptation replaced the real PCM streaming player
+  // with SpeechSynthesisUtterance. Keep the actual reader audio pipeline.
+  expect(adapted).toContain('streamChineseTts(');
+  expect(adapted).toContain('new ChineseStreamingAudioPlayer(');
+  expect(adapted).toContain('loadQwenTtsVoice(getReaderStorage())');
+  expect(adapted).toContain('magazine-reader:pause-chinese-audio');
+  expect(adapted).toContain('magazine-reader:stop-english-sentence-audio');
+  expect(adapted).not.toContain('SpeechSynthesisUtterance');
+  expect(adapted).not.toContain('window.speechSynthesis');
+  expect(adapted).not.toContain('此设备暂不支持系统朗读');
+  const tree = ts.createSourceFile('result.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  expect(tree.parseDiagnostics).toHaveLength(0);
+  const readReplyBodies = [];
+  const walk = node => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'readReply') readReplyBodies.push(node.getText(tree));
+    ts.forEachChild(node, walk);
+  };
+  walk(tree);
+  expect(readReplyBodies).toHaveLength(1);
+  expect(readReplyBodies[0]).toContain('new ChineseStreamingAudioPlayer(');
+  expect(readReplyBodies[0]).toContain('streamChineseTts(');
+  expect(readReplyBodies[0]).not.toContain('speechSynthesis');
 });
 
 it('preserves previously saved native-Agent contextual meanings after a Reader reload', () => {
@@ -278,6 +298,7 @@ it('includes the release translation adapter in translation-enabled builds witho
   const adapted=adaptReaderSource(original,filename,{qwenPreview:false,translationPreview:true});
   expect(adapted).toContain('/api/vantilo-translation/engines');
   expect(adapted).toContain('/api/vantilo-translation/translate');
+  expect(adapted).toContain('translationEngineId={vantiloEngine}');
   expect(adapted).toContain('vantilo-translation-bar');
   expect(adapted).not.toContain('<VantiloLocalGloss');
   expect(ts.createSourceFile('translation-enabled.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
@@ -312,25 +333,21 @@ it('builds the Reader storage notice without restoring the retired Reader-wide b
 });
 
 
-it('keeps pronunciation preference only for automatic reading and binds both word-detail buttons to locale-selected voices', () => {
+it('keeps manual US/UK pronunciation and click accent in one shared fast engine, without system voices', () => {
   const originalFile = `${readerSourceRoot}/src/frontend/App.tsx`;
   const original = readFileSync(originalFile, 'utf8');
   const adapted = adaptReaderSource(original, originalFile);
-  expect(adapted).toContain('selectVantiloAccentVoice');
-  expect(adapted).toContain('utterance.voice = voice;');
-  expect(adapted).toContain('https://dict.youdao.com');
-  expect(adapted).toContain('type = accent === "us" ? "2" : "1"');
-  expect(adapted).toContain('ONLINE_AUDIO_TIMEOUT_MS = 1500');
-  expect(adapted).toContain('attemptYoudaoAudio(youdao, generation)');
-  expect(adapted).toContain('synthesis.speak(utterance)');
-  expect(adapted).toContain('voice.lang.replaceAll("_", "-")');
-  expect(adapted).toContain('详情播放 ');
-  expect(adapted).toContain('playWordPronunciation(lookup.text, dictionary, "us")');
-  expect(adapted).toContain('playWordPronunciation(lookup.text, dictionary, "uk")');
-  expect(adapted).toContain('playWordPronunciation(text, dictionary, preferences.pronunciationAccent)');
-  expect(adapted).toContain('playWordPronunciation(text, undefined, preferences.pronunciationAccent)');
+  expect(adapted).toContain('import { playWordPronunciation, STOP_WORD_AUDIO_EVENT, WORD_AUDIO_EVENT');
+  expect(adapted).toContain('playWordPronunciation(lookup.text, "us")');
+  expect(adapted).toContain('playWordPronunciation(lookup.text, "uk")');
+  expect(adapted).toContain('playWordPronunciation(text, preferences.pronunciationAccent)');
   expect(adapted).toContain('点词自动发音口音');
   expect(adapted).toContain('详情页美式、英式按钮各自独立');
-  expect(adapted).not.toContain('const utterance = new window.SpeechSynthesisUtterance(text);\n      utterance.lang = accent ===');
+  expect(adapted).not.toContain('SpeechSynthesisUtterance');
+  expect(adapted).not.toContain('synthesis.speak(');
+  expect(adapted).not.toContain('selectVantiloAccentVoice');
   expect(ts.createSourceFile('result.tsx', adapted, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  expect(() => adaptReaderSource(original.replace(
+    'playWordPronunciation(lookup.text, "us")', 'playWordPronunciation(lookup.text, dictionary, "us")'
+  ), originalFile)).toThrow(/fast pronunciation seam changed/);
 });

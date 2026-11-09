@@ -1,4 +1,5 @@
 import {readDefaultMagazines,copyDefaultMagazines} from './default-magazine-seed.mjs';
+import {assertBundledOriginalGameSounds} from './original-game-sound-assets.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,12 +12,14 @@ const require = createRequire(import.meta.url);
 if (process.platform !== 'darwin') throw new Error('This build targets macOS; run it on a Mac.');
 const { validateManifest } = require('../electron/reader-library-seed.cjs');
 await readDefaultMagazines(); // Default release content is the four authorized issues only.
+await assertBundledOriginalGameSounds(path.join(repo,'build/reader/web'));
 const stage = path.join(repo, 'build/package-app');
 await fs.rm(stage, { recursive: true, force: true });
 await fs.mkdir(path.join(stage, 'electron'), { recursive: true });
 for (const name of ['dist', 'licenses', 'resources']) await fs.cp(path.join(repo, name), path.join(stage, name), { recursive: true });
 await fs.mkdir(path.join(stage,'reader'),{recursive:true});
 for(const name of ['web','native','api.cjs','codex','codex-code-mode-host','provenance.json','THIRD_PARTY_NOTICES.txt'])await fs.cp(path.join(repo,'build/reader',name),path.join(stage,'reader',name),{recursive:true});
+await assertBundledOriginalGameSounds(path.join(stage,'reader/web'));
 await copyDefaultMagazines(path.join(stage,'reader/seed'));
 const metadata = JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8'));
 await fs.writeFile(path.join(stage, 'package.json'), JSON.stringify({ name: 'vantilo', version: metadata.version, main: 'electron/main.cjs', private: true }));

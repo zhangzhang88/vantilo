@@ -15,6 +15,7 @@ function Icon({ name }: { name: "back" | "next" | "book" | "settings" | "clock" 
 
 /** Layout and keyboard lifecycle adapted directly from Worm's TypingGame. */
 export function AssemblyTypingGame({ material, progress, update, exit }: { material: LearningMaterial; progress: LearningProgress; update: (next: LearningProgress) => void; exit: () => void }) {
+  const basic = material.generator.engine === "basic-source";
   const step = currentLearningItem(material,progress) as AssemblyStep;
   const tokens = step.typingTokens ?? [], draft = typingDraftFor(step,progress), correct = !!progress.assembly[step.id]?.correct;
   const reading = correct || progress.assemblyReadingId === step.id;
@@ -84,13 +85,13 @@ export function AssemblyTypingGame({ material, progress, update, exit }: { mater
   return createPortal(<div ref={region} role="dialog" aria-modal="true" aria-label="句子组装游戏" tabIndex={-1} className="worm-game" data-theme={theme} data-background={preferences.background} onKeyDown={keyboard}>
     <header className="worm-game-header">
       <div className="worm-game-meta"><button className="worm-game-icon" aria-label="返回阶段选择" title="返回阶段选择" onClick={exit}><Icon name="back" /></button><strong title={material.titleZh}>句子组装（{index + 1}/{queue.length}）</strong><span className="worm-game-time" aria-label="练习用时"><Icon name="clock" />{time}</span></div>
-      <div className="worm-game-tools"><button className={`worm-game-icon${answerMode ? " is-active" : ""}`} aria-label={answerMode ? "关闭看答案模式" : "开启看答案模式"} aria-pressed={answerMode} onClick={() => { if (!answerMode) update(recordLearningAction(material,progress,"hint")); setAnswerMode(!answerMode); }}><Icon name="book" /></button><button onClick={() => { cancelSpeech(); stopAllSounds(); update(openAssemblySelection(progress)); }}>调整本课组装</button><LearningGameSettingsButton expanded={settings} open={() => setSettings(true)} /></div>
+      <div className="worm-game-tools"><button className={`worm-game-icon${answerMode ? " is-active" : ""}`} aria-label={answerMode ? "关闭看答案模式" : "开启看答案模式"} aria-pressed={answerMode} onClick={() => { if (!answerMode) update(recordLearningAction(material,progress,"hint")); setAnswerMode(!answerMode); }}><Icon name="book" /></button>{!basic && material.generator.engine !== "ordered-preview" && <button onClick={() => { cancelSpeech(); stopAllSounds(); update(openAssemblySelection(progress)); }}>调整本课组装</button>}<LearningGameSettingsButton expanded={settings} open={() => setSettings(true)} /></div>
     </header>
     <div className="worm-game-progress" role="progressbar" aria-label="组装进度" aria-valuemin={0} aria-valuemax={queue.length} aria-valuenow={index + 1}><span style={{ width: `${(index + 1) / queue.length * 100}%` }} /></div>
     <main className="worm-game-content">
-      {reading ? <div className="worm-game-completion" role="status"><p lang="en">{step.english}</p><p>{step.meaningZh}</p></div> : <>
+      {reading ? <div className="worm-game-completion" role="status"><p lang="en">{step.english}</p>{step.pronunciation && <p lang="en" className="worm-game-pronunciation">{step.pronunciation}</p>}<p>{step.meaningZh}</p></div> : <>
         {revealed && <p className="worm-game-answer" lang="en" data-testid="revealed-answer">{step.english}</p>}
-        <h1 className="worm-game-meaning">{step.meaningZh}</h1>
+        <h1 className="worm-game-meaning">{basic ? "回忆原句，逐词输入；需要时可查看答案" : step.meaningZh}</h1>
         <div className="worm-game-words" aria-label="逐词组装" style={{ fontSize: `${fontSize}px` }}>
           {tokens.map((token,i) => <span className="worm-game-word" key={`${step.id}:${i}`}>
             <input ref={element => { inputs.current[i] = element; }} aria-label={`第 ${i + 1} 个词`} data-testid="typing-word" data-word-index={i} value={draft.inputs[i]} maxLength={token.text.length} readOnly={draft.lockedWords.includes(i)} autoComplete="off" autoCapitalize="none" spellCheck={false} style={{ width: `${Math.max(token.text.length + .8,2.8)}ch` }} className={`${draft.inputs[i].trim() ? "has-input " : ""}${i === draft.currentWordIndex ? "is-current " : ""}${draft.lockedWords.includes(i) ? "is-locked" : draft.submitted ? "is-wrong" : ""}`} onFocus={() => { if (!draft.lockedWords.includes(i) && draft.currentWordIndex !== i) update(focusTypingWord(material,progress,i)); }} onChange={event => { playTypingSound(); update(setTypingWord(material,progress,i,event.target.value.replace(/[^\p{L}\p{N}'’+\-]/gu,""))); }} onKeyDown={event => {

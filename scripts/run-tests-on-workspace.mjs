@@ -22,6 +22,8 @@ const nodeEntries = new Set([
   'scripts/verify-real-codex-passage.cjs',
   'scripts/verify-tts-server.cjs',
   'scripts/verify-magazine-progress.cjs',
+  'scripts/verify-ordered-practice-runner.cjs',
+  'scripts/verify-original-game-sounds-build.cjs',
   'scripts/test-fixtures/workspace-runner-failure.mjs',
 ]);
 const electronEntries = new Set([
@@ -36,6 +38,7 @@ const electronEntries = new Set([
   'scripts/verify-packaged-reader.cjs', 'scripts/verify-reader-host.cjs',
   'scripts/verify-reader-translation-reuse.cjs', 'scripts/verify-reader-dictionary-theme.cjs',
   'scripts/verify-reader-growth-live.cjs', 'scripts/verify-reader-qwen-detail-view.cjs',
+  'scripts/verify-reader-audio-policy.cjs',
 ]);
 const vocabularyEntries = new Set([
   'scripts/run-vocabulary-backup-e2e.mjs',
@@ -164,10 +167,18 @@ marker.status = 'RUNNING';
 await writeMarker();
 
 const inheritedEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/(?:API.?KEY|TOKEN|PASSWORD|PASSWD|SECRET|CREDENTIAL|AUTHORIZATION|OAUTH)/i.test(name)));
+const externalCodexHome = process.env.VANTILO_TEST_EXTERNAL_CODEX_HOME;
+if (externalCodexHome) {
+  const expectedRoot = path.join(WORKSPACE_ROOT, 'acceptance');
+  if (!path.isAbsolute(externalCodexHome) || !isWithin(expectedRoot, externalCodexHome)) fail('外置 Codex 登录目录必须位于 acceptance 内。');
+  const info = await lstat(externalCodexHome);
+  if (await realpath(externalCodexHome) !== externalCodexHome || info.isSymbolicLink() || !info.isDirectory() || (info.mode & 0o077)) fail('外置 Codex 登录目录必须是 acceptance 内权限为 700 的真实目录。');
+}
 const env = {
   ...inheritedEnv,
   HOME: dirs.home,
-  CODEX_HOME: dirs.codex,
+  CODEX_HOME: externalCodexHome || dirs.codex,
+  ...(externalCodexHome ? { VANTILO_TEST_EXTERNAL_CODEX_HOME: externalCodexHome } : {}),
   XDG_CONFIG_HOME: dirs.xdgConfig,
   XDG_CACHE_HOME: dirs.xdgCache,
   TMPDIR: dirs.temp, TMP: dirs.temp, TEMP: dirs.temp,

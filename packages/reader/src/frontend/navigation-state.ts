@@ -1,6 +1,6 @@
 import type { PublicationId } from "../shared/types";
 
-export type Page = "library" | "publication" | "issue" | "reader" | "books" | "articles" | "book" | "book-reader" | "lesson-reader" | "search" | "bookmarks" | "history" | "notes" | "vocabulary" | "review" | "settings";
+export type Page = "library" | "publication" | "issue" | "reader" | "books" | "articles" | "book" | "book-reader" | "lesson-reader" | "search" | "bookmarks" | "history" | "notes" | "vocabulary" | "review" | "settings" | "practice";
 export interface NavigationState {
   page: Page;
   publicationId: PublicationId;
@@ -11,7 +11,7 @@ export interface NavigationState {
   lessonId: string;
 }
 export const NAVIGATION_KEY = "magazine-reader-navigation-v1";
-const pages: Page[] = ["library", "publication", "issue", "reader", "books", "articles", "book", "book-reader", "lesson-reader", "search", "bookmarks", "history", "notes", "vocabulary", "review", "settings"];
+const pages: Page[] = ["library", "publication", "issue", "reader", "books", "articles", "book", "book-reader", "lesson-reader", "search", "bookmarks", "history", "notes", "vocabulary", "review", "settings", "practice"];
 const fallback: NavigationState = { page: "library", publicationId: "economist", issueId: "", articleId: "", bookId: "", chapterId: "", lessonId: "" };
 export function loadNavigation(storage?: Pick<Storage, "getItem">): NavigationState {
   try {

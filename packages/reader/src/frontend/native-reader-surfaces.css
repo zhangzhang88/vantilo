@@ -1,0 +1,351 @@
+/* Reader macOS visual pilot: shelves, reading chrome and vocabulary surfaces.
+ * This stylesheet intentionally preserves source content, reader text measure,
+ * sentence/chinese modes, familiarity stripes, all data and input behavior.
+ * Keep loaded after app-theme.css for a reversible, theme-aware layer. */
+
+/* Book and magazine cards: content-forward, with no lifted web-card motion. */
+.app-shell .library-grid { gap:14px; }
+.app-shell .library-book {
+  background:var(--theme-surface);
+  border:1px solid var(--theme-line-soft);
+  border-radius:12px;
+  box-shadow:none;
+  padding:15px;
+  gap:14px;
+  color:var(--theme-ink);
+  transition:background-color .14s ease,border-color .14s ease;
+}
+.app-shell .library-book:hover:not(:disabled) {
+  transform:none;
+  background:color-mix(in srgb,var(--theme-selected) 25%,var(--theme-surface));
+  border-color:var(--theme-line);
+  box-shadow:none;
+}
+.app-shell .library-book:focus-visible,
+.app-shell .book-library-actions button:focus-visible,
+.app-shell .library-publication-tabs button:focus-visible {
+  outline:2px solid var(--theme-accent);
+  outline-offset:2px;
+}
+.app-shell .library-book-copy > span.library-book-publication {
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.015em;
+  color:var(--theme-muted);
+}
+.app-shell .library-book-copy strong {
+  color:var(--theme-ink);
+  font:600 15px/1.4 -apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+  letter-spacing:-.012em;
+}
+.app-shell .library-book-copy > span:not(.book-progress-label) {
+  color:var(--theme-secondary);
+  font-size:12px;
+  line-height:1.5;
+}
+.app-shell .book-progress-label,
+.app-shell .book-library-card .library-book-copy > span.book-library-meta {
+  color:var(--theme-muted);
+  font-size:11px;
+}
+.app-shell .book-library-menu {
+  background:var(--theme-surface);
+  color:var(--theme-ink);
+  border-color:var(--theme-line);
+  border-radius:9px;
+  box-shadow:var(--theme-shadow);
+}
+.app-shell .library-publication-tabs button {
+  background:var(--theme-surface);
+  color:var(--theme-secondary);
+  border:1px solid var(--theme-line);
+  border-radius:8px;
+  font-size:12px;
+  font-weight:550;
+  min-height:32px;
+  box-shadow:none;
+}
+.app-shell .library-publication-tabs button:hover {
+  background:var(--theme-soft);
+  border-color:var(--theme-line);
+}
+.app-shell .library-publication-tabs button.is-active {
+  background:var(--theme-selected);
+  border-color:var(--theme-line);
+  color:var(--theme-ink);
+  box-shadow:none;
+}
+.app-shell .library-publication-tabs small {
+  color:var(--theme-muted);
+  background:var(--theme-soft);
+  font-size:10px;
+}
+
+/* Article reading toolbar only. Sentence and Chinese readers keep their
+ * current teaching/reading arrangements, including focus-mode dimensions. */
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-toolbar {
+  background:var(--theme-surface);
+  color:var(--theme-ink);
+  border-bottom:1px solid var(--theme-line-soft);
+  box-shadow:none;
+  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-breadcrumb span {
+  color:var(--theme-muted);
+  font-size:11px;
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-breadcrumb strong {
+  color:var(--theme-secondary);
+  font-size:12px;
+  font-weight:600;
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-position {
+  color:var(--theme-muted);
+  font:500 12px/1.4 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-mode-switch {
+  border-color:var(--theme-line);
+  border-radius:9px;
+  background:var(--theme-soft);
+  box-shadow:none;
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-mode-switch button {
+  min-height:30px;
+  font-size:12px;
+  font-weight:550;
+  border-radius:7px;
+  color:var(--theme-secondary);
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-mode-switch button.is-active {
+  background:var(--theme-raised);
+  color:var(--theme-ink);
+  box-shadow:0 1px 3px #00000015;
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .toolbar-button {
+  min-height:34px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:500;
+  color:var(--theme-secondary);
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .toolbar-button:hover:not(:disabled),
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .toolbar-button.is-active {
+  border-color:var(--theme-line);
+  background:var(--theme-soft);
+  color:var(--theme-ink);
+}
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-progress-line {
+  background:var(--theme-line-soft);
+}
+/* Keep progress visibility and the existing ratio; change only its hue. */
+.app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-progress-line span {
+  background:var(--theme-accent);
+}
+
+/* Vocabulary sidebar: macOS-style inspector, not a second page card. */
+.app-shell .vocabulary-panel,
+.app-shell .reader-drawer {
+  background:var(--theme-surface);
+  border-left:1px solid var(--theme-line);
+  color:var(--theme-ink);
+}
+.app-shell .vocabulary-panel-header,
+.app-shell .reader-drawer .drawer-header {
+  border-bottom:1px solid var(--theme-line-soft);
+}
+.app-shell .vocabulary-panel-header h3,
+.app-shell .reader-drawer .drawer-header h3 {
+  color:var(--theme-ink);
+  font-size:14px;
+  font-weight:650;
+}
+.app-shell .vocabulary-panel-header span {
+  color:var(--theme-muted);
+  font-size:10px;
+  font-weight:600;
+}
+.app-shell .vocabulary-panel-header > strong {
+  background:var(--theme-soft);
+  color:var(--theme-secondary);
+  font-size:11px;
+}
+.app-shell .word-detail-content { color:var(--theme-ink); }
+.app-shell .word-detail-back {
+  color:var(--theme-secondary);
+  font-size:12px;
+  font-weight:550;
+}
+.app-shell .word-detail-back:hover { color:var(--theme-accent); }
+.app-shell .word-detail-heading strong { color:var(--theme-ink); }
+.app-shell .word-detail-section { border-top-color:var(--theme-line-soft); }
+.app-shell .word-detail-section-title > span {
+  color:var(--theme-muted);
+  font-size:11px;
+  font-weight:650;
+  letter-spacing:.015em;
+}
+.app-shell .word-detail-section-title > button {
+  color:var(--theme-secondary);
+  border-color:var(--theme-line);
+  background:var(--theme-raised);
+  font-size:11px;
+  border-radius:7px;
+}
+.app-shell .word-detail-user-meaning,
+.app-shell .word-detail-definition p { color:var(--theme-ink); }
+.app-shell .word-detail-definition-list > p,
+.app-shell .word-detail-definition {
+  background:var(--theme-soft);
+  color:var(--theme-secondary);
+  border-radius:8px;
+}
+.app-shell .word-detail-source-sentence {
+  background:var(--theme-soft);
+  color:var(--theme-secondary);
+  border-left-color:var(--theme-line);
+}
+.app-shell .word-detail-section-title button:focus-visible,
+.app-shell .word-detail-back:focus-visible,
+.app-shell .word-lookup-card button:focus-visible,
+.app-shell .selection-assist-popover button:focus-visible {
+  outline:2px solid var(--theme-accent);
+  outline-offset:2px;
+}
+
+/* Context inspector popovers: keep their positioning and familiarity actions. */
+.app-shell .word-lookup-card {
+  border:1px solid var(--theme-line);
+  border-radius:12px;
+  background:var(--theme-surface);
+  color:var(--theme-ink);
+  box-shadow:0 12px 34px #00000025;
+  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+}
+.app-shell .word-lookup-close {
+  color:var(--theme-muted);
+  border-radius:8px;
+}
+.app-shell .word-lookup-close:hover {
+  background:var(--theme-soft);
+  color:var(--theme-ink);
+}
+.app-shell .word-lookup-audio-error { padding:7px 9px; border:1px solid var(--theme-line); border-radius:8px; background:var(--theme-danger-soft); color:var(--theme-danger); font-size:12px; line-height:1.5; }
+.app-shell .word-lookup-shortcut-hint {
+  background:var(--theme-soft);
+  color:var(--theme-muted);
+  font-size:11px;
+}
+.app-shell .word-lookup-shortcut-hint kbd {
+  border-color:var(--theme-line);
+  background:var(--theme-raised);
+}
+.app-shell .word-context-card {
+  border:1px solid var(--theme-line);
+  border-radius:10px;
+  background:var(--theme-surface);
+  color:var(--theme-ink);
+  box-shadow:0 10px 28px #0000001c;
+}
+.app-shell .word-context-card::before { border-bottom-color:var(--theme-line); }
+.app-shell .word-context-card::after { border-bottom-color:var(--theme-surface); }
+.app-shell .selection-assist-popover {
+  border-color:var(--theme-line);
+  border-radius:11px;
+  background:var(--theme-surface);
+  color:var(--theme-ink);
+  box-shadow:0 10px 30px #00000022;
+}
+.app-shell .selection-assist-toolbar {
+  background:var(--theme-soft);
+  border-bottom:1px solid var(--theme-line-soft);
+}
+.app-shell .selection-assist-toolbar button {
+  color:var(--theme-secondary);
+  font-size:12px;
+  font-weight:500;
+  border-radius:7px;
+}
+.app-shell .selection-assist-toolbar button:hover:not(:disabled) {
+  background:var(--theme-selected);
+  color:var(--theme-ink);
+}
+.app-shell .selection-assist-toolbar button.is-saved,
+.app-shell .selection-assist-toolbar button.is-copied { color:var(--theme-accent); }
+.app-shell .selection-assist-toolbar button.is-copy-error { color:var(--theme-danger); }
+.app-shell .selection-assist-shortcut-hint {
+  background:var(--theme-bg);
+  color:var(--theme-muted);
+  border-top-color:var(--theme-line-soft);
+}
+.app-shell .selection-assist-source { border-color:var(--theme-line-soft);color:var(--theme-secondary); }
+.app-shell .selection-assist-result { background:var(--theme-surface); }
+
+/* Global vocabulary list: preserve the left familiarity-color stripe. */
+.app-shell .global-vocabulary-controls {
+  background:var(--theme-surface);
+  border-color:var(--theme-line);
+  border-radius:11px;
+}
+.app-shell .global-vocabulary-search > span,
+.app-shell .global-vocabulary-filter-group > span {
+  color:var(--theme-muted);
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.025em;
+}
+.app-shell .global-vocabulary-search input {
+  background:var(--theme-raised);
+  color:var(--theme-ink);
+  border-color:var(--theme-line);
+}
+.app-shell .global-vocabulary-filter-row button,
+.app-shell .global-vocabulary-card-actions button {
+  border-radius:8px;
+  border-color:var(--theme-line);
+  background:var(--theme-raised);
+  color:var(--theme-secondary);
+  font-size:12px;
+  font-weight:550;
+}
+.app-shell .global-vocabulary-filter-row button:hover,
+.app-shell .global-vocabulary-card-actions button:hover { background:var(--theme-soft); }
+.app-shell .global-vocabulary-filter-row button.is-active {
+  border-color:var(--theme-line);
+  background:var(--theme-selected);
+  color:var(--theme-ink);
+}
+.app-shell .global-vocabulary-results-meta { color:var(--theme-muted); font-size:12px; }
+/* Higher specificity than older combined app-shell surface rules.
+ * Familiarity color remains on the independent left border. */
+.app-shell[data-theme] .global-vocabulary-card {
+  background:var(--theme-surface);
+  border-top-color:var(--theme-line-soft);
+  border-right-color:var(--theme-line-soft);
+  border-bottom-color:var(--theme-line-soft);
+  border-radius:11px;
+  box-shadow:none;
+}
+.app-shell .global-vocabulary-card:hover,
+.app-shell .global-vocabulary-card.is-expanded {
+  border-top-color:var(--theme-line);
+  border-right-color:var(--theme-line);
+  border-bottom-color:var(--theme-line);
+  box-shadow:none;
+}
+.app-shell[data-theme] .global-vocabulary-card.is-selected {
+  background:var(--theme-selected);
+  box-shadow:inset 0 0 0 1px var(--theme-accent);
+}
+.app-shell .global-vocabulary-word strong { color:var(--theme-ink); }
+.app-shell .global-vocabulary-word span { color:var(--theme-secondary); }
+.app-shell .global-vocabulary-stats { color:var(--theme-muted); font-size:11px; }
+.app-shell .global-vocabulary-contexts { border-color:var(--theme-line-soft); }
+@media (max-width:640px) {
+  .app-shell .library-book { padding:12px; }
+  .app-shell .reader-page-shell:not(.is-sentence-mode):not(.is-chinese-mode) .reader-toolbar-actions .toolbar-button {
+    min-height:44px;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  .app-shell .library-book { transition:none; }
+}

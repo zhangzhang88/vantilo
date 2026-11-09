@@ -22,6 +22,7 @@ import './ui/session-navigation.css';
 import './ui/agent-composer.css';
 import './ui/permission-mode-picker.css';
 import './ui/conversation.css';
+import './ui/macos-shell.css';
 
 type EngineTask={taskId:string;sessionId:string;owner:'agent'|'reader';phase:'starting'|'running'|'cancelling'|'finishing'};
 type RuntimeState = { activeTask?:EngineTask|null; status: 'connecting'|'ready'|'error'|'stopped'; error?: string };
@@ -77,9 +78,9 @@ function App() {
   const [sidebarHidden,setSidebarHidden]=React.useState(false);
   const [account,setAccount]=React.useState<AccountState|null>(null);
   const [accountBusy,setAccountBusy]=React.useState(false);
-  const [readerDestination,setReaderDestination]=React.useState<{target:'settings'|'library';sequence:number}>({target:'library',sequence:0});
+  const [readerDestination,setReaderDestination]=React.useState<{target:'settings'|'library'|'practice';sequence:number}>({target:'library',sequence:0});
   const [settingsActive,setSettingsActive]=React.useState(false);
-  function openReaderDestination(target:'settings'|'library') {setSettingsActive(target==='settings');if(target==='settings'||readerDestination.target==='settings')setReaderDestination(previous=>({target,sequence:previous.sequence+1}));void enterMagazineReader();}
+  function openReaderDestination(target:'settings'|'library'|'practice') {setSettingsActive(target==='settings');setReaderDestination(previous=>({target,sequence:previous.sequence+1}));void enterMagazineReader();}
   const [activeModule,setActiveModule]=React.useState<'agent'|'magazine-reader'>('agent');
   const [magazineReaderStatus,setMagazineReaderStatus]=React.useState<MagazineReaderStatus>('idle');
   const [magazineReaderError,setMagazineReaderError]=React.useState<string|null>(null);
@@ -419,9 +420,9 @@ function App() {
   const sessionWorkspaceMismatch=Boolean(workspace.root&&currentSession&&currentSession.workspaceRoot!==workspace.root);
   const composerDisabled=Boolean(account&&!account.connected)||runtime.status!=='ready'||busy||!selectedSessionId||!storage.available||!workspace.root||sessionWorkspaceMismatch||loadingConversation;
 
-  return <Provider colorScheme="dark" background="base"><main className={sidebarHidden && activeModule === 'agent' ? 'sidebar-collapsed' : ''}>
-    <div className="app-titlebar">{account && <div className="account-controls"><span>{account.connected ? `ChatGPT 已登录${account.email ? ' · ' + account.email : ''}` : 'Agent 与 Reader 共用 ChatGPT 账号'}</span><button type="button" disabled={accountBusy || busy} onClick={() => void changeAccount()}>{accountBusy ? '正在处理…' : account.connected ? '退出账号' : '登录 ChatGPT'}</button></div>}</div>
-    <MainNavigation onHome={()=>{setSettingsActive(false);setActiveModule('agent');}} onMagazineReader={()=>openReaderDestination('library')} onSettings={()=>openReaderDestination('settings')} activeSection={settingsActive&&activeModule==='magazine-reader'?'settings':activeModule}/>
+  return <Provider colorScheme="dark" background="base"><main className={`vantilo-macos-shell ${sidebarHidden && activeModule === 'agent' ? 'sidebar-collapsed' : ''}`}>
+    <div className="app-titlebar"><span className="app-window-title" aria-hidden="true">Vantilo</span>{account && <div className="account-controls"><span>{account.connected ? `ChatGPT 已登录${account.email ? ' · ' + account.email : ''}` : 'Agent 与 Reader 共用 ChatGPT 账号'}</span><button type="button" disabled={accountBusy || busy} onClick={() => void changeAccount()}>{accountBusy ? '正在处理…' : account.connected ? '退出账号' : '登录 ChatGPT'}</button></div>}</div>
+    <MainNavigation onHome={()=>{setSettingsActive(false);setActiveModule('agent');}} onMagazineReader={()=>openReaderDestination('library')} onPractice={()=>openReaderDestination('practice')} onSettings={()=>openReaderDestination('settings')} activeSection={settingsActive&&activeModule==='magazine-reader'?'settings':activeModule==='magazine-reader'&&readerDestination.target==='practice'?'practice':activeModule}/>
     <div className={activeModule === 'magazine-reader' ? 'workspace-sheet workspace-sheet-reader' : 'workspace-sheet'} style={{'--sidebar-width':`${sidebarWidth}px`} as React.CSSProperties}>
     {(magazineReaderStatus !== 'idle' || activeModule === 'magazine-reader') && <MagazineReaderModule navigationRequest={readerDestination} visible={activeModule === 'magazine-reader'} status={magazineReaderStatus} error={magazineReaderError} onRetry={() => void enterMagazineReader()} onBack={() => setActiveModule('agent')} syncState={magazineSyncState} onSync={() => void syncMagazineReader()} onSetup={() => setReaderSetupOpen(true)} />}
     {activeModule === 'agent' && <>

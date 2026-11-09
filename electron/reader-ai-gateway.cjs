@@ -30,7 +30,7 @@ function createReaderAiClient(parent) {
     if (!task) return;
     pending.delete(data.requestId); clearTimeout(task.timer);
     if (data.ok === true && task.metadata && data.metadata) task.resolve(data.metadata);
-    else if (data.ok === true && typeof data.output === 'string' && data.output.length <= 20000) task.resolve(data.output);
+    else if (data.ok === true && typeof data.output === 'string' && data.output.length <= (task.learningMaterial ? 65000 : 20000)) task.resolve(data.output);
     else task.reject(new Error(require('./reader-errors.cjs').readerErrorMessage(data.errorCode)));
   });
   return {
@@ -47,8 +47,8 @@ function createReaderAiClient(parent) {
           // Timeout is cancellation, not merely loss of interest: stop only this Reader request.
           try { parent.postMessage({type:'ai-cancel',requestId}); } catch { /* Parent may be gone. */ }
           reject(new Error('阅读任务超时，请重试'));
-        },120000);
-        pending.set(requestId,{resolve:value=>{signal?.removeEventListener("abort",abort);resolve(value);},reject:error=>{signal?.removeEventListener("abort",abort);reject(error);},timer,metadata,onDelta});
+        },payload.taskKind === 'learning-material' ? 270000 : 120000);
+        pending.set(requestId,{resolve:value=>{signal?.removeEventListener("abort",abort);resolve(value);},reject:error=>{signal?.removeEventListener("abort",abort);reject(error);},timer,metadata,onDelta,learningMaterial:payload.taskKind === 'learning-material'});
         signal?.addEventListener("abort",abort,{once:true});
         try { parent.postMessage({type:'ai',requestId,...payload}); }
         catch { pending.delete(requestId);clearTimeout(timer);reject(new Error('Agent 暂时不可用')); }

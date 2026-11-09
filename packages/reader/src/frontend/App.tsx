@@ -1,7 +1,10 @@
-import { LessonLearning } from "./lesson-learning";
+import { PracticeWorkshop } from "./practice-workshop";
+import { CuratedArticleCopyButton } from "./curated-article-copy-button";
 import { GlobalNavigation } from "./global-navigation";
 import { BookDetailTabs, BookLessonsList } from "./book-detail-content";
 import { ChineseReader } from "./chinese-reader";
+import { TtsApiSettingsPanel } from "./tts-api-settings-panel";
+import { EnglishSentenceTts } from "./english-sentence-tts";
 import { renderBookLayout } from "./book-table";
 import { BookSourceButton, BookVisual } from "./book-visual";
 import { AppAppearanceContext, useSystemDarkMode } from "./appearance-context";
@@ -105,6 +108,8 @@ import {
   type WordContextMeaningRecord,
 } from "./word-context-state";
 import { clickableWordSegments, isDictionaryWord } from "./word-lookup";
+import { playWordPronunciation, STOP_WORD_AUDIO_EVENT, WORD_AUDIO_EVENT, type WordAudioEvent } from "./word-pronunciation";
+import { playSelectionSpeech, stopSelectionSpeech, SELECTION_SPEECH_EVENT, type SelectionSpeechReport } from "./selection-speech";
 import { firstChineseDictionaryMeaning, selectWordGloss } from "./dictionary-meaning";
 import { PUBLICATIONS } from "../shared/publication";
 import type { PublicationId } from "../shared/types";
@@ -416,26 +421,19 @@ function SavedSelectionHighlight({
   );
 }
 
-function playWordPronunciation(
-  text: string,
-  dictionary: DictionaryLookupResponse | undefined,
-  accent: "us" | "uk",
-) {
-  const url = accent === "us" ? dictionary?.usAudioUrl : dictionary?.ukAudioUrl;
-  if (url) {
-    const audio = new Audio(url);
-    void audio.play().catch(() => {
-      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
-      const utterance = new window.SpeechSynthesisUtterance(text);
-      utterance.lang = accent === "us" ? "en-US" : "en-GB";
-      window.speechSynthesis.speak(utterance);
-    });
-    return;
-  }
-  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
-  const utterance = new window.SpeechSynthesisUtterance(text);
-  utterance.lang = accent === "us" ? "en-US" : "en-GB";
-  window.speechSynthesis.speak(utterance);
+function WordPronunciationNotice({ text }: { text: string }) {
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    setMessage("");
+    const report = (event: Event) => {
+      const detail = (event as CustomEvent<WordAudioEvent>).detail;
+      if (!detail || detail.text.toLocaleLowerCase("en-US") !== text.toLocaleLowerCase("en-US")) return;
+      setMessage(detail.status === "failed" ? detail.message ?? "发音暂不可用，请重试。" : "");
+    };
+    window.addEventListener(WORD_AUDIO_EVENT, report);
+    return () => window.removeEventListener(WORD_AUDIO_EVENT, report);
+  }, [text]);
+  return message ? <div className="word-lookup-audio-error" role="status">{message}</div> : null;
 }
 
 function WordLookupCard({
@@ -593,6 +591,7 @@ function WordLookupCard({
       onMouseDown={(event) => event.stopPropagation()}
     >
       <button className="word-lookup-close" aria-label="关闭语境解释" aria-keyshortcuts="Escape" title="关闭 (Esc)" onClick={onClose}>×</button>
+      <WordPronunciationNotice text={lookup.text} />
       <div className="word-lookup-head">
         <div>
           <strong>{lookup.text}</strong>
@@ -886,15 +885,16 @@ function WordDetailContent({
       </div>
 
       <div className="word-lookup-pronunciation word-detail-pronunciation">
+        <WordPronunciationNotice text={lookup.text} />
         {lookup.dictionaryStatus === "loading" && <span>正在加载词典…</span>}
         {lookup.dictionaryStatus === "error" && <span className="is-error">词典暂不可用</span>}
         {dictionary && (
           <>
-            <button aria-label={`详情播放 ${lookup.text} 美式发音`} onClick={() => playWordPronunciation(lookup.text, dictionary, "us")}>
+            <button aria-label={`详情播放 ${lookup.text} 美式发音`} onClick={() => playWordPronunciation(lookup.text, "us")}>
               <span>🔊 美</span>
               <strong>{dictionary.usPhonetic ? `/${dictionary.usPhonetic.replace(/^\/+|\/+$/g, "")}/` : "发音"}</strong>
             </button>
-            <button aria-label={`详情播放 ${lookup.text} 英式发音`} onClick={() => playWordPronunciation(lookup.text, dictionary, "uk")}>
+            <button aria-label={`详情播放 ${lookup.text} 英式发音`} onClick={() => playWordPronunciation(lookup.text, "uk")}>
               <span>🔊 英</span>
               <strong>{dictionary.ukPhonetic ? `/${dictionary.ukPhonetic.replace(/^\/+|\/+$/g, "")}/` : "发音"}</strong>
             </button>
@@ -2690,7 +2690,7 @@ function ReaderPage({
   onReturnToSource,
   focusMode,
   onFocusModeChange,
-  onOpenLearning,
+  copyEnglishText,
   globalNavigation,
   onQuietViewChange,
   onAssistantContext,
@@ -2719,7 +2719,7 @@ function ReaderPage({
   onReturnToSource: () => void;
   focusMode: boolean;
   onFocusModeChange: (focusMode: boolean) => void;
-  onOpenLearning?: () => void;
+  copyEnglishText?: string;
   globalNavigation: ReactNode;
   onQuietViewChange?: (quiet: boolean) => void;
   onAssistantContext?: (context: ReaderAssistantContext | null) => void;
@@ -2781,6 +2781,16 @@ function ReaderPage({
     return () => window.clearTimeout(timer);
   }, [removalNoticeVisible, removedVocabulary.length]);
   const [activeSelection, setActiveSelection] = useState<ActiveTextSelection | null>(null);
+  const [selectionSpeech, setSelectionSpeech] = useState<SelectionSpeechReport | null>(null);
+  useEffect(() => {
+    const report = (event: Event) => setSelectionSpeech((event as CustomEvent<SelectionSpeechReport>).detail);
+    window.addEventListener(SELECTION_SPEECH_EVENT, report);
+    return () => window.removeEventListener(SELECTION_SPEECH_EVENT, report);
+  }, []);
+  useEffect(() => {
+    setSelectionSpeech(null);
+    return () => stopSelectionSpeech();
+  }, [activeSelection?.text, activeSelection?.paragraphIndex, activeSelection?.startOffset, article.identity.documentId]);
   const [selectionAssistState, setSelectionAssistState] = useState<SelectionAssistUiState | null>(null);
   const [selectionSaved, setSelectionSaved] = useState(false);
   const [selectionTranslationZh, setSelectionTranslationZh] = useState("");
@@ -2963,6 +2973,8 @@ function ReaderPage({
     fullArticleTranslationRunRef.current += 1;
     setFullArticleTranslationExpanded(false);
     setFullArticleTranslationRunning(false);
+    // Stop the previous word when leaving Reader or opening another document.
+    return () => { window.dispatchEvent(new Event(STOP_WORD_AUDIO_EVENT)); };
   }, [article.identity.documentId]);
 
   useLayoutEffect(() => {
@@ -3790,6 +3802,10 @@ function ReaderPage({
       contextMeaning: cachedContext,
     });
     window.getSelection()?.removeAllRanges();
+    // Start pronunciation within the original click, independent of dictionary lookup.
+    if (dictionaryEligible && preferences.autoPronounceOnWordClick) {
+      playWordPronunciation(text, preferences.pronunciationAccent);
+    }
 
     if (!cachedContext || !hasEnglishWordContext(cachedContext)) {
       void ensureWordContextMeaning(text, paragraph, paragraphIndex, startOffset).then((record) => {
@@ -3836,13 +3852,9 @@ function ReaderPage({
           if (changed) saveSavedSelections(getReaderStorage(), next);
           return changed ? next : current;
         });
-        if (preferences.autoPronounceOnWordClick) {
-          playWordPronunciation(text, dictionary, preferences.pronunciationAccent);
-        }
+
       }).catch((error) => {
-        if (preferences.autoPronounceOnWordClick) {
-          playWordPronunciation(text, undefined, preferences.pronunciationAccent);
-        }
+
         setActiveWordLookup((current) => current?.key === key
           ? {
               ...current,
@@ -5322,7 +5334,7 @@ function ReaderPage({
   assistantContextRef.current = { documentId: article.identity.documentId, paragraphCount: article.paragraphs.length,
     currentParagraphIndex: currentReadingParagraphIndex, locateParagraph: locateCodexParagraph };
   return (
-    <div className={`reader-page-shell ${onOpenLearning ? "has-learning" : ""} ${focusMode ? "is-focus-mode" : ""} ${readerMode === "sentence" ? "is-sentence-mode" : ""} ${readerLanguage === "chinese" ? "is-chinese-mode" : ""}`} data-focus-mode={focusMode} data-reader-mode={readerMode} data-reader-language={readerLanguage} data-theme={preferences.theme}>
+    <div className={`reader-page-shell ${focusMode ? "is-focus-mode" : ""} ${readerMode === "sentence" ? "is-sentence-mode" : ""} ${readerLanguage === "chinese" ? "is-chinese-mode" : ""}`} data-focus-mode={focusMode} data-reader-mode={readerMode} data-reader-language={readerLanguage} data-theme={preferences.theme}>
       <div className="reader-toolbar">
         <div className="reader-toolbar-left reader-focus-hidden">
           <button className="icon-button" aria-label={issue.kind === "lessons" ? "返回精选阅读与备课" : issue.kind === "book" ? "返回本书目录" : "返回本期目录"} onClick={onBack}>←</button>
@@ -5397,7 +5409,7 @@ function ReaderPage({
             {fullArticleTranslationRunning ? "…" : fullArticleTranslationExpanded ? "收" : "译"}
             <span>{fullArticleTranslationRunning ? `${fullArticleTranslatedCount}/${fullArticleTranslationTargets.length}` : fullArticleTranslationExpanded ? "译文" : "全文"}</span>
           </button>
-          {onOpenLearning && <button className="toolbar-button reader-learning-button reader-focus-hidden" aria-label="练习" title="选择练习阶段" onClick={onOpenLearning}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3h12v18H6V3Zm3 4h6m-6 4h6m-6 4h3" /></svg><span>练习</span></button>}
+          {copyEnglishText !== undefined && <CuratedArticleCopyButton key={article.identity.documentId} english={copyEnglishText} />}
           <button className={`toolbar-button ${drawer === "notes" ? "is-active" : ""}`} aria-label="阅读笔记" aria-keyshortcuts="N" title="阅读笔记 (N)" onClick={() => toggleDrawer("notes")}>✎ <span>笔记</span></button>
           <button
             className={`toolbar-button reader-find-button ${articleFindOpen ? "is-active" : ""}`}
@@ -5529,6 +5541,7 @@ function ReaderPage({
 
             <div className={`reading-body ${readerMode === "sentence" ? "sentence-reading-body" : ""}`} onMouseUp={readerLanguage === "chinese" ? undefined : handleTextSelection}>
               {readerLanguage === "chinese" ? <ChineseReader key={article.identity.documentId} article={article} initialParagraph={chineseParagraphRef.current}
+                translationRecords={paragraphTranslationRecords}
                 beforeFirstParagraph={magazineIdentity ? (articleImagesByAnchor.get(-1) ?? []).map(image => <ArticleMediaFigure key={image.id} issueId={magazineIdentity.issueId} articleId={magazineIdentity.articleId} image={image} onZoom={openArticleImageZoom} />) : undefined}
                 afterParagraph={magazineIdentity ? index => (articleImagesByAnchor.get(index) ?? []).map(image => <ArticleMediaFigure key={image.id} issueId={magazineIdentity.issueId} articleId={magazineIdentity.articleId} image={image} onZoom={openArticleImageZoom} />) : undefined}
                 onPosition={index => {
@@ -5703,6 +5716,7 @@ function ReaderPage({
                     {isTranslatableText(currentSentence.text) && canTranslateParagraph(article.paragraphs[currentSentence.paragraphIndex], currentSentence.paragraphIndex) && <button className="sentence-translation-toggle" aria-label={sentenceTranslationVisible ? "收起句子翻译" : "查看句子翻译"} aria-expanded={sentenceTranslationVisible} title="当前句可按 T 查看 / 收起翻译" onClick={() => toggleCurrentSentenceTranslation()}>
                       <span aria-hidden="true">译</span>{sentenceTranslationVisible ? "收起翻译" : "查看翻译"}<kbd aria-hidden="true">T</kbd>
                     </button>}
+                    <EnglishSentenceTts key={currentSentence.key} text={currentSentence.text} />
                   </div>
                   {sentenceTranslationVisible && isTranslatableText(currentSentence.text) && canTranslateParagraph(article.paragraphs[currentSentence.paragraphIndex], currentSentence.paragraphIndex) && (
                     <div className={`sentence-reading-translation ${currentSentenceTranslationRequest?.status === "error" ? "is-error" : ""}`} data-testid="sentence-reading-translation">
@@ -5752,6 +5766,12 @@ function ReaderPage({
               onMouseDown={(event) => event.preventDefault()}
             >
               <div className="selection-assist-toolbar">
+                <button aria-label={selectionSpeech?.status === "loading" || selectionSpeech?.status === "qwen" || selectionSpeech?.status === "system" ? "停止选中文字朗读" : "朗读选中文字"}
+                  title="朗读选区（优先 Qwen3-TTS；按住 Option 点击可重新生成）"
+                  onClick={(event) => {
+                    if (selectionSpeech?.status === "loading" || selectionSpeech?.status === "qwen" || selectionSpeech?.status === "system") stopSelectionSpeech();
+                    else playSelectionSpeech(activeSelection.text, event.altKey);
+                  }}>{selectionSpeech?.status === "loading" ? "准备朗读…" : selectionSpeech?.status === "qwen" || selectionSpeech?.status === "system" ? "停止" : "朗读"}</button>
                 <button aria-label="翻译选中文字" aria-keyshortcuts="T" title="翻译选区 (T)" disabled={selectionAssistState?.status === "loading"} onClick={() => void runSelectionAssist("translate")}>翻译</button>
                 <button aria-label="解释选中文字" aria-keyshortcuts="E" title="解释选区 (E)" disabled={selectionAssistState?.status === "loading"} onClick={() => void runSelectionAssist("explain")}>解释</button>
                 <button
@@ -5774,6 +5794,8 @@ function ReaderPage({
                 <span><kbd>Esc</kbd> 关闭</span>
               </div>
               <div className="selection-assist-source">“{activeSelection.text}”</div>
+              {selectionSpeech?.status === "system" && <p className="selection-assist-source" role="status">Qwen 暂不可用，已使用系统语音兜底。</p>}
+              {selectionSpeech?.status === "failed" && <p className="selection-assist-source is-error" role="alert">{selectionSpeech.message ?? "朗读暂不可用"}</p>}
               {selectionAssistState && (
                 <div className={`selection-assist-result ${selectionAssistState.status === "error" ? "is-error" : ""}`}>
                   <div className="selection-assist-result-label">
@@ -7038,6 +7060,7 @@ function SettingsPage({
         <DataManagementPanel />
 
         <AiProviderSettingsPanel />
+        <TtsApiSettingsPanel />
         <details className="settings-about"><summary>关于 Magazine Reader</summary><p>Reader V0.2 · 本机 EPUB 阅读器</p><p>EPUB 导入已启用，可在期刊与电子书页面导入。支持翻译、查词、笔记和词汇复习；阅读状态保存在当前浏览器。</p></details>
       </div>
     </div>
@@ -7048,6 +7071,14 @@ export default function App() {
   const [initialNavigation] = useState(() => loadNavigation(getNavigationStorage()));
   const [navigationReady, setNavigationReady] = useState(!["book", "book-reader", "lesson-reader"].includes(initialNavigation.page));
   const [page, setPage] = useState<Page>(initialNavigation.page === "book-reader" || initialNavigation.page === "lesson-reader" ? "book" : initialNavigation.page);
+  useEffect(() => {
+    const navigateFromVantilo = (event: MessageEvent) => {
+      if (window.parent === window || event.source !== window.parent || !event.data || typeof event.data !== "object" || event.data.type !== "vantilo:navigate") return;
+      if (event.data.target === "practice" || event.data.target === "library" || event.data.target === "settings") setPage(event.data.target);
+    };
+    window.addEventListener("message", navigateFromVantilo);
+    return () => window.removeEventListener("message", navigateFromVantilo);
+  }, []);
   const [records, setRecords] = useState<IssueRecord[]>([]);
   const [books, setBooks] = useState<BookSummary[]>([]);
   const [bookShelfView, setBookShelfView] = useState<BookShelfView>({ query: "", categoryId: "all" });
@@ -7922,6 +7953,7 @@ export default function App() {
     { id: "search", label: "搜索", icon: "⌕" },
     { id: "bookmarks", label: "稍后阅读", icon: "☆", count: readLaterState.items.length },
     { id: "vocabulary", label: "词汇", icon: "▤", count: globalVocabularyCount },
+    { id: "practice", label: "Practice Lab", icon: "✦" },
     { id: "review", label: "复习", icon: "↻", count: reviewVocabularyCount },
     { id: "notes", label: "笔记", icon: "✎", count: notes.length },
     { id: "settings", label: "设置", icon: "⚙" },
@@ -7954,7 +7986,8 @@ export default function App() {
   const closeAssistant = () => { if (isReaderPage) setReaderAssistantOpen(false); else setAssistantOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.global-nav-assistant')?.focus()); };
   let assistantScope: AssistantScope = { kind: "all" };
   let assistantLabel = "全部书刊";
-  if (page === "books") { assistantScope = { kind: "books" }; assistantLabel = "电子书书架"; }
+  if (page === "practice") { assistantScope = { kind: "practice" }; assistantLabel = "Practice Lab · 英文创作"; }
+  else if (page === "books") { assistantScope = { kind: "books" }; assistantLabel = "电子书书架"; }
   else if (page === "library") { assistantScope = { kind: "magazines" }; assistantLabel = "期刊书架"; }
   else if (page === "publication") { assistantScope = { kind: "publication", publicationId: selectedPublicationId }; assistantLabel = PUBLICATIONS[selectedPublicationId].name; }
   else if (page === "issue" && selectedIssue) { assistantScope = { kind: "issue", issueId: selectedIssue.id }; assistantLabel = `${selectedIssue.publicationName} · ${selectedIssue.label}`; }
@@ -7989,7 +8022,7 @@ export default function App() {
         {loading && page === "library" && <p role="status">正在读取本地 EPUB…</p>}
 
         {page !== "reader" && page !== "book-reader" && page !== "lesson-reader" && (
-            <div className="topbar-title">{page === "library" ? "期刊" : page === "publication" ? PUBLICATIONS[selectedPublicationId].name : page === "issue" ? selectedIssue?.label ?? "期刊" : page === "books" || page === "book" ? "电子书" : page === "articles" ? "科普文章" : page === "search" ? "搜索" : page === "bookmarks" ? "稍后阅读" : page === "history" ? "阅读历史" : page === "vocabulary" ? "Vocabulary" : page === "review" ? "Review" : page === "settings" ? "Settings" : "Notes"}</div>
+            <div className="topbar-title">{page === "library" ? "期刊" : page === "publication" ? PUBLICATIONS[selectedPublicationId].name : page === "issue" ? selectedIssue?.label ?? "期刊" : page === "books" || page === "book" ? "电子书" : page === "articles" ? "科普文章" : page === "search" ? "搜索" : page === "bookmarks" ? "稍后阅读" : page === "history" ? "阅读历史" : page === "vocabulary" ? "Vocabulary" : page === "review" ? "Review" : page === "practice" ? "Practice Lab" : page === "settings" ? "Settings" : "Notes"}</div>
         )}
 
         {page === "library" && (
@@ -8007,6 +8040,7 @@ export default function App() {
         {page === "publication" && <PublicationIssuesPage issues={readerIssues} publicationId={selectedPublicationId} onBack={() => setPage("library")} onOpenIssue={openIssue} onDeleteIssue={handleDeleteIssue} onReplaceIssue={handleReplaceIssue} />}
         {page === "books" && <BookLibraryPage view={bookShelfView} onViewChange={setBookShelfView} onDeleted={handleBookDeleted} continueCard={continueBook && bookContinue ? <BookContinueCard key={bookContinue.key} book={continueBook} item={bookContinue} onContinue={() => openReadingEntry(bookContinue.entry)} /> : undefined} books={books} loading={bookLibraryLoading} error={bookLibraryError} onOpenBook={(bookId) => { void openBook(bookId); }} onImported={() => refreshBookRecords().then(() => undefined)} />}
         {page === "articles" && <ScienceArticleLibraryPage />}
+        {page === "practice" && <PracticeWorkshop />}
         {page === "book" && <BookDetailPage lessonCount={selectedLessonCollection?.documents.length ?? 0} lessonsLoading={bookLessonsLoading} lessonsSection={<BookLessonsList
           documents={selectedLessonCollection?.documents ?? []} loading={bookLessonsLoading} error={bookLessonsError}
           newLessonId={newBookLesson?.bookId === selectedBookRecord?.id ? newBookLesson?.id : undefined} onHighlightShown={acknowledgeNewBookLesson}
@@ -8077,14 +8111,13 @@ export default function App() {
           />
         )}
         {page === "lesson-reader" && selectedLessonCollection && selectedLessonDocument && selectedBookLesson && (
-          <LessonLearning key={JSON.stringify(selectedBookLesson)} lesson={selectedBookLesson}>
-          {openLearning => <ReaderPage
+          <ReaderPage
             globalNavigation={readerNavigation}
             onQuietViewChange={setQuietReaderView}
             onAssistantContext={registerAssistantContext}
             issue={selectedLessonCollection} article={selectedLessonDocument}
             readLaterState={readLaterState} notes={notes} preferences={effectiveReaderPreferences}
-            onOpenLearning={openLearning}
+            copyEnglishText={selectedBookLesson.english}
             focusMode={readerFocusMode} onFocusModeChange={setReaderFocusMode}
             onBack={() => { setReaderFocusMode(false); setReaderReturnTarget(null); setPage("book"); }}
             onOpenArticle={(id) => { const lesson = bookLessonRecords.find((entry) => entry.id === id); if (lesson) openBookLesson(lesson, bookLessonRecords); }}
@@ -8101,8 +8134,7 @@ export default function App() {
             onConsumeNoteJump={(token) => setPendingNoteJump((current) => current?.token === token ? null : current)}
             readerReturnTarget={readerReturnTarget}
             onReturnToSource={() => { if (readerReturnTarget) { setReaderFocusMode(false); setPage(readerReturnTarget.page); setReaderReturnTarget(null); } }}
-          />}
-          </LessonLearning>
+          />
         )}
         {page === "book-reader" && selectedBookReaderCollection && selectedBookDocument && (
           <ReaderPage

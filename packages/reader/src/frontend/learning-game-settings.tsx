@@ -20,7 +20,7 @@ export function LearningGameSettings({ preferences,change,close,listen }: { pref
     <header className="worm-settings-header"><h2>设置</h2><button ref={closeButton} aria-label="关闭设置" onClick={close}><LearningIcon name="close" /></button></header>
     <div className="worm-settings-content">
       <div className="worm-settings-title"><h3>声音</h3><p>选择练习时使用的朗读声音{listen ? "，或切换到连续听力模式。" : "。"}</p></div>
-      <section className="worm-setting-group"><h4>朗读声音</h4><p>每次播放会优先使用本地缓存音频。</p><div className="worm-settings-action-row"><label className="worm-voice-selector">请选择朗读声音：<select value={preferences.voice} onChange={event => change({ voice: event.target.value as LearningGamePreferences["voice"] })}>{LEARNING_VOICES.map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}</select></label></div></section>
+      <section className="worm-setting-group"><h4>朗读声音</h4><p>Qwen3-TTS 英文朗读。只为所选音色准备本地缓存，切换时可能需要等待。</p><div className="worm-settings-action-row"><label className="worm-voice-selector">请选择朗读声音：<select value={preferences.voice} onChange={event => change({ voice: event.target.value as LearningGamePreferences["voice"] })}>{LEARNING_VOICES.map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}</select></label></div></section>
       {listen && <section className="worm-setting-group"><h4>听力模式</h4><p>从本课第一句开始连续播放，每句播放两遍。</p><div className="worm-settings-action-row"><button className="worm-settings-action" onClick={listen}><LearningIcon name="headphones" />进入听力模式</button></div></section>}
       <p className="worm-global-theme-note">外观统一使用全局主题，可在主导航的「设置」中调整。</p>
     </div>

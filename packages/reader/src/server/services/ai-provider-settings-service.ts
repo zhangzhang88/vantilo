@@ -160,6 +160,13 @@ export class AiProviderSettingsService {
     };
   }
 
+  /** Resolve a specifically selected saved profile without changing the global active model. */
+  getConfiguredProfile(id: string): ActiveAiProviderProfile | null {
+    const profile = typeof id === "string" && id.length <= 200 ? this.state.profiles.find(item => item.id === id) : undefined;
+    if (!profile?.apiKey) return null;
+    return { id: profile.id, name: profile.name, description: profile.description, responsesUrl: profile.responsesUrl, model: profile.model, apiKey: profile.apiKey };
+  }
+
   hasConfiguredActiveProfile(): boolean {
     return Boolean(this.getActiveProfile());
   }

@@ -49,8 +49,8 @@ app.whenReady().then(async()=>{
  // The integrated preview deliberately moved Settings to the native Vantilo sidebar.
  if(!clicked && !process.env.VANTILO_READER_TEST_ASSETS)throw new Error('Settings entry missing');
  await delay(150);
- const settings=await frame.executeJavaScript('document.body.innerText');
- if((clicked&&!settings.includes('设置'))||/AI 服务|Responses URL|API Key|EasyCLIProxy/.test(settings))throw new Error('Old AI service settings remain visible');
+ const settings=await frame.executeJavaScript(`(()=>{const copy=document.body.cloneNode(true);copy.querySelectorAll('.tts-api-settings').forEach(panel=>panel.remove());return {legacyText:copy.innerText,ttsPanel:Boolean(document.querySelector('.tts-api-settings [aria-label="TTS API Key"]'))};})()`);
+ if((clicked&&(!settings.legacyText.includes('设置')||!settings.ttsPanel))||/AI 服务|Responses URL|API Key|EasyCLIProxy/.test(settings.legacyText))throw new Error('Old AI service settings remain visible or the separate TTS settings are missing');
  await frame.executeJavaScript(`if(!document.querySelector('[data-testid="codex-prep-panel"]'))document.querySelector('.global-nav-assistant').click()`);
  await delay(100);
  const panel=await frame.executeJavaScript(`Boolean(document.querySelector('[data-testid="codex-prep-panel"]'))`);

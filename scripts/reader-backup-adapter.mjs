@@ -51,7 +51,9 @@ function validGrowthRecord(value: unknown): boolean {
   return true;
 }
 ${anchor}`);
-  replace('function validBackupValue(entry: UserDataBackupEntryDefinition, value: unknown): boolean {\n  if (entry.key === LEARNING_GAME_PREFERENCES_KEY)', 'function validBackupValue(entry: UserDataBackupEntryDefinition, value: unknown): boolean {\n  if (entry.shape === "growth-record") return validGrowthRecord(value);\n  if (entry.key === LEARNING_GAME_PREFERENCES_KEY)');
+  // Insert the growth guard before all existing per-key validators. Chinese
+  // audiobook preferences now have their own strict first check as well.
+  replace('function validBackupValue(entry: UserDataBackupEntryDefinition, value: unknown): boolean {\n', 'function validBackupValue(entry: UserDataBackupEntryDefinition, value: unknown): boolean {\n  if (entry.shape === "growth-record") return validGrowthRecord(value);\n');
   replace('    const entry = definitions.get(key);', '    const entry = definitions.get(key) ?? variantEntry(key);');
   replace('  if (!isObject(value.data)) throw new Error("备份文件的数据区格式不正确。");', '  if (!isObject(value.data)) throw new Error("备份文件的数据区格式不正确。");\n  if (value.variantKeysIncluded !== undefined && typeof value.variantKeysIncluded !== "boolean") throw new Error("备份文件的模型译文标记无效。");');
   replace('export function buildUserDataBackup(storage: Pick<BackupStorage, "getItem">, now = new Date()): UserDataBackupV1 {', 'export function buildUserDataBackup(storage: Pick<BackupStorage, "getItem"> & Partial<BackupStorage>, now = new Date()): UserDataBackupV1 {');

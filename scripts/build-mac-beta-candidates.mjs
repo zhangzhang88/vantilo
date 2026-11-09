@@ -15,6 +15,7 @@ import {copyCodexRuntime} from './codex-runtime-assets.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
 import {assertNoEpubFiles} from './package-artifact-policy.mjs';
 import {runtimeModuleInventoryPlugin} from './runtime-module-inventory.mjs';
+import {assertBundledOriginalGameSounds} from './original-game-sound-assets.mjs';
 import {collectPackageRootsFromModules,packageRecordsFromRoots,renderThirdPartyNotices} from './third-party-notices.mjs';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -45,6 +46,7 @@ process.env.VANTILO_TRANSLATION_READER='1';
 process.env.VANTILO_CATALOG_READER_PREVIEW='1';
 await import('./build-reader-api-preview.mjs');
 await import('./build-reader-web-preview.mjs');
+await assertBundledOriginalGameSounds(path.join(reader,'web'));
 await viteBuild({root:repo,configFile:false,envFile:false,base:'./',cacheDir:path.join(root,'vite-cache'),
   plugins:[parcelMacros.vite(),react(),runtimeModuleInventoryPlugin(path.join(runtimeInventory,'main-renderer-modules.json'))],build:{outDir:dist,emptyOutDir:true,sourcemap:false}});
 

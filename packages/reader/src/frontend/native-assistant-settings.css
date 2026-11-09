@@ -1,0 +1,220 @@
+/* Third native-macOS visual pilot: Reader settings and Codex assistant only.
+ * Appearance tokens come from app-theme.css. No layout ownership, stored
+ * preferences, provider/AI APIs, focus behavior, or content are changed. */
+.app-shell .settings-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif;
+}
+.app-shell .settings-page .page-heading-row { margin-bottom:24px; }
+.app-shell .settings-page .page-heading-row h1 { font-size:29px; font-weight:700; letter-spacing:-.025em; }
+.app-shell .settings-page .page-heading-row p { color:var(--theme-muted); font-size:13px; line-height:1.65; }
+.app-shell .settings-grid { gap:14px; }
+.app-shell .settings-grid > :is(.settings-card,.tts-api-settings) {
+  margin-top:0;
+  border:1px solid var(--theme-line);
+  border-radius:12px;
+  background:var(--theme-surface);
+  box-shadow:none;
+  padding:20px 22px;
+}
+.app-shell .settings-page .settings-card-heading {
+  margin-bottom:16px;
+  gap:14px;
+}
+.app-shell .settings-page .settings-card-heading h2 {
+  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+  font-size:17px;
+  line-height:1.35;
+  font-weight:650;
+  letter-spacing:-.015em;
+  color:var(--theme-ink);
+}
+.app-shell .settings-page .settings-card-heading > div > span {
+  color:var(--theme-muted);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.025em;
+}
+.app-shell .settings-page .settings-card-heading small {
+  color:var(--theme-muted);
+  font-size:12px;
+  line-height:1.5;
+  font-weight:400;
+}
+.app-shell .settings-page .settings-list { border-color:var(--theme-line-soft); }
+.app-shell .settings-page .settings-row {
+  min-height:66px;
+  gap:14px;
+  border-color:var(--theme-line-soft);
+}
+.app-shell .settings-page :is(.settings-row strong,.settings-label) {
+  color:var(--theme-ink);
+  font-size:13px;
+  font-weight:600;
+}
+.app-shell .settings-page :is(.settings-row > div > span,.settings-help) {
+  color:var(--theme-muted);
+  font-size:12px;
+  line-height:1.6;
+}
+.app-shell .settings-page .settings-subgroup {
+  margin-top:15px;
+  padding-top:15px;
+  border-color:var(--theme-line-soft);
+}
+.app-shell .settings-page .settings-card-heading + .settings-subgroup {
+  margin-top:0;
+}
+.app-shell .settings-page .settings-switch {
+  flex:none;
+  background:var(--theme-soft);
+  border-color:var(--theme-line);
+}
+.app-shell .settings-page .settings-switch.is-on {
+  background:var(--theme-accent);
+  border-color:var(--theme-accent);
+}
+.app-shell .settings-page .settings-switch:focus-visible,
+.app-shell .codex-prep-panel :is(button,input,select,textarea,summary):focus-visible {
+  outline:2px solid var(--theme-accent);
+  outline-offset:2px;
+}
+.app-shell .settings-page .ai-field > span {
+  color:var(--theme-secondary);
+  font-size:12px;
+  font-weight:600;
+}
+.app-shell .settings-page .ai-field :is(input,select),
+.app-shell .settings-page .tts-api-settings :is(input,select) {
+  min-height:36px;
+  padding-inline:10px;
+  font-size:13px;
+  border-radius:8px;
+}
+.app-shell .settings-page .ai-field :is(input,select):focus-visible {
+  outline:2px solid var(--theme-accent);
+  outline-offset:2px;
+  box-shadow:none;
+}
+.app-shell .settings-page :is(.ai-field > small,.ai-model-hint) {
+  font-size:11px;
+  color:var(--theme-muted);
+  line-height:1.55;
+}
+.app-shell .settings-page .ai-settings-button {
+  min-height:34px;
+  border-radius:8px;
+  padding-inline:12px;
+  font-size:12px;
+  font-weight:550;
+  box-shadow:none;
+}
+.app-shell .settings-page .ai-settings-button:hover:not(:disabled) { transform:none; }
+.app-shell .settings-page .ai-settings-button.is-primary {
+  background:var(--theme-accent);
+  border-color:var(--theme-accent);
+  color:var(--theme-on-accent);
+}
+.app-shell .settings-page .ai-settings-button.is-primary:hover:not(:disabled) {
+  background:color-mix(in srgb,var(--theme-accent) 88%,var(--theme-ink));
+  border-color:var(--theme-accent);
+}
+.app-shell .settings-page .ai-settings-button.is-danger {
+  color:var(--theme-danger);
+  border-color:var(--theme-line);
+}
+.app-shell .settings-page .ai-settings-actions { border-color:var(--theme-line-soft); }
+.app-shell .settings-page .tts-api-settings h3 {
+  font:650 17px/1.35 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
+  color:var(--theme-ink);
+}
+
+/* Codex: keep its dock and model controls intact; make the visual hierarchy
+ * match the same system surfaces, dividers and neutral controls. */
+.app-shell .codex-prep-panel,
+.app-shell.theme-night .codex-prep-panel {
+  background:var(--theme-surface);
+  border:1px solid var(--theme-line);
+  border-radius:12px;
+  color:var(--theme-ink);
+  box-shadow:none;
+  padding:18px;
+  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+}
+.app-shell .codex-prep-heading h2 {
+  color:var(--theme-ink);
+  font-size:17px;
+  font-weight:650;
+  line-height:1.4;
+  letter-spacing:-.015em;
+}
+.app-shell .codex-prep-heading p,
+.app-shell .codex-prep-panel .codex-prep-small {
+  color:var(--theme-muted);
+  font-size:12px;
+  line-height:1.6;
+}
+.app-shell .codex-prep-access,
+.app-shell .codex-prep-auth,
+.app-shell .codex-prep-display-settings,
+.app-shell .codex-prep-saved { border-color:var(--theme-line-soft); }
+.app-shell .codex-prep-options > summary {
+  background:transparent;
+  color:var(--theme-muted);
+  border-radius:8px;
+}
+.app-shell .codex-prep-options-content {
+  border:1px solid var(--theme-line);
+  background:var(--theme-bg);
+  border-radius:9px;
+  box-shadow:none;
+}
+.app-shell .codex-prep-quick-prompts > div .text-button {
+  min-height:30px;
+  padding:5px 9px;
+  background:var(--theme-bg);
+  border:1px solid var(--theme-line);
+  border-radius:8px;
+  color:var(--theme-secondary);
+  font-size:12px;
+  font-weight:500;
+}
+.app-shell .codex-prep-quick-prompts > div .text-button:hover:not(:disabled) {
+  background:var(--theme-selected);
+  border-color:var(--theme-line);
+  color:var(--theme-ink);
+}
+.app-shell .codex-prep-turn.assistant .chat-markdown {
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  padding:8px 2px 12px;
+}
+.app-shell .codex-prep-chat .codex-prep-turn.user > .chat-markdown {
+  border-radius:11px;
+  background:var(--theme-selected);
+}
+.app-shell .codex-prep-label :is(select,textarea),
+.app-shell .codex-prep-composer-input textarea {
+  border:1px solid var(--theme-line);
+  border-radius:8px;
+  background:var(--theme-raised);
+  color:var(--theme-ink);
+}
+.app-shell .codex-prep-draft,
+.app-shell .codex-prep-lesson {
+  background:var(--theme-surface);
+  border-color:var(--theme-line-soft);
+  border-radius:10px;
+  box-shadow:none;
+}
+.app-shell .codex-prep-saved button { border-color:var(--theme-line-soft); }
+@media (max-width:640px) {
+  .app-shell .settings-grid > :is(.settings-card,.tts-api-settings) { padding:16px; }
+  .app-shell .settings-page .settings-card-heading { flex-wrap:wrap; }
+  .app-shell .settings-page .settings-card-heading small { max-width:none; text-align:left; }
+  .app-shell .codex-prep-panel { padding:15px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .app-shell .settings-page .settings-switch { transition:none; }
+}

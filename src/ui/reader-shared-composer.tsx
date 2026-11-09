@@ -14,6 +14,7 @@ export function ReaderSharedComposer(props: {
 }) {
   const prompts:Record<string,string> = {
     all:'输入问题，或告诉我你想读什么…',
+    practice:'说说你想写的主题、英语水平或目标词汇…',
     books:'想找什么样的书？',
     magazines:'想读哪类文章？',
     publication:'想了解这本杂志的哪些内容？',

@@ -1,6 +1,6 @@
 import type { BookResearchReport } from "../shared/book-research";
 import { useEffect, useRef, useState } from "react";
-import { readPrepDiscussion } from "./codex-prep-stream";
+import { readPrepDiscussion, readablePrepFailure } from "./codex-prep-stream";
 import "./codex-prep-rico-theme.css";
 import type { BookRecord } from "../shared/book-data-contract";
 import type { BookLesson, BookLessonDraft, PrepChatMessage } from "../shared/book-lesson";
@@ -11,6 +11,10 @@ import { copyTextToClipboard } from "./clipboard";
 import type { AssistantScope } from "../shared/assistant-scope";
 import type { ReaderAssistantContext } from "./reader-assistant-context";
 import { READING_ASSISTANT_PRESETS } from "./reading-assistant-cache";
+import { ChineseStreamingAudioPlayer } from "./chinese-streaming-audio-player";
+import { streamChineseTts } from "./chinese-tts-stream";
+import { loadQwenTtsVoice } from "../shared/qwen-tts-voices";
+import { getReaderStorage } from "./reader-storage";
 
 interface AuthState { connected: boolean; sharing: boolean; pending: boolean; email?: string; error?: string; }
 interface DraftResponse { answer: string; draft?: BookLessonDraft; draftId?: string; existingLessonId?: string; research?: BookResearchReport; }
@@ -21,6 +25,13 @@ const PREP_QUICK_PROMPTS = [
   { label: "把难句再简化", mode: "discussion", prompt: "我读不懂刚才的句子。请保留原意，换成更常见的单词和更短、更简单的句子，并用中文说明改了什么。" },
   { label: "生成精选阅读候选", mode: "draft", prompt: "就按刚才确定的选题和难度，准备一篇80～100词的精选阅读。保留核心观点，附上中文悬念、知识解读、重点词和原书出处。" },
 ] as const;
+const WORKSHOP_QUICK_PROMPTS = [
+  { label: "帮我确定主题", mode: "discussion", prompt: "我想在 Practice Lab 里练英语，请先了解我的英语水平、兴趣和想练的表达，推荐三个适合写成英文短文的主题。先用中文简单介绍，不要生成全文。" },
+  { label: "生成英文短文", mode: "discussion", prompt: "请创作一篇适合英语练习的原创英文短文，约120词，句子自然连贯，难度适合一般初级学习者。用清晰的故事或情境串联单词、词组与完整句子。只输出可以直接复制到 Practice Lab 的英文正文，不加中文说明、练习题或音标。" },
+  { label: "指定词汇写文章", mode: "discussion", prompt: "我想用自己指定的英文单词或词组创作一篇可练习的英文短文。请先让我提供目标词汇和想写的主题，再把它们自然地写进一篇连贯的英文文章。输出正文时只给英文，不生成题目。" },
+  { label: "简化现有文章", mode: "discussion", prompt: "请帮我把英文文章改写得更容易阅读，同时保留原意。若我尚未提供原文，请先让我粘贴。改写后只输出完整英文正文，方便复制进 Practice Lab。" },
+] as const;
+
 const DISCUSSION_FONT_SIZE_STORAGE_KEY = "magazine-reader.codex-prep-discussion-font-size.v1";
 const DEFAULT_DISCUSSION_FONT_SIZE = 16;
 
@@ -35,9 +46,13 @@ function splitSpeechText(text: string, maxLength = 130): string[] {
     if (current && `${current} ${part}`.length <= maxLength) { current += ` ${part}`; continue; }
     if (current) chunks.push(current);
     if (part.length <= maxLength) { current = part; continue; }
-    const words = part.match(/.{1,130}(?:\s+|$)/g) ?? [part];
     current = "";
-    chunks.push(...words.map((word) => word.trim()).filter(Boolean));
+    // Splitting only at whitespace can silently drop a long Chinese sentence.
+    const characters = Array.from(part);
+    for (let i = 0; i < characters.length; i += maxLength) {
+      const piece = characters.slice(i, i + maxLength).join("").trim();
+      if (piece) chunks.push(piece);
+    }
   }
   if (current) chunks.push(current);
   return chunks;
@@ -76,7 +91,8 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
   const endpoint = (action: "history" | "chat") => book ? `${root}/prep/${action}` : `${root}/${action}${scopeQuery}`;
   const [historyReady, setHistoryReady] = useState(false);
   const [historyAttempt, setHistoryAttempt] = useState(0);
-  const quickPrompts: ReadonlyArray<{ label: string; mode: "discussion" | "draft"; prompt: string }> = book ? PREP_QUICK_PROMPTS : readerContext ? [
+  const writingAssistant = scope?.kind === "practice";
+  const quickPrompts: ReadonlyArray<{ label: string; mode: "discussion" | "draft"; prompt: string }> = book ? PREP_QUICK_PROMPTS : writingAssistant ? WORKSHOP_QUICK_PROMPTS : readerContext ? [
     ...READING_ASSISTANT_PRESETS.map(preset => ({ label: preset.question, mode: "discussion" as const, prompt: preset.question })),
     { label: "解释当前段", mode: "discussion", prompt: "请用简单中文解释我当前正在看的这一段，说明它与上下文的关系，并引用对应原文段落。" },
   ] : [
@@ -116,9 +132,7 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
   const [speakingReply, setSpeakingReply] = useState<number | null>(null);
   const [ttsLoadingReply, setTtsLoadingReply] = useState<number | null>(null);
   const discussionRequest = useRef<AbortController | null>(null);
-  const ttsRequest = useRef<AbortController | null>(null);
-  const audioPlayback = useRef<HTMLAudioElement | null>(null);
-  const audioObjectUrls = useRef(new Set<string>());
+  const replyPlayer = useRef<ChineseStreamingAudioPlayer | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const rootElement = useRef<HTMLElement>(null);
   const discussionSource = useRef<string | null>(null);
@@ -147,97 +161,39 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
   }, [onClose]);
 
   function stopReplyAudio() {
-    ttsRequest.current?.abort();
-    ttsRequest.current = null;
-    if (audioPlayback.current) {
-      audioPlayback.current.pause();
-      audioPlayback.current.onended = null;
-      audioPlayback.current.onerror = null;
-      audioPlayback.current = null;
-    }
-    for (const url of audioObjectUrls.current) URL.revokeObjectURL(url);
-    audioObjectUrls.current.clear();
+    replyPlayer.current?.stop();
+    replyPlayer.current = null;
     setSpeakingReply(null);
     setTtsLoadingReply(null);
   }
 
-  async function readReply(index: number) {
+  function readReply(index: number) {
     if (speakingReply === index || ttsLoadingReply === index) { stopReplyAudio(); return; }
     stopReplyAudio();
+    window.dispatchEvent(new Event("magazine-reader:stop-word-audio"));
+    window.dispatchEvent(new Event("magazine-reader:stop-selection-speech"));
     window.dispatchEvent(new Event("magazine-reader:pause-chinese-audio"));
+    window.dispatchEvent(new Event("magazine-reader:stop-english-sentence-audio"));
     const reply = chatRef.current?.querySelector<HTMLElement>(`[data-reply-index="${index}"] .chat-markdown`);
     const chunks = splitSpeechText(reply?.innerText ?? reply?.textContent ?? "");
     if (!chunks.length) return;
-    const controller = new AbortController();
-    ttsRequest.current = controller;
+    const speechPlayer = new ChineseStreamingAudioPlayer({
+      indices: [0],
+      getText: async () => chunks.join(" "),
+      splitText: splitSpeechText,
+      synthesize: (text, signal) => streamChineseTts(text, signal, /[\u3400-\u9fff]/.test(text) ? "zh-CN" : "en-US", loadQwenTtsVoice(getReaderStorage())),
+      position: () => {},
+      phase: (phase, detail) => {
+        if (replyPlayer.current !== speechPlayer) return;
+        if (phase === "playing") { setTtsLoadingReply(null); setSpeakingReply(index); }
+        if (phase === "loading") setTtsLoadingReply(index);
+        if (phase === "complete") { replyPlayer.current = null; setSpeakingReply(null); setTtsLoadingReply(null); }
+        if (phase === "error") { stopReplyAudio(); setError(detail || "本地 Qwen3-TTS 语音生成失败，请重试。"); }
+      },
+    });
+    replyPlayer.current = speechPlayer;
     setTtsLoadingReply(index);
-
-    async function prepareAudio(chunk: string): Promise<{ url: string } | { error: Error } | null> {
-      try {
-        const response = await fetch("/api/prep/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: chunk }), signal: controller.signal });
-        if (!response.ok) {
-          const result = await response.json().catch(() => null) as { error?: string } | null;
-          throw new Error(result?.error ?? "Ciallo 语音生成失败，请重新尝试朗读。");
-        }
-        const blob = await response.blob();
-        if (controller.signal.aborted) return null;
-        const url = URL.createObjectURL(blob);
-        audioObjectUrls.current.add(url);
-        return { url };
-      } catch (err) {
-        if (controller.signal.aborted) return null;
-        return { error: err instanceof Error ? err : new Error("Ciallo 语音生成失败，请重新尝试朗读。") };
-      }
-    }
-
-    function releaseAudioUrl(url: string) {
-      URL.revokeObjectURL(url);
-      audioObjectUrls.current.delete(url);
-    }
-
-    try {
-      let prepared = prepareAudio(chunks[0]!);
-      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
-        const result = await prepared;
-        if (controller.signal.aborted || !result) return;
-        if ("error" in result) throw result.error;
-        const url = result.url;
-        const nextPrepared = chunkIndex + 1 < chunks.length ? prepareAudio(chunks[chunkIndex + 1]!) : null;
-        const audio = new Audio(url);
-        audioPlayback.current = audio;
-        setTtsLoadingReply(null);
-        setSpeakingReply(index);
-        await new Promise<void>((resolve, reject) => {
-          let settled = false;
-          const finish = (complete: () => void) => {
-            if (settled) return;
-            settled = true;
-            controller.signal.removeEventListener("abort", onAbort);
-            audio.onended = null;
-            audio.onerror = null;
-            complete();
-          };
-          const onAbort = () => finish(resolve);
-          audio.onended = () => finish(resolve);
-          audio.onerror = () => finish(() => reject(new Error("Ciallo 音频播放失败，请重新尝试朗读。")));
-          controller.signal.addEventListener("abort", onAbort, { once: true });
-          void audio.play().catch((err: unknown) => finish(() => reject(err)));
-        });
-        releaseAudioUrl(url);
-        if (audioPlayback.current === audio) audioPlayback.current = null;
-        if (controller.signal.aborted) return;
-        setSpeakingReply(null);
-        if (nextPrepared) setTtsLoadingReply(index);
-        prepared = nextPrepared ?? Promise.resolve(null);
-      }
-      setSpeakingReply(null);
-      setTtsLoadingReply(null);
-      if (ttsRequest.current === controller) ttsRequest.current = null;
-    } catch (err) {
-      const wasStopped = controller.signal.aborted;
-      stopReplyAudio();
-      if (!wasStopped) setError(err instanceof Error ? err.message : "Ciallo 语音生成失败，请重新尝试朗读。");
-    }
+    void speechPlayer.start({ paragraphIndex: 0, chunkIndex: 0 });
   }
 
   useEffect(() => {
@@ -320,7 +276,7 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
     if (!generateDraft) {
       followReply.current = true;
       setPendingDiscussion({ message: submitted, answer: "" }); setMessage(""); setElapsed(0);
-      setDiscussionStatus(book ? "正在连接 Codex、准备书籍上下文…" : "正在连接 Codex、准备当前页面内容…");
+      setDiscussionStatus(book ? "正在连接 Codex、准备书籍上下文…" : writingAssistant ? "正在连接 Codex、构思英文文章…" : "正在连接 Codex、准备当前页面内容…");
     }
     try {
       const currentParagraphIndex = readerContext?.current()?.currentParagraphIndex() ?? undefined;
@@ -357,9 +313,13 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
       }
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof Error ? err.message : "Codex 对话失败");
+      const readableError = readablePrepFailure(err);
+      setError(readableError);
       if (generateDraft) setPrepNotice("");
-      if (!generateDraft) { setDiscussionStatus("本轮未完成，片段尚未保存。可修改输入后重试。"); setMessage((current) => current || submitted); }
+      if (!generateDraft) {
+        setDiscussionStatus(`本轮未完成：${readableError} 原消息已保留。`);
+        setMessage((current) => current || submitted);
+      }
     } finally { if (!controller.signal.aborted) { setBusy(false); discussionRequest.current = null; } }
   }
 
@@ -415,13 +375,13 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
   }
 
   return (
-    <aside ref={rootElement} className={`codex-prep-panel${onClose ? " is-global-assistant" : ""}`} aria-label={book ? "Codex 备课侧栏" : "Codex 助手侧栏"} data-testid="codex-prep-panel">
+    <aside ref={rootElement} className={`codex-prep-panel${onClose ? " is-global-assistant" : ""}`} aria-label={book ? "Codex 备课侧栏" : writingAssistant ? "英文文章创作助手" : "Codex 助手侧栏"} data-testid="codex-prep-panel">
       {onClose && <div className="assistant-context"><span title={scopeLabel ?? book?.title}>{scopeLabel ?? book?.title ?? "全部书刊"}</span><button type="button" aria-label="收起 Codex 助手" title="收起 Codex 助手" onClick={onClose}>×</button></div>}
       <details className="codex-prep-options">
         <summary aria-label={book ? "备课设置" : "助手设置"} title={book ? "备课设置" : "助手设置"}><span aria-hidden="true">⌄</span></summary>
         <div className="codex-prep-options-content">
-        <div className="codex-prep-heading"><h2>{book ? "Codex 备课" : "Codex 助手"}</h2></div>
-        {book ? <><div className="eyebrow">Book → Essential Reading</div><p className="codex-prep-small">先与 Codex 讨论原书中值得阅读的观点，确认后再保存成简易英文材料。</p></> : <p className="codex-prep-small">讨论范围：{scopeLabel}。根据本机书刊目录与按需读取的原文回答；切换范围会显示对应的聊天记录。</p>}
+        <div className="codex-prep-heading"><h2>{book ? "Codex 备课" : writingAssistant ? "Codex 英文创作助手" : "Codex 助手"}</h2></div>
+        {book ? <><div className="eyebrow">Book → Essential Reading</div><p className="codex-prep-small">先与 Codex 讨论原书中值得阅读的观点，确认后再保存成简易英文材料。</p></> : writingAssistant ? <p className="codex-prep-small">一起确定主题、难度和篇幅，再生成或修改英文短文。复制 Codex 的英文正文，粘贴到 Practice Lab 左侧「英文文章」输入框；练习题由工坊另行生成。</p> : <p className="codex-prep-small">讨论范围：{scopeLabel}。根据本机书刊目录与按需读取的原文回答；切换范围会显示对应的聊天记录。</p>}
         <details className="codex-prep-access" onToggle={(event) => { if (event.currentTarget.open && !modelCatalogLoaded && !modelBusy) void refreshModelCatalog(); }}>
         <summary>
           <strong>连接与模型设置</strong>
@@ -441,7 +401,7 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
         <button className="text-button" disabled={modelBusy} onClick={() => void refreshModelCatalog()}>{modelBusy ? "读取中…" : modelCatalogLoaded ? "刷新官方模型列表" : "加载官方模型列表"}</button>
         {modelCatalog.length > 0 && <p className="codex-prep-small">Codex 当前默认：{modelCatalog.find((item) => item.model === defaultModelId)?.displayName ?? modelCatalog.find((item) => item.isDefault)?.displayName ?? "未提供"}</p>}
         <label className="codex-prep-label">模型
-          <select aria-label="Codex 备课模型" value={modelPreferences.modelMode === "auto" ? "auto" : modelPreferences.model ?? ""} disabled={modelBusy} onChange={(event) => setModelPreferences((current) => ({ ...current, modelMode: event.target.value === "auto" ? "auto" : "manual", model: event.target.value === "auto" ? null : event.target.value }))}>
+          <select aria-label={book ? "Codex 备课模型" : "Codex 模型"} value={modelPreferences.modelMode === "auto" ? "auto" : modelPreferences.model ?? ""} disabled={modelBusy} onChange={(event) => setModelPreferences((current) => ({ ...current, modelMode: event.target.value === "auto" ? "auto" : "manual", model: event.target.value === "auto" ? null : event.target.value }))}>
             <option value="auto">自动（推荐，使用 Codex 官方默认）</option>
             {modelPreferences.modelMode === "manual" && modelPreferences.model && !modelCatalog.some((item) => item.model === modelPreferences.model) && <option value={modelPreferences.model}>不可用：{modelPreferences.model}</option>}
             {modelCatalog.map((item) => <option key={item.model} value={item.model}>{item.displayName} · {item.model}{item.isDefault ? "（官方默认）" : ""}</option>)}
@@ -488,7 +448,7 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
       <>
         {prepNotice && <div role="status" data-testid="prep-topic-notice"><p>{prepNotice}</p>{existingLessonId && lessons.some((lesson) => lesson.id === existingLessonId) && <button className="text-button" onClick={() => { const lesson = lessons.find((lesson) => lesson.id === existingLessonId); if (lesson) onOpenLesson?.(lesson, lessons); }}>打开已有精选阅读</button>}</div>}
         <div className="codex-prep-chat" ref={chatRef} onScroll={(event) => { const chat = event.currentTarget; followReply.current = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40; }} aria-live="polite">
-          {!book && !history.length && !pendingDiscussion && <p className="assistant-empty">{historyReady ? "可以问我选什么、讲了什么，或一起理解当前内容。" : "正在读取讨论记录…"}</p>}
+          {!book && !history.length && !pendingDiscussion && <p className="assistant-empty">{historyReady ? writingAssistant ? "告诉我想练什么主题、英语水平或目标词汇。我可以先帮你构思，再写出可复制的英文短文。" : "可以问我选什么、讲了什么，或一起理解当前内容。" : "正在读取讨论记录…"}</p>}
           {history.map((turn, index) => <div className={`codex-prep-turn ${turn.role}`} key={`${index}-${turn.role}`} data-reply-index={turn.role === "assistant" ? index : undefined} style={{ fontSize: `${discussionFontSize}px` }}>{turn.role === "assistant" && <span className="codex-prep-turn-author">Codex</span>}<ChatMarkdown text={displayDiscussionText(turn)} />{turn.role === "assistant" && readerContext && <div className="reading-assistant-references">{(turn.paragraphIndexes ?? []).filter(index => Number.isInteger(index) && index >= 0 && index < (readerContext.current()?.paragraphCount ?? 0)).map(index => <button key={index} type="button" onClick={() => { if (window.matchMedia("(max-width: 1150px)").matches) { onClose?.(); requestAnimationFrame(() => readerContext.current()?.locateParagraph(index)); } else readerContext.current()?.locateParagraph(index); }}>第 {index + 1} 段</button>)}<button type="button" disabled={busy || !history.slice(0, index).some(item => item.role === "user")} onClick={() => { const previous = history.slice(0, index).reverse().find(item => item.role === "user"); if (previous) void converse(false, previous.text); }}>重新回答</button></div>}{turn.role === "assistant" ? <div className="codex-prep-reply-actions" aria-label="回复操作"><button type="button" aria-label="复制回复" data-tooltip={copiedReply === index ? "已复制" : "复制回复"} onClick={() => void copyReply(index)}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v9A1.5 1.5 0 0 0 4.5 15H7"/></svg></button><button type="button" aria-label={speakingReply === index ? "停止朗读" : ttsLoadingReply === index ? "正在加载音频" : "朗读"} data-tooltip={speakingReply === index ? "停止朗读" : ttsLoadingReply === index ? "正在加载音频" : "朗读"} aria-busy={ttsLoadingReply === index} onClick={() => void readReply(index)}><svg viewBox="0 0 20 20" aria-hidden="true">{speakingReply === index || ttsLoadingReply === index ? <><rect x="6" y="5" width="3" height="10" rx="1"/><rect x="11" y="5" width="3" height="10" rx="1"/></> : <><path d="M3 8v4h3l4 3V5L6 8H3Z"/><path d="M13 7a4 4 0 0 1 0 6M15 5a7 7 0 0 1 0 10"/></>}</svg></button></div> : <div className="codex-prep-reply-actions user-message-actions" aria-label="消息操作"><button type="button" aria-label="复制回复" data-tooltip="复制回复" onClick={() => void copyDiscussionText(turn.text)}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v9A1.5 1.5 0 0 0 4.5 15H7"/></svg></button></div>}</div>)}
           {pendingDiscussion && <>
             <div className="codex-prep-turn user" style={{ fontSize: `${discussionFontSize}px` }}><ChatMarkdown text={pendingDiscussion.message} /><div className="codex-prep-reply-actions user-message-actions" aria-label="消息操作"><button type="button" aria-label="复制回复" data-tooltip="复制回复" onClick={() => void copyDiscussionText(pendingDiscussion.message)}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v9A1.5 1.5 0 0 0 4.5 15H7"/></svg></button></div></div>
@@ -497,10 +457,10 @@ export function CodexPrepPanel({ book, lessons = [], onLessonSaved, onOpenLesson
         </div>
         {history.length > 0 && <div className="codex-prep-composer-heading"><button className="text-button" aria-label="清空讨论记录" title="清空讨论记录" disabled={busy} onClick={() => void clearHistory()}>清空</button></div>}
         <label className="codex-prep-composer-input">
-          <textarea id="codex-prep-message" aria-label="消息输入" aria-keyshortcuts="Control+Enter Meta+Enter" value={message} rows={3} maxLength={2000} style={{ fontSize: `${discussionFontSize}px` }} onChange={(event) => setMessage(event.target.value)} onKeyDown={event => { if (!event.nativeEvent.isComposing && event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (auth?.sharing) void converse(submissionMode === "draft"); } }} />
+          <textarea id="codex-prep-message" aria-label="消息输入" aria-keyshortcuts="Control+Enter Meta+Enter" value={message} placeholder={writingAssistant ? "例如：写一篇关于旅行的英文短文，约120词，难度适合初学者…" : undefined} rows={3} maxLength={2000} style={{ fontSize: `${discussionFontSize}px` }} onChange={(event) => setMessage(event.target.value)} onKeyDown={event => { if (!event.nativeEvent.isComposing && event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (auth?.sharing) void converse(submissionMode === "draft"); } }} />
         </label>
         <div className="codex-prep-composer-actions">
-          <div className="codex-prep-quick-prompts" aria-label={book ? "备课快捷提示" : "阅读快捷提示"}>
+          <div className="codex-prep-quick-prompts" role="group" aria-label={book ? "备课快捷提示" : writingAssistant ? "英文创作快捷提示" : "阅读快捷提示"}>
             <div>{quickPrompts.map((item) => <button key={item.label} type="button" className="text-button" disabled={busy} onClick={() => { setMessage(item.prompt); setSubmissionMode(item.mode); }}>{item.label}</button>)}</div>
           </div>
           <div className="codex-prep-submit-row">

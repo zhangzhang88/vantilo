@@ -10,6 +10,8 @@ import "./book-table.css";
 import "./book-visual.css";
 import "./book-detail-content.css";
 import "./global-navigation.css";
+import "./native-assistant-settings.css";
+import "./native-reader-surfaces.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

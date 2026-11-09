@@ -205,7 +205,7 @@ class AgentRuntime extends EventEmitter {
     const controller=this.readerRequests?.get(requestId); controller?.abort();
     return {cancelled:Boolean(controller)};
   }
-  async #runReaderAi({ instructions, input, modelId, reasoningEffort, signal, requestId }) {
+  async #runReaderAi({ instructions, input, modelId, reasoningEffort, signal, requestId, taskKind }) {
     signal?.throwIfAborted();
     if (this.stopped) throw new Error('Agent 已停止。');
     if (this.activeTask) throw new Error('Agent 正在处理其他任务，请稍后重试。');
@@ -236,7 +236,7 @@ class AgentRuntime extends EventEmitter {
         }
         const message = this.store.get(session.id).messages.find(item => item.taskId === taskId && item.role === 'assistant');
         const output = message?.text?.trim();
-        if (!output || output.length > 20000) reject(new Error('Agent 返回内容格式无效，请重试。'));
+        if (!output || output.length > (taskKind === 'learning-material' ? 65000 : 20000)) reject(new Error('Agent 返回内容格式无效，请重试。'));
         else resolve(output);
       };
       const onEvent = event => { if (event.type === 'task-status' && event.sessionId === session.id && ['completed','failed','cancelled'].includes(event.status)) finish(event); };
@@ -244,7 +244,7 @@ class AgentRuntime extends EventEmitter {
         cleanup();
         if (taskId && this.activeTask?.id === taskId) void this.cancel(taskId).catch(() => {});
         reject(new Error('Agent 阅读任务超时，请重试。'));
-      }, 90000);
+      }, taskKind === 'learning-material' ? 240000 : 90000);
       this.on('event', onEvent);
       signal?.addEventListener('abort',cancel,{once:true});
       void this.submit(session.id, prompt, { readerTask: true }).then(result => { taskId = result.taskId; if(signal?.aborted)cancel(); if (earlyTerminal) finish(earlyTerminal); }, error => { cleanup(); reject(error); });

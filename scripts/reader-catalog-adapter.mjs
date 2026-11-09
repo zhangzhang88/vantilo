@@ -114,7 +114,7 @@ export function adaptCatalogPreview(source,filename) {
     .replace(': fullArticleTranslationExpanded ? "译文" : "全文"', ': "全文翻译"')
     .replace(': fullArticleTranslationExpanded ? "收" : "译"}', ': fullArticleTranslationExpanded ? "收" : ""}');
   const sourceButton=take('          {issue.kind === "book" && <BookSourceButton','\n');
-  const learning=take('          {onOpenLearning && <button','\n');
+  const copyEnglish=take('          {copyEnglishText !== undefined && <CuratedArticleCopyButton','\n');
   const notes=take('          <button className={`toolbar-button ${drawer === "notes"','\n');
   const find=take('          <button\n            className={`toolbar-button reader-find-button','</button>');
   const shortcuts=take('          <button\n            className={`toolbar-button reader-shortcuts-button','</button>');
@@ -125,9 +125,9 @@ export function adaptCatalogPreview(source,filename) {
   const menus=`
           <details className="reader-toolbar-menu reader-more-menu" onClick={(event)=>{if((event.target as HTMLElement).closest(".reader-toolbar-menu-panel button"))event.currentTarget.open=false;}}>
             <summary className="toolbar-button reader-toolbar-menu-trigger" aria-label="更多阅读操作">⋯ <span>更多</span></summary>
-            <div className="reader-toolbar-menu-panel" aria-label="更多阅读操作">${readLater}${jumpBack}${notes}${find}${shortcuts}${immersion}${sourceButton}${learning}${vocabulary}</div>
+            <div className="reader-toolbar-menu-panel" aria-label="更多阅读操作">${readLater}${jumpBack}${notes}${find}${shortcuts}${immersion}${sourceButton}${vocabulary}</div>
           </details>`;
-  actions=actions.replace(tocEnd,tocEnd+chinese+full+menus);
+  actions=actions.replace(tocEnd,tocEnd+chinese+full+copyEnglish+menus);
   source=source.slice(0,toolbarStart)+actions+source.slice(toolbarEnd);
   const settingsStart=source.indexOf('function SettingsPage('),settingsEnd=source.indexOf('\nexport default function App',settingsStart+10);
   if(settingsStart<0||settingsEnd<0)throw new Error('Settings boundaries changed');

@@ -10,6 +10,7 @@ import { lessonParagraphs } from "../../shared/book-lesson.js";
 interface Source { id: string; title: string; paragraphs: string[]; }
 export interface AssistantContext {
   key: string; fingerprint: string; label: string; overview: string;
+  mode?: "practice-writing";
   document?: { paragraphCount: number; fullText?: string };
   read: (plan: string, currentParagraphIndex?: number) => string;
 }
@@ -47,6 +48,18 @@ export function readAssistantSources(sources: Source[], raw: string, currentPara
 }
 
 export async function buildAssistantContext(scope: AssistantScope, books: BookImportService, issues: IssueService, prep: CodexPrepService, categories: BookCategoryService): Promise<AssistantContext> {
+  if (scope.kind === "practice") {
+    // This scope intentionally avoids book catalogs, source-reading plans and
+    // unrelated history. It is for original English writing, not source claims.
+    return {
+      key: 'assistant:{"kind":"practice"}',
+      fingerprint: "practice-writing-v1",
+      mode: "practice-writing",
+      label: "英文文章创作",
+      overview: "AI Practice Workshop: create and revise original English passages. No books or magazines are selected.",
+      read: () => "No source documents in this writing workspace.",
+    };
+  }
   const sources: Source[] = [], directory: string[] = [], fingerprints: string[] = [];
   const categoryAssignments = ["all", "books", "chapter", "lesson"].includes(scope.kind) ? await categories.assignments() : {};
   let label = "全部书刊";

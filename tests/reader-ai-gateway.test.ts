@@ -71,3 +71,36 @@ it('cancels the matching native Reader request on timeout rather than leaving in
     parent.emit('message',{data:{type:'ai-result',requestId,ok:true,output:'late result'}});
   }finally{client.close();vi.useRealTimers();}
 });
+it('keeps complex course preparation alive after 90 and 120 seconds, but still cancels it at its bounded 270-second gateway deadline', async()=>{
+  const {createReaderAiClient}=require('../electron/reader-ai-gateway.cjs');
+  const parent=new EventEmitter() as any;parent.postMessage=vi.fn();
+  const client=createReaderAiClient(parent);
+  vi.useFakeTimers();
+  try {
+    const pending=client.run({instructions:'prepare validated learning lesson',input:'course contents',taskKind:'learning-material'});
+    const requestId=parent.postMessage.mock.calls[0][0].requestId;
+    await vi.advanceTimersByTimeAsync(120001);
+    expect(parent.postMessage).toHaveBeenCalledTimes(1);
+    expect(parent.postMessage.mock.calls[0][0]).toMatchObject({taskKind:'learning-material'});
+    const outcome=expect(pending).rejects.toThrow(/超时/);
+    await vi.advanceTimersByTimeAsync(149999);
+    await outcome;
+    expect(parent.postMessage).toHaveBeenLastCalledWith({type:'ai-cancel',requestId});
+  } finally { client.close();vi.useRealTimers(); }
+});
+it('accepts larger structured lesson JSON without raising the response cap for ordinary Reader questions', async()=>{
+  const {createReaderAiClient}=require('../electron/reader-ai-gateway.cjs');
+  const parent=new EventEmitter() as any;parent.postMessage=vi.fn();
+  const client=createReaderAiClient(parent);
+  try {
+    const largeResult='x'.repeat(35000);
+    const course=client.run({instructions:'prepare',input:'sample',taskKind:'learning-material'});
+    const courseId=parent.postMessage.mock.calls.at(-1)[0].requestId;
+    parent.emit('message',{data:{type:'ai-result',requestId:courseId,ok:true,output:largeResult}});
+    await expect(course).resolves.toBe(largeResult);
+    const normal=client.run({instructions:'answer',input:'sample'});
+    const normalId=parent.postMessage.mock.calls.at(-1)[0].requestId;
+    parent.emit('message',{data:{type:'ai-result',requestId:normalId,ok:true,output:largeResult}});
+    await expect(normal).rejects.toThrow(/阅读任务失败/);
+  } finally { client.close(); }
+});

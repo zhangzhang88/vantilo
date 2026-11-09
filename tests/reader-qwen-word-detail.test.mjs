@@ -35,8 +35,8 @@ describe('Vantilo Qwen Word Detail isolated preview',()=>{
     expect(card).toContain('!dictionary.definitionsZh.some((item) => (item.source as string) === "macos-dictionary-full")');
     expect(card.indexOf('当前语境 · 本地 Qwen')).toBeLessThan(card.indexOf('中文词典释义'));
     expect(card).toContain('dictionary.definitionsZh.filter');
-    expect(card).toContain('onClick={() => playWordPronunciation(lookup.text, dictionary, "us")}');
-    expect(card).toContain('onClick={() => playWordPronunciation(lookup.text, dictionary, "uk")}');
+    expect(card).toContain('onClick={() => playWordPronunciation(lookup.text, "us")}');
+    expect(card).toContain('onClick={() => playWordPronunciation(lookup.text, "uk")}');
     expect(card).toContain('word-detail-familiarity');
   });
   it('does not trigger obsolete Agent analysis on More, does not show empty explanation sections, and preserves edit features',()=>{

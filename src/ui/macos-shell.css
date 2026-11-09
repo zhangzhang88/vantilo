@@ -1,0 +1,123 @@
+/* macOS-native visual pilot for Vantilo's Electron shell.
+ * Deliberately scoped to the shell: no Reader internals, business logic,
+ * OS appearance overrides, layout structure, or persistence keys change. */
+.vantilo-macos-shell {
+  --mac-shell-bg: #202023;
+  --mac-chrome: #29292c;
+  --mac-sidebar: #262629;
+  --mac-content: #1d1d1f;
+  --mac-line: rgba(235,235,245,.12);
+  --mac-text: #f2f2f7;
+  --mac-secondary: #a7a7ad;
+  --mac-selected: rgba(160,160,175,.19);
+  --mac-focus: #7ba6d9;
+  background: var(--mac-shell-bg);
+  color: var(--mac-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+.vantilo-macos-shell > .app-titlebar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:0 20px 0 82px;
+  background:var(--mac-chrome);
+  border-bottom:1px solid var(--mac-line);
+}
+.vantilo-macos-shell .app-window-title {
+  flex:none;
+  color:var(--mac-text);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:-.01em;
+  line-height:1;
+  opacity:.9;
+  user-select:none;
+}
+.vantilo-macos-shell .app-titlebar .account-controls,
+.vantilo-macos-shell .app-titlebar button {
+  -webkit-app-region:no-drag;
+}
+.vantilo-macos-shell > .app-rail {
+  background:var(--mac-sidebar);
+  border-right:1px solid var(--mac-line);
+}
+.vantilo-macos-shell .app-rail-cell {
+  height:44px;
+}
+.vantilo-macos-shell .app-rail-cell::before { display:none; }
+.vantilo-macos-shell .app-rail-cell .react-aria-Button {
+  width:34px;
+  height:34px;
+  border-radius:9px;
+  color:var(--mac-secondary);
+  transition: background-color .13s ease,color .13s ease;
+}
+.vantilo-macos-shell .app-rail-cell:not(.is-active) .react-aria-Button:hover {
+  background:rgba(255,255,255,.085);
+  color:var(--mac-text);
+}
+.vantilo-macos-shell .app-rail-cell.is-active .react-aria-Button {
+  background:var(--mac-selected);
+  color:var(--mac-text);
+}
+.vantilo-macos-shell .app-rail-cell .react-aria-Button:focus-visible,
+.vantilo-macos-shell button:focus-visible {
+  outline:2px solid var(--mac-focus);
+  outline-offset:2px;
+}
+.vantilo-macos-shell > .workspace-sheet {
+  margin:0;
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+  background:var(--mac-content);
+}
+.vantilo-macos-shell > .workspace-sheet > .sidebar {
+  background:var(--mac-sidebar);
+  border-right:1px solid var(--mac-line);
+}
+.vantilo-macos-shell > .workspace-sheet > .center {
+  background:var(--mac-content);
+}
+.vantilo-macos-shell .session-row {
+  border-color:transparent;
+  border-radius:8px;
+}
+.vantilo-macos-shell .session-row:hover {
+  background:rgba(255,255,255,.065);
+}
+.vantilo-macos-shell .session-row.selected {
+  background:var(--mac-selected);
+  border-color:transparent;
+}
+.vantilo-macos-shell .conversation-title-bar {
+  background:var(--mac-content);
+  border-bottom:1px solid var(--mac-line);
+  color:var(--mac-text);
+}
+.vantilo-macos-shell .sidebar-heading {
+  font-size:15px;
+  font-weight:650;
+  letter-spacing:-.015em;
+}
+.vantilo-macos-shell .sidebar-section-heading { color:var(--mac-secondary); font-size:11px; }
+.vantilo-macos-shell .sidebar-resize-handle::after { background:var(--mac-line); }
+.vantilo-macos-shell .sidebar-resize-handle:hover::after { background:var(--mac-secondary); }
+.vantilo-macos-shell .magazine-reader-module { background:var(--mac-content); }
+.vantilo-macos-shell .magazine-reader-host-bar {
+  background:var(--mac-chrome);
+  border-bottom:1px solid var(--mac-line);
+}
+.vantilo-macos-shell .magazine-reader-host-bar button {
+  background:rgba(255,255,255,.075);
+  border-color:var(--mac-line);
+  border-radius:8px;
+  font-size:12px;
+}
+.vantilo-macos-shell .magazine-reader-host-bar button:hover {
+  background:rgba(255,255,255,.14);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vantilo-macos-shell .app-rail-cell .react-aria-Button { transition:none; }
+}

@@ -5,8 +5,9 @@ import path from "node:path";
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BookRecord } from "../../shared/book-data-contract.js";
-import { CODEX_PREP_SANDBOX_MODE, CodexPrepService, bookContext, parseLessonDraft } from "./codex-prep-service.js";
+import { CODEX_PREP_SANDBOX_MODE, CodexPrepService, bookContext, isPreviousReplyRewrite, parseLessonDraft } from "./codex-prep-service.js";
 import type { CodexAuthService } from "./codex-auth-service.js";
+import { BOOK_AI_INPUT_LIMIT } from "./book-research.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -18,7 +19,88 @@ function book(id = "book-a", fingerprint = "fingerprint-a"): BookRecord {
 const english = "Two children grow up in the same family. They share a home and the same parents. But they are not exactly the same. One child may love books. The other may love sports. Why? They have different friends. They also learn different things. Sometimes the same event makes them feel different. Their family is important, but it is not the whole story. Scientists still study how children become different people. Even a shared home cannot make two people identical. This idea can help parents see each child as a person.";
 const candidate = (evidence: unknown = [{ chapterId: "chapter-1", paragraphIndex: 1 }]) => JSON.stringify({ titleZh: "同一家庭，不同孩子", teaserZh: "为什么同一个家庭会有两个完全不同的孩子？", english, explanationZh: "同一家庭并不等于完全相同的成长经历。", keywords: ["same", "different", "share"], evidence });
 
+it("sends a 31-chapter book through both Codex stages without crossing Reader's input ceiling", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mr-prep-large-book-")); roots.push(root);
+  const big = {
+    ...book("large-book", "large-fingerprint"),
+    chapters: Array.from({ length: 31 }, (_, chapter) => ({
+      id: "large-chapter-" + chapter, order: chapter, role: "chapter",
+      title: "Research Chapter " + chapter,
+      paragraphs: Array.from({ length: 95 }, (_, paragraph) =>
+        `Research insight chapter ${chapter}, paragraph ${paragraph}. ` +
+        "Evidence and counterintuitive findings need careful verification. ".repeat(7)),
+    })),
+  } as BookRecord;
+  const auth = { accessToken: vi.fn(async () => "synthetic-token") } as unknown as CodexAuthService;
+  const calls: string[] = [];
+  const run = vi.fn(async (input: string) => {
+    calls.push(input);
+    expect(input.length).toBeLessThanOrEqual(BOOK_AI_INPUT_LIMIT);
+    if (input.startsWith("RESEARCH_PLAN_V1")) return JSON.stringify({
+      queries: ["Research insight"], reads: [{ chapterId: "large-chapter-30", start: 88, count: 3 }],
+    });
+    return "这是根据后面章节的完整证据总结的两个可进一步核查的观点。";
+  });
+  const service = new CodexPrepService(root, auth, run as never);
+  try {
+    await service.load();
+    const result = await service.converse(big, "请从全书推荐两个令人意外的观点");
+    expect(result.answer).toContain("后面章节");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain("large-chapter-30 | Research Chapter 30");
+    expect(calls[1]).toContain("[large-chapter-30:P89] Research insight");
+    expect(result.research?.read.some(chapter => chapter.chapterId === "large-chapter-30")).toBe(true);
+  } finally { service.close(); }
+});
+
 describe("Codex book preparation", () => {
+  it("rewrites the previous English reply in one call instead of researching the entire book again", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "reader-rewrite-followup-")); roots.push(root);
+    const auth = { accessToken: vi.fn(async () => "synthetic-token") } as unknown as CodexAuthService;
+    const inputs: string[] = [];
+    const run = vi.fn(async (input: string) => {
+      inputs.push(input);
+      if (input.startsWith("RESEARCH_PLAN_V1")) return JSON.stringify({
+        queries: ["siblings"], reads: [{ chapterId: "chapter-1", start: 0, count: 2 }],
+      });
+      if (input.startsWith("REPHRASE_PREVIOUS_REPLY_V1")) return "Two kids can be different. 两个孩子可能不同。";
+      return "Two siblings may develop different personalities.";
+    });
+    const service = new CodexPrepService(root, auth, run as never);
+    await service.load();
+    try {
+      await service.converse(book(), "请介绍这个观点");
+      const second = await service.converse(book(),
+        "我读不懂刚才的句子。请保留原意，换成更常见的词和更短、更简单的句子，并用中文说明改了什么。");
+      expect(second.answer).toContain("Two kids");
+      expect(inputs).toHaveLength(3);
+      expect(inputs[2]).toContain("REPHRASE_PREVIOUS_REPLY_V1");
+      expect(inputs[2]).toContain("Two siblings may develop different personalities.");
+      expect(inputs[2]).not.toContain("TABLE OF CONTENTS");
+      expect(service.history(book().id, book().sourceFingerprint)).toHaveLength(4);
+    } finally { service.close(); }
+  });
+
+  it("does not let a hallucinated duplicate topic id break ordinary book discussion", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "reader-topic-id-followup-")); roots.push(root);
+    const auth = { accessToken: vi.fn(async () => "synthetic-token") } as unknown as CodexAuthService;
+    const run = vi.fn(async (input: string) => input.startsWith("RESEARCH_PLAN_V1")
+      ? JSON.stringify({ queries: [], reads: [{ chapterId: "chapter-1", start: 0, count: 2 }], duplicateId: "unrecognized-id" })
+      : "The source evidence describes sibling differences.");
+    const service = new CodexPrepService(root, auth, run as never);
+    await service.load();
+    try {
+      const result = await service.converse(book(), "研究这本书里关于孩子差异的内容");
+      expect(result.answer).toContain("sibling differences");
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally { service.close(); }
+  });
+
+  it("keeps requests to verify original book evidence on the retrieval path", () => {
+    expect(isPreviousReplyRewrite("我读不懂刚才的句子，请换成更简单的英文句子")).toBe(true);
+    expect(isPreviousReplyRewrite("请核对刚才英文句子对应的原文证据")).toBe(false);
+    expect(isPreviousReplyRewrite("请推荐两个有意思的观点")).toBe(false);
+  });
   it("persists local model preferences across service restarts without storing OAuth credentials", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "mr-prep-model-preferences-")); roots.push(root);
     const auth = { accessToken: vi.fn(async () => "secret-synthetic-token") } as unknown as CodexAuthService;
@@ -43,7 +125,7 @@ describe("Codex book preparation", () => {
     await service.load();
     await service.saveModelPreferences({ modelMode: "manual", model: "synthetic-model", reasoningMode: "manual", reasoningEffort: "high" });
     await expect(service.generateLearningMaterial("prepare")).resolves.toMatchObject({ text: "generated", usage: { modelId: "synthetic-model", reasoningEffort: "high" } });
-    expect(run.mock.calls[0][4]).toMatchObject({ model: "synthetic-model", reasoningEffort: "high" });
+    expect(run.mock.calls[0][4]).toMatchObject({ model: "synthetic-model", reasoningEffort: "high", taskKind: "learning-material" });
     catalog.mockResolvedValueOnce([]);
     run.mockClear();
     await expect(service.generateLearningMaterial("prepare again")).rejects.toThrow(/模型.*不可用/);

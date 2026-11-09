@@ -43,6 +43,10 @@ export function adaptTranslationPreview(source,filename) {
 `;
   if(!filename.endsWith('/frontend/App.tsx'))return source;
   const sentenceStateAnchor='  const [sentenceTranslationRecords, setSentenceTranslationRecords]';
+  // The audiobook view must resolve the same engine-specific cache as full-text
+  // translation, and must remount when the selected engine changes.
+  exact('<ChineseReader key={article.identity.documentId} article={article}',
+    '<ChineseReader key={`${article.identity.documentId}:${vantiloEngine}`} translationEngineId={vantiloEngine} article={article}');
   const sentenceStateIndex=source.indexOf(sentenceStateAnchor);
   if(sentenceStateIndex<0)throw new Error('Sentence state seam changed');
   source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>{
@@ -109,7 +113,21 @@ export function adaptTranslationPreview(source,filename) {
       return await response.json();
     };
     if(input.verifyConsistency)return call('verified');
-    const primary=await call('primary');
+    // Keep a hyphenated compound intact. When the full structured response
+    // fails, request a short Chinese contextual gloss from the same engine.
+    // Never invent a meaning by concatenating dictionary entries.
+    const primary=await call('primary').catch(async originalError => {
+      if(!/[-‐‑–—]/u.test(input.text))throw originalError;
+      const response=await fetch('/api/vantilo-context-gloss',{
+        method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({engineId,word:input.text,sentence:input.sentence.slice(0,600)}),
+      });
+      if(!response.ok)throw originalError;
+      const brief=await response.json();
+      if(typeof brief.meaningZh!=='string'||!/^[\\p{Script=Han}、， ]{1,24}$/u.test(brief.meaningZh.trim()))throw originalError;
+      return {engineId,meaningZh:brief.meaningZh.trim(),partOfSpeech:'phrase',explanationZh:'',
+        provider:brief.provider,model:brief.model};
+    });
     const partial={...primary,meaningEn:'',explanationEn:'',examplesEn:[],supplementStatus:'loading'};
     if(vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
     onPartial(partial);

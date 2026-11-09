@@ -115,7 +115,9 @@ async function createFullApfsTestVolume() {
   await run('/usr/bin/hdiutil', ['create', '-size', '128m', '-type', 'SPARSE', '-fs', 'APFS', '-volname', `VantiloSafety-${path.basename(base).slice(-8)}`, image]);
   let attached = false;
   try {
-    await run('/usr/bin/hdiutil', ['attach', '-nobrowse', '-mountpoint', mount, image]);
+    // Modern macOS accepts the native diskutil image subcommand where the
+    // deprecated hdiutil attach may be denied despite a writable test volume.
+    await run('/usr/sbin/diskutil', ['image', 'attach', '--nobrowse', '--mountPoint', mount, image]);
     attached = true;
     const fillPath = path.join(mount, 'capacity-reservation.bin');
     const handle = await fs.open(fillPath, 'wx', 0o600);

@@ -62,7 +62,7 @@ const RuntimeMessage = z.union([
 ]);
 const Payloads = {
   'reader:cancel': z.object({ requestId: Uuid }).strict(),
-  'reader:ai': z.object({ requestId: Uuid.optional(), instructions: z.string().min(1).max(8000), input: z.string().min(1).max(18000), modelId:z.string().min(1).max(256).nullable().optional(), reasoningEffort:z.string().min(1).max(64).nullable().optional() }).strict().refine(value => value.instructions.length + value.input.length <= 19000),
+  'reader:ai': z.object({ requestId: Uuid.optional(), instructions: z.string().min(1).max(8000), input: z.string().min(1).max(18000), modelId:z.string().min(1).max(256).nullable().optional(), reasoningEffort:z.string().min(1).max(64).nullable().optional(), taskKind:z.enum(['learning-material']).optional() }).strict().refine(value => value.instructions.length + value.input.length <= 19000),
   'account:status': z.object({}).strict(),
   'account:login': z.object({}).strict(),
   'account:logout': z.object({}).strict(),
@@ -92,7 +92,7 @@ const Payloads = {
 };
 const Results = {
   'reader:cancel': z.object({cancelled:z.boolean()}).strict(),
-  'reader:ai': z.object({ output: z.string().min(1).max(20000) }).strict(),
+  'reader:ai': z.object({ output: z.string().min(1).max(65000) }).strict(),
   'account:status': z.object({ connected: z.boolean(), email: z.string().max(320).nullable() }).strict(),
   'account:login': z.object({ url: z.string().url().refine(value => { const u = new URL(value); return u.protocol === 'https:' && u.hostname === 'auth.openai.com' && !u.username && !u.password; }) }).strict(),
   'account:logout': z.object({ connected: z.literal(false), email: z.null() }).strict(),

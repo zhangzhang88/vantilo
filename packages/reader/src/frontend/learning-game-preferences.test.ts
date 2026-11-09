@@ -8,7 +8,7 @@ it("validates the original two voices and appearance choices, and includes them 
   for (const theme of ["app", "light", "dark", "system"]) {
     expect(validGamePreferences({ ...defaultGamePreferences, theme })).toBe(true);
   }
-  const saved = { ...defaultGamePreferences,voice: "en-US-GuyNeural",theme: "dark",background: "warm" };
+  const saved = { ...defaultGamePreferences,voice: "ryan",theme: "dark",background: "warm" };
   storage.setItem(LEARNING_GAME_PREFERENCES_KEY,JSON.stringify(saved)); expect(loadGamePreferences(storage)).toEqual(saved);
   expect(parseUserDataBackup(serializeUserDataBackup(buildUserDataBackup(storage))).data[LEARNING_GAME_PREFERENCES_KEY]).toEqual(saved);
   expect(validGamePreferences({ ...saved,voice: "unprepared-voice" })).toBe(false);

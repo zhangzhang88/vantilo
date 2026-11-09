@@ -19,6 +19,8 @@ describe('plain translation and existing cache repair',()=>{
   const filename=`${readerSourceRoot}/src/frontend/App.tsx`;
   const adapted=adaptTranslationPreview(readFileSync(filename,'utf8'),filename);
   expect(adapted).toContain("fetch('/api/vantilo-translation/translate'");
+  expect(adapted).toContain("fetch('/api/vantilo-context-gloss'");
+  expect(adapted).toContain("/[-‐‑–—]/u.test(input.text)");
   expect(adapted).not.toContain('Translate request seam changed');
  });
  it('repairs a cached title without discarding a successful paragraph or changing storage',()=>{

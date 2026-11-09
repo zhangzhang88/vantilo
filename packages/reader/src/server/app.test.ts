@@ -9,6 +9,7 @@ import { JsonStorage } from "../storage/json-storage.js";
 import type { Article, IssueRecord } from "../shared/types.js";
 import { bookChapterReadingDocumentIdentity, bookLessonReadingDocumentIdentity } from "../shared/reading-document-identity.js";
 import { syntheticMagazineEpub } from "../../tests/fixtures/synthetic-magazine.js";
+import { learningSourceSentences } from "../shared/learning-material.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -45,6 +46,73 @@ async function createBookImportFixture(): Promise<Buffer> {
 }
 
 describe("Fastify app", () => {
+  it("routes workshop DeepSeek directly, never through the Codex-only Reader AI proxy", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "workshop-route-"));
+    roots.push(root);
+    await mkdir(path.join(root, "issues"));
+    const codexShim = vi.fn(async () => { throw new Error("Codex proxy must not receive an external provider request"); });
+    const providerFetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api.deepseek.com/chat/completions");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer synthetic-secret");
+      const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+      expect(body.messages[0].content).toContain("The market is busy.");
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({exercises:[
+        {sentence:"the market",chinese:"市场",pronunciation:"/ðə ˈmɑːrkɪt/"}
+      ]})}}]}), { status: 200, headers: {"content-type":"application/json"} });
+    });
+    const app = await buildServer({
+      projectRoot: root, serveFrontend: false,
+      aiFetchImpl: codexShim as unknown as typeof fetch,
+      workshopFetchImpl: providerFetch as typeof fetch,
+      readerGuideProvider: null, sectionTranslationProvider: null,
+      selectionAssistProvider: null, readingAssistantProvider: null, dictionaryProvider: null,
+    });
+    try {
+      const prompt = (await app.inject({ method:"GET",url:"/api/practice-workshop/prompt" })).json().prompt as string;
+      const result = await app.inject({ method:"POST",url:"/api/practice-workshop/generate", payload:{
+        provider:"deepseek",apiKey:"synthetic-secret",deepseekModel:"deepseek-chat",article:"The market is busy.",prompt,
+      }});
+      expect(result.statusCode).toBe(200);
+      expect(result.json().exercises).toEqual([{sentence:"the market",chinese:"市场",pronunciation:"/ðə ˈmɑːrkɪt/"}]);
+      expect(result.body).not.toContain("synthetic-secret");
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+      expect(codexShim).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("generates isolated stage 1 vocabulary through the selected external API, without changing stage 2 contracts", async () => {
+    const root=await mkdtemp(path.join(os.tmpdir(),"workshop-vocabulary-route-"));roots.push(root);
+    await mkdir(path.join(root,"issues"));
+    const article="The market is busy.";
+    const entry={sentenceIndex:0,sentence:article,word:"market",occurrence:0,meaningZh:"市场",sentenceMeaningZh:"市场很热闹。",pronunciation:"/ˈmɑːrkɪt/"};
+    const codex=vi.fn(async()=>{throw new Error("Codex must not be invoked");});
+    const provider=vi.fn(async (url:string|URL|Request,init?:RequestInit)=>{
+      expect(String(url)).toBe("https://api.deepseek.com/chat/completions");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer temporary-secret");
+      const body=JSON.parse(String(init?.body));
+      expect(body.messages[0].content).toContain(article);
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({vocabulary:[entry]})}}]}),{status:200,headers:{"content-type":"application/json"}});
+    });
+    const app=await buildServer({projectRoot:root,serveFrontend:false,
+      aiFetchImpl:codex as unknown as typeof fetch,workshopFetchImpl:provider as typeof fetch,
+      readerGuideProvider:null,sectionTranslationProvider:null,selectionAssistProvider:null,
+      readingAssistantProvider:null,dictionaryProvider:null});
+    try{
+      const prompt=(await app.inject({method:"GET",url:"/api/practice-workshop/vocabulary-prompt"})).json().prompt as string;
+      expect(prompt).toContain("{{ARTICLE_JSON}}");
+      const result=await app.inject({method:"POST",url:"/api/practice-workshop/generate",
+        payload:{stage:"vocabulary",provider:"deepseek",apiKey:"temporary-secret",deepseekModel:"deepseek-chat",article,prompt}});
+      expect(result.statusCode).toBe(200);
+      expect(result.json().vocabulary).toEqual([entry]);
+      expect(result.body).not.toContain("temporary-secret");
+      expect(provider).toHaveBeenCalledTimes(1);expect(codex).not.toHaveBeenCalled();
+      const invalid=await app.inject({method:"POST",url:"/api/practice-workshop/generate",
+        payload:{stage:"unknown",provider:"deepseek",apiKey:"temporary-secret",article,prompt}});
+      expect(invalid.statusCode).toBe(400);
+    }finally{await app.close();}
+  });
+
   it("serves health and an empty issue list", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "magazine-reader-server-"));
     roots.push(root);
@@ -1304,6 +1372,50 @@ describe("Fastify app", () => {
       const invalid = await app.inject({ method: "POST", url: `/api/books/${encodeURIComponent(bookId)}/prep/chat`, headers, payload: { message: 5 } });
       expect(invalid.statusCode).toBe(400);
     } finally { finish(); mock.mockRestore(); await app.close(); }
+  });
+
+  it("routes workshop Codex writing through its isolated assistant context, without book sources", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "practice-writing-assistant-")); roots.push(root);
+    const discuss = vi.spyOn(CodexPrepService.prototype, "discussContext").mockImplementation(async (context, message) => {
+      expect(context.mode).toBe("practice-writing");
+      expect(context.label).toBe("英文文章创作");
+      expect(message).toBe("写一篇旅行英文短文");
+      return { answer: "A traveler walks through the old town." };
+    });
+    const app = await buildServer({ projectRoot: root, serveFrontend: false, aiProviderEnv: {} });
+    const query = "?scope=" + encodeURIComponent(JSON.stringify({ kind: "practice" }));
+    try {
+      const history = await app.inject({ method: "GET", url: "/api/prep/assistant/history" + query });
+      expect(history.statusCode).toBe(200);
+      expect(history.json()).toEqual([]);
+      expect(history.headers["x-assistant-source"]).toBe("practice-writing-v1");
+      const reply = await app.inject({ method: "POST", url: "/api/prep/assistant/chat" + query, payload: { message: "写一篇旅行英文短文" } });
+      expect(reply.statusCode).toBe(200);
+      expect(reply.json()).toEqual({ answer: "A traveler walks through the old town." });
+      expect(discuss).toHaveBeenCalledTimes(1);
+      const invalid = await app.inject({ method: "POST", url: "/api/prep/assistant/chat" + query, payload: { message: "" } });
+      expect(invalid.statusCode).toBe(400);
+      expect(discuss).toHaveBeenCalledTimes(1);
+    } finally { discuss.mockRestore(); await app.close(); }
+  });
+
+  it("retires the curated-lesson exercise API without affecting the independent AI workshop", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "retired-curated-practice-")); roots.push(root);
+    const app = await buildServer({ projectRoot: root, serveFrontend: false, aiProviderEnv: {} });
+    try {
+      const base = "/api/books/retired-book/lessons/retired-lesson";
+      for (const suffix of ["/basic-learning-material", "/learning-material", "/learning-material/progress", "/assembly-material", "/learning-audio"]) {
+        const result = await app.inject({ method: "GET", url: base + suffix });
+        expect(result.statusCode, suffix).toBe(404);
+      }
+      for (const suffix of ["/vocabulary-material", "/assembly-material", "/learning-material", "/learning-audio"]) {
+        const result = await app.inject({ method: "POST", url: base + suffix, payload: {} });
+        expect(result.statusCode, suffix).toBe(404);
+      }
+      expect((await app.inject({ method: "GET", url: "/api/learning-audio/old.wav" })).statusCode).toBe(404);
+      expect((await app.inject({ method: "GET", url: "/api/practice-workshop/prompt" })).statusCode).toBe(200);
+      expect((await app.inject({ method: "GET", url: "/api/practice-workshop/vocabulary-prompt" })).statusCode).toBe(200);
+    } finally { await app.close(); }
   });
 
   it("routes contextual sentence requests and rejects invalid or oversized context before calling the provider", async () => {

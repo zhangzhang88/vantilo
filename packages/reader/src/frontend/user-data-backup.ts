@@ -1,5 +1,6 @@
 import { LEARNING_GAME_PREFERENCES_KEY, validGamePreferences } from "./learning-game-preferences";
 import { CHINESE_LISTENING_KEY, loadChineseListeningRecords } from "./chinese-listening-state";
+import { CHINESE_AUDIOBOOK_PREFERENCES_KEY, validChineseAudiobookPreferences } from "./chinese-audiobook-preferences";
 import { LEARNING_ACTIVE_KEY, LEARNING_PROGRESS_KEY, loadLearningProgress } from "./learning-state";
 import { LESSON_READER_STATE_KEY } from "./lesson-reader-state";
 import { normalizeReadingEntry } from "./reading-entry";
@@ -62,6 +63,7 @@ export interface UserDataBackupSummary {
 
 export const USER_DATA_BACKUP_ENTRIES: readonly UserDataBackupEntryDefinition[] = [
   { key: CHINESE_LISTENING_KEY, label: "中文听书位置与语速", shape: "records" },
+  { key: CHINESE_AUDIOBOOK_PREFERENCES_KEY, label: "中文听书音色与语速偏好", shape: "preferences" },
   { key: LEARNING_GAME_PREFERENCES_KEY, label: "学习游戏声音与外观", shape: "preferences" },
   { key: LEARNING_PROGRESS_KEY, label: "学习练习进度与结果", shape: "versioned-items" },
   { key: READER_STATE_KEY, label: "阅读进度与位置", shape: "reader-state" },
@@ -153,6 +155,7 @@ function validRecords(entry: UserDataBackupEntryDefinition, value: unknown): boo
 }
 
 function validBackupValue(entry: UserDataBackupEntryDefinition, value: unknown): boolean {
+  if (entry.key === CHINESE_AUDIOBOOK_PREFERENCES_KEY) return validChineseAudiobookPreferences(value);
   if (entry.key === LEARNING_GAME_PREFERENCES_KEY) return validGamePreferences(value);
   if (entry.shape === "records" || entry.shape === "versioned-items") return validRecords(entry, value);
   if (!isObject(value)) return false;

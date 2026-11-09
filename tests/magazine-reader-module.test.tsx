@@ -22,6 +22,8 @@ describe('MagazineReaderModule', () => {
     expect(frame.getAttribute('src')).toBe('http://127.0.0.1:5175/');
     expect(frame.getAttribute('sandbox')).toContain('allow-scripts');
     expect(frame.getAttribute('sandbox')).not.toContain('allow-top-navigation');
+    // Only the fixed localhost Reader source may play game audio or copy user-requested text.
+    expect(frame.getAttribute('allow')).toBe("autoplay 'src'; clipboard-write 'src'");
     expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
   });
 

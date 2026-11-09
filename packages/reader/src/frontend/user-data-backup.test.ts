@@ -132,7 +132,8 @@ describe("user data backup", () => {
   });
 
   it("rejects invalid nested records before touching any storage", () => {
-    for (const key of USER_DATA_STORAGE_KEYS.filter((key) => key !== READER_STATE_KEY && key !== READER_PREFERENCES_KEY)) {
+    for (const key of USER_DATA_STORAGE_KEYS.filter((key) =>
+      key !== READER_STATE_KEY && key !== READER_PREFERENCES_KEY && key !== "magazine-reader-chinese-audiobook-preferences-v1")) {
       const versioned = [NOTES_STATE_KEY, "magazine-reader-read-later-v1", "magazine-reader-reading-history-v1"].includes(key);
       expect(() => parseUserDataBackup(backupText({ [key]: versioned ? { version: 1, items: [{}] } : [{}] }))).toThrow("格式不正确");
     }

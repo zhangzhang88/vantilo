@@ -19,6 +19,50 @@ it("validates scopes and discards client-supplied source content", () => {
   expect(parseAssistantScope(JSON.stringify({ kind: "books", source: "fabricated" }))).toEqual({ kind: "books" });
   for (const raw of [undefined, "null", "{}", "[]", '{"kind":"chapter","bookId":"a"}', "invalid"]) expect(() => parseAssistantScope(raw)).toThrow();
 });
+it("gives the AI practice workshop its own source-free writing context and generates articles without a book search", async () => {
+  const scoped = parseAssistantScope(JSON.stringify({ kind: "practice", injectedSource: "fake book source" }));
+  expect(scoped).toEqual({ kind: "practice" });
+  const crash = () => { throw new Error("A writing task must not read book or issue catalogs"); };
+  const workshop = await buildAssistantContext(
+    scoped,
+    { listBooks: crash, getBook: crash } as unknown as BookImportService,
+    { listIssues: crash, getIssue: crash } as unknown as IssueService,
+    { list: crash } as unknown as CodexPrepService,
+    { assignments: crash } as unknown as BookCategoryService,
+  );
+  expect(workshop).toMatchObject({ mode: "practice-writing", label: "英文文章创作", fingerprint: "practice-writing-v1" });
+  expect(workshop.overview).not.toContain("fake book source");
+  expect(workshop.key).not.toBe(context().key);
+
+  const directory = await root();
+  const prompts: string[] = [];
+  const runner = vi.fn(async (input: string, _token: string, _cwd: string, _binary: unknown, options: { onDelta?: (text: string) => void }) => {
+    prompts.push(input);
+    options.onDelta?.("A short original English passage.");
+    return "A short original English passage.";
+  });
+  const service = new CodexPrepService(directory, auth, runner as never);
+  await service.load();
+  try {
+    const delta = vi.fn();
+    const first = await service.discussContext(workshop, "写一篇适合初学者的旅行短文", { onDelta: delta });
+    expect(first.answer).toBe("A short original English passage.");
+    expect(delta).toHaveBeenCalledOnce();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("PRACTICE_WORKSHOP_WRITING_V1");
+    expect(prompts[0]).toContain("NOT a book or magazine retrieval task");
+    expect(prompts[0]).toContain("ONLY the English article text");
+    expect(prompts[0]).not.toContain("ASSISTANT_RESEARCH_PLAN_V1");
+    expect(service.history(workshop.key, workshop.fingerprint)).toHaveLength(2);
+    await service.discussContext(workshop, "把刚才的短文改得更简单");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Earlier writing conversation");
+    expect(prompts[1]).toContain("A short original English passage.");
+    expect(service.history(workshop.key, workshop.fingerprint)).toHaveLength(4);
+    expect(service.history(context().key, context().fingerprint)).toEqual([]);
+  } finally { service.close(); }
+});
+
 it("reads only allowed sources and complete bounded paragraphs, and rejects malformed plans", () => {
   const sources = [{ id: "S1", title: "One", paragraphs: ["A complete opening.", "A sibling experience.", "Closing."] }];
   const text = readAssistantSources(sources, JSON.stringify({ reads: [{ id: "invented", start: 0, count: 3 }], queries: [] }));

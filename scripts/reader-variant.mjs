@@ -1,6 +1,5 @@
 import {adaptCatalogPreview} from './reader-catalog-adapter.mjs';
 import {adaptTranslationPreview} from './reader-translation-adapter.mjs';
-import {adaptChineseAudioPlayer} from './reader-chinese-audio-adapter.mjs';
 import {adaptScopedAssistant} from './reader-assistant-adapter.mjs';
 import {adaptNativeDictionaryWordDetail} from './reader-word-detail-adapter.mjs';
 import {adaptQwenWordDetail} from './reader-qwen-detail-adapter.mjs';
@@ -18,7 +17,6 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
   source = adaptReaderBackup(source, filename);
   if (catalogPreview) source=adaptCatalogPreview(source,filename);
   if (translationPreview) source=adaptTranslationPreview(source,filename);
-  source=adaptChineseAudioPlayer(source,filename);
   // Catalog owns exact JSX seams in App.tsx; apply the growth additions only after it.
   source = adaptReaderGrowthBridge(source, filename);
   if (filename.endsWith('/frontend/codex-prep-panel.tsx')) return adaptScopedAssistant(source, filename);
@@ -333,13 +331,22 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
               {firstEn && <p><em>{firstEn.partOfSpeech}</em>{firstEn.definition}</p>}`;
     if (source.split(before).length !== 2) throw new Error('Reader dictionary card seam changed');
     source = source.replace(before, '<VantiloDictionaryQuickSummary dictionary={dictionary} />');
-    const pronunciationStart = source.indexOf('function playWordPronunciation(');
-    const pronunciationEnd = source.indexOf('\nfunction WordLookupCard(', pronunciationStart);
-    if (pronunciationStart < 0 || pronunciationEnd < 0) {
-      throw new Error('Reader pronunciation playback seam changed; review Vantilo accent selection');
+    // Do not inject the legacy macOS SpeechSynthesis fallback. Fast cached
+    // Youdao + existing Qwen3-TTS is shared by both development and packaging.
+    const pronunciationSeams = [
+      'import { playWordPronunciation, STOP_WORD_AUDIO_EVENT, WORD_AUDIO_EVENT, type WordAudioEvent } from "./word-pronunciation";',
+      'playWordPronunciation(lookup.text, "us")',
+      'playWordPronunciation(lookup.text, "uk")',
+      'playWordPronunciation(text, preferences.pronunciationAccent)',
+    ];
+    for (const seam of pronunciationSeams) {
+      if (source.split(seam).length !== 2) {
+        throw new Error('Reader fast pronunciation seam changed; review accent selection and Qwen fallback');
+      }
     }
-    source = source.slice(0, pronunciationStart) + source.slice(pronunciationEnd);
-    source += '\n' + readFileSync(new URL('./reader-pronunciation.ts', import.meta.url), 'utf8');
+    if (source.includes('SpeechSynthesisUtterance') || source.includes('speechSynthesis.speak')) {
+      throw new Error('Reader must not include a macOS system-voice pronunciation fallback');
+    }
     // Accent preference still controls automatic pronunciation on word click.
     // Manual US/UK buttons use their explicitly requested accent independently.
     source = source.replace('统一控制默认口音，以及点击正文单词时是否自动播放发音。',

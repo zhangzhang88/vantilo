@@ -62,7 +62,9 @@ class RuntimeSupervisor extends EventEmitter {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error(`Runtime request timed out: ${method}.`));
-      }, method === 'reader:ai' ? Math.max(this.requestTimeoutMs, 105000) : this.requestTimeoutMs);
+      }, method === 'reader:ai'
+        ? Math.max(this.requestTimeoutMs, payload.taskKind === 'learning-material' ? 255000 : 105000)
+        : this.requestTimeoutMs);
       this.pending.set(requestId, { method, resolve, reject, timer });
       try { this.child.postMessage({ version: PROTOCOL_VERSION, type: 'request', requestId, method, payload: parsed.data }); }
       catch (error) { clearTimeout(timer); this.pending.delete(requestId); reject(error); }

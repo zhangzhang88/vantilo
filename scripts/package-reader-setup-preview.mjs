@@ -1,4 +1,5 @@
 import {readDefaultMagazines,copyDefaultMagazines} from './default-magazine-seed.mjs';
+import {assertBundledOriginalGameSounds} from './original-game-sound-assets.mjs';
 // Build an ISOLATED, clearly named Finder-launchable preview for Reader setup review.
 // No private EPUB or original Reader settings may be packaged or read.
 import fs from 'node:fs/promises';
@@ -54,6 +55,7 @@ await fs.mkdir(readerRoot,{recursive:true});
 const originalReader = path.join(repo,'build/reader');
 // Explicit allowlist; NEVER copy build/reader/seed or build/reader/ai-bench.
 for (const name of ['web','native']) await fs.cp(isQwenPreview?path.join(translationStage,name):path.join(originalReader,name),path.join(readerRoot,name),{recursive:true});
+await assertBundledOriginalGameSounds(path.join(readerRoot,'web'));
 for (const name of ['api.cjs','codex','codex-code-mode-host','provenance.json','THIRD_PARTY_NOTICES.txt'])
   await fs.copyFile(isQwenPreview&&name==='api.cjs'?path.join(translationStage,'api.cjs'):path.join(originalReader,name),path.join(readerRoot,name));
 const seed = path.join(readerRoot,'seed');

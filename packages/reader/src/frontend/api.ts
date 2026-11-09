@@ -29,7 +29,6 @@ import type { BookImportPreview, BookRecord, BookSummary } from "../shared/book-
 import type { BookCategoryId } from "../shared/book-category";
 import type { BookTocChineseStatus } from "../shared/book-toc-chinese";
 import type { BookLesson } from "../shared/book-lesson";
-import type { LearningMaterial } from "../shared/learning-material";
 import type { CodexModelOption, CodexPrepModelPreferences } from "../shared/codex-prep-models";
 import type { ContentDiscoverySnapshot } from "../shared/content-discovery";
 import type { ScienceArticle } from "../shared/science-article";
@@ -76,10 +75,6 @@ export function refreshScienceArticle(id: string): Promise<ScienceArticle> {
 
 export function deleteBookLesson(bookId: string, lessonId: string): Promise<{ status: "deleted"; lessonId: string }> {
   return request(`/api/books/${encodeURIComponent(bookId)}/lessons/${encodeURIComponent(lessonId)}`, { method: "DELETE" });
-}
-
-export function fetchCachedLearningMaterial(bookId: string, lessonId: string): Promise<{ material: LearningMaterial | null }> {
-  return request<{ material: LearningMaterial | null }>(`/api/books/${encodeURIComponent(bookId)}/lessons/${encodeURIComponent(lessonId)}/learning-material`);
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {

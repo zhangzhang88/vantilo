@@ -22,7 +22,6 @@ export function adaptScopedAssistant(source, filename) {
     const [message, setMessage] = useState(loadScopedDraft);
     useEffect(()=>{try{if(message)window.localStorage.setItem(draftStorageKey,message.slice(0,2000));else window.localStorage.removeItem(draftStorageKey);}catch{}},[draftStorageKey,message]);`;
   source=source.replace('const [message, setMessage] = useState("");',draftCode).replace('setHistoryReady(false); setHistory([]); setMessage("");','setHistoryReady(false); setHistory([]); setMessage(loadScopedDraft());');
-  source = source.replace('  function stopReplyAudio() {', '  function stopReplyAudio() { window.speechSynthesis?.cancel();');
   source = source.replaceAll('连接与模型设置', '登录状态与模型').replaceAll('从官方 ChatGPT 登录', '使用窗口顶部的 ChatGPT 登录');
   source=source.replace('  async function saveModelSettings()', `  useEffect(()=>{if(auth?.sharing)void refreshModelCatalog();},[auth?.sharing]);
     async function saveComposerModelSettings(model:string|null,reasoningEffort:string|null) {
@@ -33,16 +32,24 @@ export function adaptScopedAssistant(source, filename) {
       finally{setModelBusy(false);}
     }
   async function saveModelSettings()`);
-  const originalTree=ts.createSourceFile(filename,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-  const replaceSpeech=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text==='readReply'){source=source.slice(0,node.getStart(originalTree))+`async function readReply(index:number) {
-          stopReplyAudio();
-          if (!window.speechSynthesis) {setError('此设备暂不支持系统朗读');return;}
-          const text=history[index]?.text; if (!text) return;
-          const utterance=new SpeechSynthesisUtterance(text); utterance.lang='zh-CN';
-          utterance.onend=()=>setSpeakingReply(null); utterance.onerror=()=>setSpeakingReply(null);
-          setSpeakingReply(index); window.speechSynthesis.speak(utterance);
-        }`+source.slice(node.end);return true;}return ts.forEachChild(node,replaceSpeech);};
-  replaceSpeech(originalTree);
+  // Preserve Reader's original readReply() and stopReplyAudio() functions.
+  // They already use streamChineseTts -> /api/prep/tts -> the selected Qwen3-TTS
+  // service. Replacing readReply with speechSynthesis silently made Vantilo
+  // play the macOS voice even when the independent TTS API was configured.
+  const originalTree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const readReply = originalTree.statements.flatMap(statement => {
+    if (!ts.isFunctionDeclaration(statement) || statement.name?.text !== 'CodexPrepPanel') return [];
+    const functions = [];
+    const visit = node => {
+      if (ts.isFunctionDeclaration(node) && node.name?.text === 'readReply') functions.push(node);
+      ts.forEachChild(node, visit);
+    };
+    visit(statement);
+    return functions;
+  });
+  if (readReply.length !== 1 || !readReply[0].getText(originalTree).includes('streamChineseTts(')) {
+    throw new Error('Reader assistant Qwen3-TTS readReply seam changed; review adapter');
+  }
   const tree=ts.createSourceFile(filename,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const result=ts.transform(tree,[context=>{
     const visit=node=>{

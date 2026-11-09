@@ -12,18 +12,18 @@ export interface AssemblyTile { id: string; text: string; role: "known" | "new";
 export interface AssemblyPlan { analysisZh: string; tiles: AssemblyTile[]; correctOrder: string[]; bankOrder: string[]; }
 export interface AssemblyStep {
   id: string; kind: "anchor" | "bridge" | "target"; dependsOn: string[]; vocabularyId?: string;
-  english: string; meaningZh: string; explanationZh: string; assembly: AssemblyPlan; typingTokens?: TypingToken[];
+  english: string; meaningZh: string; explanationZh: string; pronunciation?: string; assembly: AssemblyPlan; typingTokens?: TypingToken[];
 }
 export interface LearningSentence extends LearningSourceSentence { translationZh: string; steps: AssemblyStep[]; }
 export interface VocabularyRevisionSource { fromMaterialVersion: string; replacedIds: string[]; addedIds?: string[]; detachedLinks: { stepId: string; vocabularyId: string }[]; }
 export interface LearningMaterial {
   audio?: LearningAudioManifest;
   vocabularyRevision?: VocabularyRevisionSource & { history?: VocabularyRevisionSource[]; review: { approved: true; summaryZh: string }; coverage?: { minimum: number; maximum: number } };
-  schemaVersion: 3; typingFromMaterialVersion?: string; assemblyFromMaterialVersion?: string; id: string; materialVersion: string; sourceVersion: string;
+  schemaVersion: 3; stage?: "vocabulary" | "assembly"; vocabularyFromMaterialVersion?: string; typingFromMaterialVersion?: string; assemblyFromMaterialVersion?: string; id: string; materialVersion: string; sourceVersion: string;
   source: { lessonId: string; bookId: string; bookFingerprint: string; evidence: LessonEvidence[] };
   titleZh: string; teaserZh: string; english: string; explanationZh: string; adaptation: string;
   vocabulary: LearningVocabulary[]; sentences: LearningSentence[];
-  createdAt: string; generator: { model: string | null; modelId?: string | null; reasoningEffort?: string | null; requestedModelId?: string | null; requestedReasoningEffort?: string | null; generatedAt?: string | null; materialVersion?: string; engine: "codex-prep"; policy: "assembly-v3"; review: { approved: true; summaryZh: string } };
+  createdAt: string; generator: { model: string | null; modelId?: string | null; reasoningEffort?: string | null; requestedModelId?: string | null; requestedReasoningEffort?: string | null; generatedAt?: string | null; materialVersion?: string; engine: "codex-prep" | "basic-source" | "ordered-preview"; policy: "assembly-v3" | "source-v1" | "ordered-preview-v1"; review: { approved: boolean; summaryZh: string; scope?: "vocabulary" | "assembly" | "course" } };
 }
 
 export function learningSourceSentences(english: string): LearningSourceSentence[] {
@@ -49,10 +49,11 @@ export function learningTokens(text: string): { text: string; start: number; end
   return Array.from(text.matchAll(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu), match => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
 }
 /** A product default for beginner practice volume; semantic usefulness is reviewed by Codex. */
+export const MAX_LEARNING_VOCABULARY = 32;
 export function learningVocabularyCoverage(english: string): { minimum: number; maximum: number } {
   const words = learningTokens(english).length;
   const minimum = Math.min(12,Math.max(1,Math.ceil(words / 10)));
-  return { minimum, maximum: Math.min(24,Math.max(minimum,Math.ceil(words / 5))) };
+  return { minimum, maximum: Math.min(MAX_LEARNING_VOCABULARY,Math.max(minimum,Math.ceil(words / 2))) };
 }
 const object = (v: unknown): v is Record<string, unknown> => Boolean(v && typeof v === "object" && !Array.isArray(v));
 function text(v: unknown, label: string, max = 1500): string {
@@ -88,13 +89,13 @@ function parseAssemblyPlan(raw: unknown, english: string, kind: AssemblyStep["ki
   return { analysisZh: chinese(raw.analysisZh, "语义语法与难度分析"), tiles, correctOrder, bankOrder };
 }
 
-/** Validate source identity and ordered assembly dependencies, never claim semantic certification. */
-export function parseLearningContent(raw: unknown, lesson: BookLesson, options: { allowLegacyVocabularyPhrases?: boolean } = {}): Pick<LearningMaterial, "vocabulary" | "sentences"> {
-  if (!object(raw) || !Array.isArray(raw.sentences) || !Array.isArray(raw.vocabulary)) throw new Error("学习材料格式不完整");
+/** Reuse identical lexical checks when a course is prepared in independent stages. */
+export function parseLearningVocabulary(raw: unknown, lesson: BookLesson, options: { allowLegacyVocabularyPhrases?: boolean; allowEmptyVocabulary?: boolean } = {}): LearningVocabulary[] {
+  if (!Array.isArray(raw)) throw new Error("词汇准备结果必须是列表");
   const sources = learningSourceSentences(lesson.english);
-  if (raw.vocabulary.length < 1 || raw.vocabulary.length > 24) throw new Error("每篇可准备 1–24 个单词，按全文理解难点选择");
+  if (raw.length < (options.allowEmptyVocabulary ? 0 : 1) || raw.length > MAX_LEARNING_VOCABULARY) throw new Error(`每篇可准备 1–${MAX_LEARNING_VOCABULARY} 个单词，按全文理解难点选择`);
   const words = new Set<string>();
-  const vocabulary = raw.vocabulary.map((v, index): LearningVocabulary => {
+  return raw.map((v, index): LearningVocabulary => {
     if (!object(v)) throw new Error("词汇格式错误");
     const source = sources.find(s => s.id === v.sentenceId);
     const word = text(v.text, "词汇", 100);
@@ -110,6 +111,13 @@ export function parseLearningContent(raw: unknown, lesson: BookLesson, options: 
     words.add(word.toLowerCase());
     return { id: `v:${index}`, sentenceId: source.id, text: word, sourceText, answerText: sourceText, answerTokens: expectedTokens, ...(v.pronunciation === undefined ? {} : { pronunciation: text(v.pronunciation,"词汇音标",100) }), occurrence: Number(occurrence), meaningZh: chinese(v.meaningZh, "词汇含义"), sentenceMeaningZh: chinese(v.sentenceMeaningZh, "词汇所在整句句意") };
   });
+}
+
+/** Validate source identity and ordered assembly dependencies, never claim semantic certification. */
+export function parseLearningContent(raw: unknown, lesson: BookLesson, options: { allowLegacyVocabularyPhrases?: boolean; allowEmptyVocabulary?: boolean } = {}): Pick<LearningMaterial, "vocabulary" | "sentences"> {
+  if (!object(raw) || !Array.isArray(raw.sentences) || !Array.isArray(raw.vocabulary)) throw new Error("学习材料格式不完整");
+  const sources = learningSourceSentences(lesson.english);
+  const vocabulary = parseLearningVocabulary(raw.vocabulary, lesson, options);
   if (!raw.sentences.length || raw.sentences.length > 3) throw new Error("请选择 1–3 个重点句子");
   const used = new Set<string>();
   const sentences = raw.sentences.map((v): LearningSentence => {
@@ -120,6 +128,7 @@ export function parseLearningContent(raw: unknown, lesson: BookLesson, options: 
     if (!Array.isArray(v.steps) || v.steps.length < 3 || v.steps.length > 12) throw new Error("句子需有 Anchor、Bridge 和最终 Target，合计 3–12 步");
     const steps: AssemblyStep[] = [];
     for (const [index, item] of v.steps.entries()) {
+      try {
       if (!object(item) || !["anchor", "bridge", "target"].includes(String(item.kind))) throw new Error("组装步骤缺少类型");
       const english = text(item.english, "英文步骤");
       if (!source.english.includes(english) || !exactWordSpan(source.english, english)) throw new Error("组装步骤必须来自原句完整词语");
@@ -148,6 +157,9 @@ export function parseLearningContent(raw: unknown, lesson: BookLesson, options: 
         typingTokens = item.typingTokens as TypingToken[];
       }
       steps.push({ ...(typingTokens ? { typingTokens } : {}), id: `${source.id}:step:${index}`, kind, dependsOn: dependencies, ...(vocabularyId ? { vocabularyId } : {}), english, meaningZh: chinese(item.meaningZh, "中文含义"), explanationZh: chinese(item.explanationZh, "组装说明"), assembly });
+      } catch (error) {
+        throw new Error(`句子 ${source.id} steps[${index}]: ${error instanceof Error ? error.message : "步骤格式错误"}`);
+      }
     }
     if (steps.at(-1)?.kind !== "target" || !steps.some(step => step.kind === "anchor") || !steps.some(step => step.kind === "bridge")) throw new Error("组装需包含 Anchor、Bridge 和最终 Target");
     return { ...source, translationZh: chinese(v.translationZh, "句子译文"), steps };

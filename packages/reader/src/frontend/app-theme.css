@@ -171,8 +171,6 @@ html, body { background: var(--theme-bg); color: var(--theme-ink); }
 .worm-game .vocabulary-game-translation { background: var(--theme-soft); border-color: var(--theme-line); }
 .worm-game .vocabulary-game-translation :is(strong,p) { color: var(--theme-ink); }
 .worm-game .learning-completion-actions .learning-completion-primary { background: var(--theme-accent); color: var(--theme-on-accent); }
-.learning-stage-screen .learning-stage-card.is-recommended .learning-stage-start { background: var(--theme-accent); color: var(--theme-on-accent); border-color: var(--theme-accent); }
-.learning-stage-screen .learning-stage-start:hover { border-color: var(--theme-accent); box-shadow: none; }
 
 @media (max-width: 640px) {
   .app-shell :is(.primary-button,.toolbar-button,.icon-button,.theme-option,.settings-segmented-control button,.settings-stepper button) { min-height: 44px; }

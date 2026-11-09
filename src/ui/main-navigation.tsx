@@ -8,17 +8,19 @@ import Lightbulb from '@react-spectrum/s2/icons/Lightbulb';
 import Settings from '@react-spectrum/s2/icons/Settings';
 import Tools from '@react-spectrum/s2/icons/Tools';
 
-type MainSection = 'agent' | 'magazine-reader' | 'settings';
+type MainSection = 'agent' | 'magazine-reader' | 'practice' | 'settings';
 
-export function MainNavigation({ onHome, onMagazineReader, onSettings, activeSection = 'agent' }: {
+export function MainNavigation({ onHome, onMagazineReader, onPractice, onSettings, activeSection = 'agent' }: {
   onHome: () => void;
   onMagazineReader: () => void;
+  onPractice: () => void;
   onSettings?: () => void;
   activeSection?: MainSection;
 }) {
   const entries: { name: string; Icon: ComponentType; action?: () => void; active?: boolean }[] = [
     { name: '对话', Icon: Home, action: onHome, active: activeSection === 'agent' },
     { name: '阅读', Icon: Folder, action: onMagazineReader, active: activeSection === 'magazine-reader' },
+    { name: 'Practice Lab', Icon: Lightbulb, action: onPractice, active: activeSection === 'practice' },
     { name: '空间', Icon: Asset }, { name: '技能', Icon: Lightbulb }, { name: '工具', Icon: Tools }, { name: '任务', Icon: Clock },
   ];
   const renderEntry = ({ name, Icon, action, active }: typeof entries[number]) => <div key={name} className={`app-rail-cell ${active ? 'is-active' : ''}`}>

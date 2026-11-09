@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import {copyCodexRuntime} from './codex-runtime-assets.mjs';
+import {verifyOriginalGameSoundDirectory,copyOriginalGameSoundsToWeb} from './original-game-sound-assets.mjs';
 import parcelMacros from 'unplugin-parcel-macros';
 import {sharedReaderComposerPlugin} from './reader-assistant-adapter.mjs';
 import { adaptReaderSource, readerVariantPlugin } from './reader-variant.mjs';
@@ -18,6 +19,9 @@ const output = process.env.VANTILO_READER_BUILD_OUTPUT
   ? path.resolve(process.env.VANTILO_READER_BUILD_OUTPUT)
   : path.join(repo, 'build/reader');
 const viteCache = path.join(path.dirname(output), `${path.basename(output)}-vite-cache`);
+// Check the versioned files *before* Vite clears any prior build output.
+await verifyOriginalGameSoundDirectory(path.join(source,'assets/worm'));
+
 const legacySeedPath = path.join(output, 'seed');
 try {
   await fs.lstat(legacySeedPath);
@@ -39,9 +43,12 @@ const readerInventoryPlugin = {
   },
 };
 await buildWeb({ root: source, configFile: false, envFile: false, publicDir: false,
+  define: { __VANTILO_ORIGINAL_GAME_SOUNDS__: 'true' },
   cacheDir: viteCache, resolve:{dedupe:['react','react-dom']}, plugins: [sharedReaderComposerPlugin(), parcelMacros.vite(), readerVariantPlugin(), react(), readerInventoryPlugin], base: '/',
   build: { outDir: path.join(output, 'web'), emptyOutDir: true, sourcemap: false },
 });
+await copyOriginalGameSoundsToWeb(path.join(output,'web'));
+console.log('Three original game sounds verified and bundled for development and packaged Reader builds.');
 const api = await build({ stdin: {
   contents: `export { buildServer } from ${JSON.stringify(path.join(source, 'src/server/app.ts'))}; export { GitHubMagazineSyncService } from ${JSON.stringify(path.join(source, 'src/server/services/github-magazine-sync-service.ts'))};`,
   resolveDir: source, sourcefile: 'vantilo-reader-api-entry.ts', loader: 'ts',

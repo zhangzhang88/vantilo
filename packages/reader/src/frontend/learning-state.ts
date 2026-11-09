@@ -87,9 +87,14 @@ export function resumeLearningProgress(storage: Pick<Storage,"getItem">, materia
   const found = loadLearningProgress(storage).filter((p): p is LearningProgress => p.version === 2 && p.materialId === material.id && p.materialVersion === material.materialVersion && p.practiceStage === stage).at(-1);
   if (!found) {
     const vocabularyRevisions = material.vocabularyRevision ? [material.vocabularyRevision,...(material.vocabularyRevision.history ?? [])] : [];
-    const previousVersions = vocabularyRevisions.length ? vocabularyRevisions.map(revision => revision.fromMaterialVersion) : [material.assemblyFromMaterialVersion ?? material.typingFromMaterialVersion];
+    const previousVersions = [...(vocabularyRevisions.length ? vocabularyRevisions.map(revision => revision.fromMaterialVersion) : [material.assemblyFromMaterialVersion ?? material.typingFromMaterialVersion]), ...(stage === "vocabulary" ? [material.vocabularyFromMaterialVersion] : [])];
     const previous = loadLearningProgress(storage).filter((p): p is LearningProgress => p.version === 2 && p.materialId === material.id && previousVersions.includes(p.materialVersion) && p.practiceStage === stage).at(-1);
     if (!previous) return newLearningProgress(material,saved);
+    if (stage === "vocabulary" && previous.materialVersion === material.vocabularyFromMaterialVersion) {
+      const migrated = { ...previous, materialVersion: material.materialVersion, runId: crypto.randomUUID() };
+      const temporary = { getItem: () => JSON.stringify({ version: 1, items: [migrated] }) };
+      return resumeLearningProgress(temporary,material,saved,stage);
+    }
     if (material.vocabularyRevision) {
       const revision = vocabularyRevisions.find(item => item.fromMaterialVersion === previous.materialVersion)!, replaced = new Set(revision.replacedIds), fresh = new Set([...revision.replacedIds,...(revision.addedIds ?? [])]), defaults = new Set(vocabularyDefaults(material,saved));
       const migrated: LearningProgress = { ...previous,materialVersion: material.materialVersion,runId: crypto.randomUUID(),selectedVocabularyIds: material.vocabulary.filter(word => fresh.has(word.id) ? defaults.has(word.id) : previous.selectedVocabularyIds.includes(word.id)).map(word => word.id),vocabulary: Object.fromEntries(Object.entries(previous.vocabulary).filter(([id]) => !replaced.has(id))),vocabularyReview: Object.fromEntries(Object.entries(previous.vocabularyReview).filter(([id]) => !replaced.has(id))),reviewVocabularyIds: previous.reviewVocabularyIds.filter(id => !replaced.has(id)),draft: previous.draft && replaced.has(previous.draft.itemId) ? undefined : previous.draft };
@@ -244,7 +249,7 @@ export const normalizeTypingAnswer = (text: string) => text.toLowerCase().replac
 
 /** Each stage owns a run, draft, results and completion independently. Legacy combined records stay in history. */
 export function resumeStageLearningProgress(storage: Pick<Storage,"getItem">, material: LearningMaterial, saved: SavedSelection[], stage: LearningStage): LearningProgress {
-  const scoped = loadLearningProgress(storage).some(p => p.version === 2 && p.practiceStage === stage && p.materialId === material.id && [material.materialVersion,material.typingFromMaterialVersion,material.assemblyFromMaterialVersion,material.vocabularyRevision?.fromMaterialVersion,...(material.vocabularyRevision?.history?.map(revision => revision.fromMaterialVersion) ?? [])].includes(p.materialVersion));
+  const scoped = loadLearningProgress(storage).some(p => p.version === 2 && p.practiceStage === stage && p.materialId === material.id && [material.materialVersion,material.typingFromMaterialVersion,material.assemblyFromMaterialVersion,...(stage === "vocabulary" ? [material.vocabularyFromMaterialVersion] : []),material.vocabularyRevision?.fromMaterialVersion,...(material.vocabularyRevision?.history?.map(revision => revision.fromMaterialVersion) ?? [])].includes(p.materialVersion));
   if (scoped) {
     const restored = resumeLearningProgress(storage,material,saved,stage);
     return { ...restored, practiceStage: stage, phase: restored.phase === "intro" ? stage === "assembly" ? "assembly-selection" : "vocabulary-selection" : restored.phase, stageTotal: stage === "assembly" ? assemblyQueue(material,restored).active.length : restored.selectedVocabularyIds.length };

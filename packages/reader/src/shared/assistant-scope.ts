@@ -1,6 +1,6 @@
 /** IDs identify local sources; source text is always resolved on the server. */
 export type AssistantScope =
-  | { kind: "all" | "books" | "magazines" }
+  | { kind: "all" | "books" | "magazines" | "practice" }
   | { kind: "publication"; publicationId: string }
   | { kind: "issue"; issueId: string }
   | { kind: "article"; issueId: string; articleId: string }
@@ -16,7 +16,7 @@ export function parseAssistantScope(raw: unknown): AssistantScope {
     return value[key] as string;
   };
   switch (value.kind) {
-    case "all": case "books": case "magazines": return { kind: value.kind };
+    case "all": case "books": case "magazines": case "practice": return { kind: value.kind };
     case "publication": return { kind: value.kind, publicationId: id("publicationId") };
     case "issue": return { kind: value.kind, issueId: id("issueId") };
     case "article": return { kind: value.kind, issueId: id("issueId"), articleId: id("articleId") };

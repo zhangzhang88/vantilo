@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readPrepDiscussion, type PrepStreamEvent } from "./codex-prep-stream";
+import { readPrepDiscussion, readablePrepFailure, type PrepStreamEvent } from "./codex-prep-stream";
 
 function response(text: string) {
   const bytes = new TextEncoder().encode(text);
@@ -28,4 +28,13 @@ it("delivers real read coverage as a separate progress frame", async () => {
   const events: PrepStreamEvent[] = [];
   await expect(readPrepDiscussion(response(JSON.stringify({ type: "research", research: report }) + "\n" + JSON.stringify({ type: "done", answer: "完整回复" })), (event) => events.push(event))).resolves.toBe("完整回复");
   expect(events).toContainEqual({ type: "research", research: report });
+});
+
+it("explains book-size, timeout, network, model and authorization failures without exposing raw paths", () => {
+  expect(readablePrepFailure(new Error("书籍讨论内容超出阅读任务的输入限制，请聚焦一个章节后重试。"))).toContain("章节");
+  expect(readablePrepFailure(new Error("operation timed out after 90000ms"))).toContain("超时");
+  expect(readablePrepFailure(new Error("fetch failed: ECONNRESET"))).toContain("网络");
+  expect(readablePrepFailure(new Error("unknown model gpt-x"))).toContain("模型");
+  expect(readablePrepFailure(new Error("HTTP 401 Unauthorized"))).toContain("授权");
+  expect(readablePrepFailure(new Error("Unexpected stack /Users/private/sensitive-source"))).not.toContain("/Users/");
 });

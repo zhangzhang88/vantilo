@@ -3,14 +3,30 @@ import { material } from "../../tests/fixtures/learning";
 import { resumeStageLearningProgress, restartStageLearning, learningStageSummary, setVocabularySkipped, openVocabularySelection, beginAssemblySelection, openAssemblySelection, assemblyDraftFor, showAssemblyCompletion, typingDraftFor, setTypingWord, checkTypingAssembly, assemblyQueue, checkAssembly, completeLearning, continueLearning, currentLearningItem, currentWordIndex, LEARNING_PROGRESS_KEY, loadLearningProgress, moveAssembly, newLearningProgress, normalizeLearningAnswer, placeAssemblyTile, recordLearningAction, restartLearning, resumeLearningProgress, saveLearningProgress, setAssemblySkipped, startLearning, vocabularyDefaults, withdrawAssemblyTile, type LearningProgress } from "./learning-state";
 import type { AssemblyStep } from "../shared/learning-material";
 import type { SavedSelection } from "./selection-state";
-import { buildUserDataBackup, parseUserDataBackup, serializeUserDataBackup } from "./user-data-backup";
+import { buildUserDataBackup, parseUserDataBackup, restoreUserDataBackup, serializeUserDataBackup } from "./user-data-backup";
 const saved = (text: string, familiarity: SavedSelection["familiarity"]): SavedSelection => ({ id: text, articleTitle: "test", text, context: "context", paragraphIndex: 0, createdAt: "2026-10-16T00:00:00Z", familiarity });
-const memory = () => { const data = new Map<string,string>(); return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string,v: string) => { data.set(k,v); } }; };
+const memory = () => { const data = new Map<string,string>(); return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string,v: string) => { data.set(k,v); }, removeItem: (k: string) => { data.delete(k); } }; };
 const assemblyStart = (): LearningProgress => ({ ...newLearningProgress(material,[]), selectedVocabularyIds: [], phase: "assembly", assemblyCurrentId: material.sentences[0].steps[0].id });
 function finishVocabulary(p: LearningProgress) { const item = currentLearningItem(material,p); if (!item || !("answerTokens" in item)) return p; let next = p; for (const token of item.answerTokens) next = recordLearningAction(material,next,"answer",token.text); return next; }
 function finishAssembly(p: LearningProgress) { const step = currentLearningItem(material,p) as AssemblyStep; let next = p; for (const id of step.assembly.correctOrder) next = placeAssemblyTile(material,next,id); return checkAssembly(material,next); }
 
 describe("Worm preparation lifecycle and authored assembly", () => {
+  it("retains independently reviewed vocabulary progress through full course publication and backup restore", () => {
+    const storage = memory(), partial = { ...material, stage: "vocabulary" as const, materialVersion: "reviewed-vocabulary", sentences: [] };
+    let progress = startLearning(resumeStageLearningProgress(storage,partial,[],"vocabulary"));
+    progress = recordLearningAction(partial,progress,"answer","wrong");
+    progress = finishVocabulary(progress);
+    saveLearningProgress(storage,progress);
+    const full = { ...material, materialVersion: "reviewed-full-course", vocabularyFromMaterialVersion: partial.materialVersion };
+    const resumed = resumeStageLearningProgress(storage,full,[],"vocabulary");
+    expect(resumed.materialVersion).toBe(full.materialVersion);
+    expect(resumed.vocabulary).toEqual(progress.vocabulary);
+    expect(resumed.phase).toBe(progress.phase);
+    saveLearningProgress(storage,resumed);
+    const backup = parseUserDataBackup(serializeUserDataBackup(buildUserDataBackup(storage)));
+    const restored = memory(); restoreUserDataBackup(restored,backup);
+    expect(resumeStageLearningProgress(restored,full,[],"vocabulary").vocabulary).toEqual(progress.vocabulary);
+  });
   it("skips only consistently known words and permits lesson overrides", () => {
     expect(vocabularyDefaults(material,[saved("Evidence",5)])).toEqual(["v:1"]);
     expect(vocabularyDefaults(material,[saved("evidence",5),saved("evidence",2)])).toEqual(["v:0","v:1"]);
@@ -293,6 +309,33 @@ describe("independent practice stages", () => {
     assembly = continueLearning(assembly,material); assembly = setTypingWord(material,assembly,0,"a"); saveLearningProgress(storage,assembly);
     const restored = resumeStageLearningProgress(storage,material,[],"assembly"); expect(restored.phase).toBe("assembly"); expect(restored.typingDraft?.inputs[0]).toBe("a");
     const vocabulary = resumeStageLearningProgress(storage,material,[],"vocabulary"); expect(vocabulary.phase).toBe("vocabulary-selection"); expect(vocabulary.vocabulary).toEqual({});
+  });
+  it("practices and restores an independently published Stage 2 with zero vocabulary items", () => {
+    const storage = memory();
+    const stage2Only = {
+      ...material,
+      stage: "assembly" as const,
+      materialVersion: "independent-stage2-no-vocabulary",
+      vocabulary: [],
+      sentences: material.sentences.map(sentence => ({
+        ...sentence,
+        steps: sentence.steps.map(({ vocabularyId: _unused, ...step }) => step),
+      })),
+    };
+    let progress = resumeStageLearningProgress(storage,stage2Only,[],"assembly");
+    expect(progress.phase).toBe("assembly-selection");
+    expect(progress.selectedVocabularyIds).toEqual([]);
+    expect(assemblyQueue(stage2Only,progress).active).toHaveLength(stage2Only.sentences.flatMap(sentence => sentence.steps).length);
+    progress = continueLearning(progress,stage2Only);
+    const first = currentLearningItem(stage2Only,progress);
+    expect(first).toBeDefined();
+    progress = setTypingWord(stage2Only,progress,0,"a");
+    saveLearningProgress(storage,progress);
+    const restored = resumeStageLearningProgress(storage,stage2Only,[],"assembly");
+    expect(restored.phase).toBe("assembly");
+    expect(restored.typingDraft?.inputs[0]).toBe("a");
+    expect(restored.selectedVocabularyIds).toEqual([]);
+    expect(restored.stageTotal).toBe(assemblyQueue(stage2Only,restored).active.length);
   });
   it("keeps both drafts independent when switching and when restarting only stage one", () => {
     const storage = memory(); let vocabulary = startLearning(resumeStageLearningProgress(storage,material,[],"vocabulary"));

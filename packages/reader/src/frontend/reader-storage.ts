@@ -194,6 +194,8 @@ export function createReaderStorage(backend: ReaderStorageBackend) {
       publish();
     },
     discardPending(): void { pending.clear(); publish(); },
+    /** Cancel one failed destructive write without discarding unrelated pending edits. */
+    discardPendingKey(key: string): boolean { const removed = pending.delete(key); if (removed) publish(); return removed; },
     getPendingKeys(): string[] { return [...pending.keys()]; },
     subscribe(listener: () => void): () => void {
       listeners.add(listener);

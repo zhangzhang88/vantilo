@@ -8,6 +8,8 @@ import type { CodexModelOption, CodexModelUsage } from "../../shared/codex-prep-
 export const CODEX_PREP_SANDBOX_MODE = "read-only";
 
 export interface PrepTurnOptions {
+  /** Longer bounded runtime for complex, validated course-authoring JSON. */
+  taskKind?: "learning-material";
   onDelta?: (text: string) => void;
   onResearch?: (report: BookResearchReport) => void;
   onStatus?: (text: string) => void;

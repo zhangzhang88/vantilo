@@ -15,6 +15,16 @@ function fixture(){
 }
 const base={stage:'primary',text:'bank',sentence:'The river bank is wet.',paragraph:'The river bank is wet.',meaningZh:'',explanationZh:''};
 describe('selected model contextual meaning',()=>{
+ it('keeps a hyphenated compound as one contextual expression for the same engine',async()=>{
+  const f=fixture();
+  const expression='blockchain-intelligence';
+  f.customApi.complete.mockResolvedValueOnce(JSON.stringify({meaningZh:'区块链情报',partOfSpeech:'compound modifier',explanationZh:'修饰公司，指提供区块链分析情报的公司。'}));
+  const first=await f.call({...base,engineId:f.id,text:expression,sentence:'A blockchain-intelligence company analyzed the losses.'});
+  expect(first).toMatchObject({status:200,result:{meaningZh:'区块链情报'}});
+  const sent=JSON.parse(f.customApi.complete.mock.calls[0][0].input);
+  expect(sent.text).toBe(expression);
+  expect(sent.compoundHint).toContain('复合');
+ });
  it('routes primary and supplement to selected custom API and validates results',async()=>{
   const f=fixture();const first=await f.call({...base,engineId:f.id});
   expect(first.result).toMatchObject({meaningZh:'河岸',explanationZh:'这里指河边的岸。',provider:'custom-api',engineId:f.id});
