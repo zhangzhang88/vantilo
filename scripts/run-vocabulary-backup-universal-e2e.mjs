@@ -23,6 +23,9 @@ if (path.resolve(appPathInput) !== appPathInput || await fs.realpath(appPathInpu
 const appPath = appPathInput;
 const appBinary = path.join(appPath, 'Contents/MacOS/Vantilo Beta');
 await fs.access(appBinary);
+const releaseVersion = JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8')).version;
+const { stdout: plistVersion } = await execFileAsync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(appPath, 'Contents/Info.plist')]);
+if (plistVersion.trim() !== releaseVersion) throw new Error('Universal app version '+plistVersion.trim()+' does not match source version '+releaseVersion);
 const artifactRoot = process.env.VANTILO_TEST_ARTIFACT_ROOT;
 if (!artifactRoot || !artifactRoot.startsWith(`${process.env.VANTILO_TEST_RUN_ROOT}${path.sep}`)) throw new Error('Universal E2E artifacts must be inside the current Workspace test run.');
 const testRoot = path.join(artifactRoot, `universal-vocabulary-e2e-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${process.pid}`);
@@ -163,7 +166,7 @@ function buildEnvironment(mode, profile, directories, resultPath, backupPath) {
     VANTILO_PACKAGED_E2E_DRIVER: driver,
     VANTILO_PACKAGED_E2E_VERIFY_SERVICE: verifyService,
     VANTILO_PACKAGED_E2E_FIXTURES: fixtures,
-    VANTILO_VOCABULARY_E2E_VERSION: '0.1.14',
+    VANTILO_VOCABULARY_E2E_VERSION: releaseVersion,
     VANTILO_VOCABULARY_E2E_ROOT: testRoot,
     VANTILO_VOCABULARY_E2E_MODE: mode,
     VANTILO_VOCABULARY_E2E_USER_DATA: profile,
@@ -246,7 +249,7 @@ async function runCase({ mode, profileName, backupPath }) {
       const proof = global.__vocabularyIsolationProof;
       if (!app.isReady()) throw new Error('app did not become ready after isolation verification');
       if (!proof || proof.status !== 'PASS') throw new Error('pre-ready isolation proof is missing');
-      if (app.getVersion() !== '0.1.14') throw new Error('wrong packaged app version');
+      if (app.getVersion() !== ${JSON.stringify(releaseVersion)}) throw new Error('wrong packaged app version');
       if (app.getPath('userData') !== ${JSON.stringify(profile)}) throw new Error('actual app.getPath(userData) differs from exact test profile');
       return proof;
     })()`;
@@ -256,7 +259,7 @@ async function runCase({ mode, profileName, backupPath }) {
       awaitPromise: true,
     });
     const proof = assertNoEvaluationError(proofResponse, '读取打包版 userData 隔离证据');
-    if (!proof || proof.actualUserData !== profile || proof.chromiumUserDataSwitch !== profile || proof.appVersion !== '0.1.14') {
+    if (!proof || proof.actualUserData !== profile || proof.chromiumUserDataSwitch !== profile || proof.appVersion !== releaseVersion) {
       throw new Error(`隔离证明与预期不一致：${JSON.stringify(proof)}`);
     }
     for (const key of ['home', 'appData', 'userData', 'sessionData', 'temp', 'downloads', 'logs', 'crashDumps', 'cache']) {
@@ -326,7 +329,7 @@ async function createCapacityLimitedApfsVolume() {
   await execFileAsync('/usr/bin/hdiutil', ['create', '-size', '128m', '-type', 'SPARSE', '-fs', 'APFS', '-volname', `VantiloSafety-${process.pid}`, image]);
   let attached = false;
   try {
-    await execFileAsync('/usr/bin/hdiutil', ['attach', '-nobrowse', '-mountpoint', mount, image]);
+    await execFileAsync('/usr/sbin/diskutil', ['image', 'attach', '--nobrowse', '--mountPoint', mount, image]);
     attached = true;
     const reservationPath = path.join(mount, 'capacity-reservation.bin');
     const handle = await fs.open(reservationPath, 'wx', 0o600);
@@ -433,7 +436,7 @@ const summary = {
   status: 'PASS',
   appPath,
   appBinary,
-  appVersion: '0.1.14',
+  appVersion: releaseVersion,
   testRoot,
   backup,
   backupBytes: Buffer.byteLength(backupText),
