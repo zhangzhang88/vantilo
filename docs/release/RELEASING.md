@@ -1,6 +1,12 @@
 # Vantilo release procedure
 
-When asked **“功能已在本地开发版真人验收通过，开始发布 Vantilo 新版本”**, **“开始发布 Vantilo 新版本”**, **“发布 Vantilo”**, or **“准备 Vantilo Release”**, first read this document, root AGENTS.md, and the applicable [macOS Universal build instructions](macos-universal-build.md). Follow the complete development-to-release workflow using the actual current and target versions, Git and remote state, release commit, artifacts and SHA-256. Resume safely from verified completed steps; never blindly recreate or overwrite an existing tag or Release. Past hashes and release decisions are not reusable authorization.
+When asked **“功能已在本地开发版真人验收通过，开始发布 Vantilo 新版本”**, **“开始发布 Vantilo 新版本”**, **“发布 Vantilo”**, or **“准备 Vantilo Release”**, first read this document, root AGENTS.md, and the applicable [macOS Universal build instructions](macos-universal-build.md). Follow the complete development-to-release workflow using the actual current and target versions, Git and remote state, release commit, artifacts and SHA-256. Resume safely from verified completed steps and investigate any existing tag or Release before taking action. Each new release needs its own release request and current evidence.
+
+## 一次授权完成发布
+
+明确要求发布 Vantilo，即授权完成本次发行源码提交、通过门禁后的正常快进推送、版本标签、GitHub Release 与附件上传，以及 README、流程和发布记录的独立文档提交与推送。按顺序执行并验证结果，已经授权的步骤无需再次确认。明确要求仅准备或暂缓发布时遵照用户指定的范围。
+
+已记录的真人验收和持续性风险决定按适用范围复用。可以用符合下文标准的实际安装包自动化验收覆盖可自动化场景。出现必须由人提供的验收证据缺口、超出既定范围的新风险或不可自动解决的权限问题时，尽量合并剩余事项一次说明。
 
 ## Acceptance gates and artifact identity
 
@@ -20,7 +26,9 @@ The final package gate must run the exact `.app` extracted from the final Univer
 
 ### 有明确风险接受记录的 Beta 发布豁免
 
-Beta 版可以在以下条件全部满足时继续发布，同时保留对应门禁的真实状态：发布负责人针对明确列出的版本和风险作出清晰、当前有效的接受决定；完整中文发布说明显著披露风险和用户影响；GitHub Release、README 及内部发布记录不把未完成门禁写为 PASS；源码测试、外置卷及 Intel helper 完整性、候选包版本/提交/哈希、Universal 资产完整性和打包功能/数据安全验收均通过。此豁免只允许已明确接受的签名、公证、Gatekeeper 或物理架构验收风险不再单独阻断该 Beta；它不证明这些检查通过，不适用于 Stable 发布，也不适用于未列入接受决定的新风险。不得据此跳过其他门禁。
+Beta 版可在下列持续性决定的范围内，或经负责人对另行识别的版本及风险明确接受后继续发布。完整中文发布说明、README 和内部记录须披露当版实测结果与用户影响，未完成的检查保留真实状态。源码测试、外置卷及 Intel helper 完整性、候选包版本/提交/哈希、Universal 资产完整性和打包功能/数据安全验收均须通过。豁免仅适用于 Beta。
+
+**自 0.1.16 起的持续性决定。** 项目所有者确认接受现有 Beta 分发方式的四项风险，并要求明确启动发布后直接完成流程。当后续 Beta 仍采用同一分发方式且风险未实质变化时，发布指令即适用本决定，无需再次确认。适用范围为 ad-hoc 签名且无 Developer ID、未公证且无公证票据、Gatekeeper 本机实测拒绝，以及 Intel 真机验收未运行。每个候选仍须检查并如实披露当版结果。Stable、新风险、签名完整性失败或已知 Intel 功能故障须按各自门禁处理。
 
 **0.1.14 Beta 的明确接受范围：** 用户明确接受当前候选应用为 ad-hoc 签名、未取得公证票据、Gatekeeper 接受状态未验证，以及 Intel 真机验收未运行；要求在中文 Release 和发布记录中逐项披露，状态保留为未公证/未验证/NOT RUN。该项授权只适用于本次 `v0.1.14` Beta 候选，不是将其标记为 PASS，也不适用于后续版本。
 
@@ -29,7 +37,7 @@ Beta 版可以在以下条件全部满足时继续发布，同时保留对应门
 For routine tests, use `npm test` from the canonical checkout. All Vantilo E2E, Electron UI, Reader offline, packaged-app and profile/data-generating tests must use the Workspace runner (named `npm run test:*` commands or the runner's allowlisted `--electron`, `--node`, `--reader` and `--e2e` modes). Standalone E2E scripts and direct Vitest config loading fail closed without the active run marker. Before test payload creation, the runner verifies Workspace identity, APFS, mount path, writability, free space and canonical paths, then creates a unique owner-marked run directory at `/Volumes/Workspace/Development/Vantilo/test-runs/e2e/<run-id>/`. It isolates HOME, CODEX_HOME, XDG paths, TMPDIR, Electron userData, Chromium and Reader data. On success, owned transient payloads are removed and logs/results retained; on failure, bounded diagnostics are retained and large payload is removed only after the child process group is confirmed stopped. Interrupted/unknown runs are not automatically deleted; inspect process identity and open files before using the exact-run cleanup command. Workspace unavailable or path validation failure is a hard stop with no internal-disk fallback. The only documented local test-cache exception is the small versioned SWC native cache under `~/Library/Caches/Vantilo/swc-native/`. This does not redirect `npm run build` or Reader build outputs: production builds must use the separate external work copy and documented output routing. See [测试环境与磁盘占用规则](../testing/workspace-test-environment.md).
 
 1. Inspect Git status, staged and unstaged changes, current branch and HEAD, version metadata, remote main, local and remote tags, and GitHub Releases. Preserve unrelated changes. Confirm the intended release commit and do not overwrite an existing version.
-2. Run relevant Reader tests, full root tests, typecheck and production build; record passes, failures and skips. Commit only reviewed files when explicitly authorized.
+2. Run relevant Reader tests, full root tests, typecheck and production build; record passes, failures and skips. Commit only reviewed release files under the release request's authorization.
 3. Run `/bin/sh /Volumes/Workspace/_System/verify-workspace-volume.sh` before build writes or downloads, and inspect `df -h`. Confirm the expected Workspace UUID, APFS, `/Volumes/Workspace`, writable state and adequate free space. Stop if validation fails; do not silently put builds, caches or downloads on the internal disk.
 4. Follow the Universal manual to create a new version-specific copy under `/Volumes/Workspace/Development/Vantilo/workspaces/`; preserve and compare the exact branch, HEAD, status, diff and untracked files. Exclude secrets, personal libraries and local data. Verify dependencies, links and input archives before reuse. Route HOME, temp and caches to the verified external workspace; link `out` to the management root's `out`.
 5. Run `npm run build:mac:universal` with the external environment configured as in the manual. It builds the app and Reader and emits only ZIP, SHA-256 sidecar and report in a new `out/<version>/`. No DMG. The Intel dictionary helper preparer automatically checks source/toolchain identity, compiles current source, creates an immutable versioned input when absent/stale, then runs the strict integrity gate. Normal helper expiry is a repairable build preparation issue and must not prompt for user intervention. Only the explicitly permitted Mach-O UUID difference is normalized; unexplained differences stop the build. Preserve old inputs; never disable or weaken the gate. Verify ZIP integrity, sidecar, report commit, version, architectures and packaged EPUB count, then complete the packaged-app acceptance gate above.
@@ -42,11 +50,11 @@ For routine tests, use `npm test` from the canonical checkout. All Vantilo E2E, 
 - **Signing:** the 0.1.12 app is ad-hoc signed, has no Developer ID and is not notarized; local Gatekeeper assessment rejected it. Future ordinary distribution requires a valid Developer ID, hardened runtime and entitlement review, Apple notarization, stapling, and actual Gatekeeper acceptance. Do not describe ad-hoc verification as notarization.
 - **0.1.12 历史更新器限制：** 该版本仅检查稳定版，不能发现 Beta 预发布。0.1.13 已加入 Beta 更新通道；历史用户仍可使用直接下载链接。
 
-## Publishing, only when explicitly authorized
+## GitHub 发布
 
 1. Recheck exact remote main and ensure fast-forward; verify release commit ancestry and no conflicting tag or Release. Confirm ZIP size, actual SHA-256, sidecar and build report commit. Never force-push or replace historical assets.
 2. Push reviewed commits to main. Create the version tag at the exact build commit, then publish a GitHub pre-release with ZIP and sidecar. Do not claim Intel hardware, notarization or packaged-app scenarios that were not tested. Disclose relevant third-party service authorization and privacy limitations.
-3. Update README, latest download links and release records with the actual release and asset links; commit documentation separately. Keep the release tag on the build commit, not the documentation commit. Push the documentation commit only when authorized.
+3. Update README, latest download links and release records with the actual release and asset links. Commit and push documentation separately under the same release request. Keep the release tag on the build commit.
 4. Verify remote tag target, release published/pre-release state, asset names, size and digest, direct download availability, README links and final workspace status. Record issues and their verified solutions after every release, update this SOP accordingly, and report limitations and evidence honestly.
 
 ## 用户已接受的第三方服务风险
@@ -120,6 +128,14 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 - 从最终 ZIP 解压的真实应用在隔离 userData 下运行 E2E：Practice Lab 入口与 TTS API 设置 UI、词汇备份/恢复、失败回滚、重启持久化、并发写入、真实 APFS ENOSPC 和 EACCES 通过。最终包未执行真实 TTS 试听或 AI 内容生成质量验收；开发版已由用户真人验收，不扩大 PASS 范围。
 - 用户针对本次 `v0.1.15 Beta` 于 2026-11-09 明确接受四项分发风险：ad-hoc 无 Developer ID、未公证无票据、Gatekeeper 本机实测 rejected、Intel 真机 NOT RUN；仍保留真实状态，不沿用 v0.1.14 的风险豁免。既有有道 dictvoice 公开分发书面许可未获确认，如实披露。
 - 修复流程问题：旧 `hdiutil attach` 在新版 macOS 测试镜像上权限受限，改用 `diskutil image attach` 实测 ENOSPC；SWC 原生缓存安全路径校验受外置卷父目录权限影响，改用安全的独立 APFS 缓存卷解决，不降低安全门禁。构建始终在 Workspace 外置副本，未覆盖历史发行产物。标签固定构建提交，README 和文档在发布后独立提交。
+
+## 0.1.16 Beta 发布记录与流程改进
+
+- 标签 `v0.1.16` 固定在构建提交 `7051e8534cce4674ba78a5649ca1e7944d2f2b59`。最终 ZIP 的听书、完整退出后续播、词汇恢复及真实文件系统故障均通过隔离验收。版本、摘要和风控状态见 [0.1.16 发布记录](0.1.16-beta.md)。
+- 源码发布前保留了远端两笔 CI 更新。书架改版后恢复了阅读成长卡片的接入。便携 CI 用例使用独立 `node:test`，根 Vitest 在 Node 22 下运行。外置 SWC 缓存以专用 APFS 镜像修复路径权限问题，构建后已卸载镜像。
+- ZIP 上传先保留为 GitHub 草稿，核对两个资产的大小和摘要后才公开预发布。Git 查询遇到 HTTP/2 错误时，通过 GitHub API 核验附注标签及其目标提交。
+- 匿名下载直连超时后，使用本机现有代理核验校验文件并发出 ZIP 单字节范围请求。Beta 更新检查以 0.1.15 为当前版本，识别到 0.1.16 安装包和中文摘要。
+- 明确的单次发布指令覆盖本次提交、快进推送、标签、附件、发布及发行后文档提交。相同且已接受的 Beta 分发风险按上文持续性决定执行。
 
 ## 用户数据保护发布门禁
 

@@ -257,7 +257,7 @@ git diff --check
 - **Universal merge/signing 失败：** 保留候选目录和日志。脚本先移除每架构签名，合并后逐个签 Mach-O 与嵌套 bundle，再验签；不要用手工 `codesign --deep` 绕过失败或更改原有 artifact。
 - **打包体积告警：** 0.1.10 Vite 仍报告 large bundle warning；它不是本次测试失败，不得通过削弱测试或随意剥除资源来消除。
 - **其他打包入口：** 此处的 `out/<version>/` 配置针对 Universal 打包脚本。`package:mac`（单架构）仍将 app 输出到 `repo/out/` 且配置 `overwrite:true`，若要继续使用必须单独审查/改造；若干 Reader preview 脚本也有自己的 `out/` 布局。本轮未修改、未验证它们符合 Universal release 目录约定，不要将其当作 Universal release 入口。
-- 任何步骤都不得执行 `git reset`、`git clean`、覆盖源工作区、删除旧缓存/旧 release、覆盖 0.1.9/0.1.10 artifact、修改独立 Magazine Reader 项目、复制真实 EPUB/阅读数据或记录 secret。未获明确授权不得 commit/push。
+- 任何步骤都不得执行 `git reset`、`git clean`、覆盖源工作区、删除旧缓存/旧 release、覆盖 0.1.9/0.1.10 artifact、修改独立 Magazine Reader 项目、复制真实 EPUB/阅读数据或记录 secret。明确的发布指令按 [发布手册](RELEASING.md) 授权本次发行提交和推送。在仅打包的任务中，提交或推送须另外获用户授权。
 
 ## 9. 发布与权利边界
 
