@@ -1,6 +1,6 @@
 import type { PublicationId } from "../shared/types";
 
-export type Page = "library" | "publication" | "issue" | "reader" | "books" | "articles" | "book" | "book-reader" | "lesson-reader" | "search" | "bookmarks" | "history" | "notes" | "vocabulary" | "review" | "settings" | "practice";
+export type Page = "library" | "publication" | "issue" | "reader" | "magazine-transcript" | "books" | "articles" | "book" | "book-reader" | "book-transcript" | "lesson-reader" | "search" | "bookmarks" | "history" | "notes" | "vocabulary" | "review" | "settings" | "practice";
 export interface NavigationState {
   page: Page;
   publicationId: PublicationId;

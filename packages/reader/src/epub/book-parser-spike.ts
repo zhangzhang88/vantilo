@@ -13,6 +13,7 @@ export interface BookMetadataSpike {
   title: string;
   authors: string[];
   language: string | null;
+  languages?: string[];
   publisher: string | null;
   publishedAt: string | null;
   identifiers: string[];
@@ -404,6 +405,7 @@ export async function inspectBookEpubSpike(filePath: string): Promise<BookEpubSp
   const coverItem = coverManifestItem(packageXml, packagePath);
   const coverEntry = coverItem ? zip.file(coverItem.entryPath) : null;
   const coverData = coverEntry ? await coverEntry.async("nodebuffer") : null;
+  const languages = allMetadataText($package, "language");
   const partTitles = tocTree.filter((node) => looksLikePart(node.title) && node.children.length).map((node) => node.title);
 
   return {
@@ -412,7 +414,8 @@ export async function inspectBookEpubSpike(filePath: string): Promise<BookEpubSp
     metadata: {
       title: firstMetadataText($package, "title") ?? path.basename(filePath, path.extname(filePath)),
       authors: allMetadataText($package, "creator"),
-      language: firstMetadataText($package, "language"),
+      language: languages[0] ?? null,
+      ...(languages.length > 1 ? { languages } : {}),
       publisher: firstMetadataText($package, "publisher"),
       publishedAt: firstMetadataText($package, "date"),
       identifiers: allMetadataText($package, "identifier"),

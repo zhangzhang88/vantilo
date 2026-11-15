@@ -42,6 +42,7 @@ export function adaptTranslationPreview(source,filename) {
 .reader-page-shell .vantilo-sentence-heading .text-button:disabled,.reader-page-shell .vantilo-expression-row .text-button:disabled {opacity:.45;cursor:default;}
 `;
   if(!filename.endsWith('/frontend/App.tsx'))return source;
+  exact('const VANTILO_MAGAZINE_AUDIOBOOK = false;', 'const VANTILO_MAGAZINE_AUDIOBOOK = true;');
   const sentenceStateAnchor='  const [sentenceTranslationRecords, setSentenceTranslationRecords]';
   // The audiobook view must resolve the same engine-specific cache as full-text
   // translation, and must remount when the selected engine changes.
@@ -49,10 +50,7 @@ export function adaptTranslationPreview(source,filename) {
     '<ChineseReader key={`${article.identity.documentId}:${vantiloEngine}`} translationEngineId={vantiloEngine} article={article}');
   const sentenceStateIndex=source.indexOf(sentenceStateAnchor);
   if(sentenceStateIndex<0)throw new Error('Sentence state seam changed');
-  source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>{
-    let saved:string|null=null;try{saved=getReaderStorage().getItem('vantilo-translation-engine-v1');}catch{}
-    return /^custom-api:[a-f0-9]{12}$/.test(saved||'') || /^codex:[a-zA-Z0-9._-]{1,128}$/.test(saved||'') ? saved! : '';
-  });
+  source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>loadListeningTranslationEngine(getReaderStorage()) ?? '');
   const vantiloEngineRef=useRef(vantiloEngine);vantiloEngineRef.current=vantiloEngine;
   const [vantiloEngines,setVantiloEngines] = useState<{id:string;label:string}[]>([]);
   const [vantiloEngineError,setVantiloEngineError] = useState('');
@@ -76,12 +74,13 @@ export function adaptTranslationPreview(source,filename) {
   }
   function changeVantiloEngine(id:string) {
     cancelVantiloTranslation();
+    onBilingualViewChange?.(article.identity.documentId);
     setVantiloChunkProgress(null);
     vantiloEngineRef.current=id;
     setVantiloEngine(id);
     try{getReaderStorage().setItem('vantilo-translation-engine-v1',id);}catch{}
     window.dispatchEvent(new Event('vantilo-translation-engine-change'));
-    setParagraphTranslationRecords(loadParagraphTranslations({getItem:key=>getReaderStorage().getItem(key+':vantilo-v2:'+id)}));
+    setParagraphTranslationRecords(loadParagraphTranslations(chineseTranslationStorage(getReaderStorage(), id)));
     setSentenceTranslationRecords(loadSentenceTranslations({getItem:key=>getReaderStorage().getItem(key+':vantilo-v2:'+id)}));
     setSentenceTranslationRequests({});
     setFullArticleTranslationExpanded(false);
@@ -172,8 +171,8 @@ export function adaptTranslationPreview(source,filename) {
   if(!source.includes(closeSelection))throw new Error('Selection close seam changed');
   source=source.replace(closeSelection,closeSelection+'    vantiloSelectionRequest.current?.abort();\n');
   // Translation history is partitioned by the exact engine/model selection.
-  source=source.replaceAll('loadParagraphTranslations(getReaderStorage())','loadParagraphTranslations(vantiloTranslationStorage)');
-  source=source.replaceAll('saveParagraphTranslations(getReaderStorage(), next)','saveParagraphTranslations(vantiloTranslationStorage, next)');
+  exact('const paragraphTranslationEngine: string | undefined = undefined;',
+    'const paragraphTranslationEngine: string | undefined = vantiloEngine;');
   source=source.replace('loadSentenceTranslations(getReaderStorage())','loadSentenceTranslations(vantiloTranslationStorage)');
   for(let i=0;i<5;i++)source=source.replace('saveSentenceTranslations(getReaderStorage(),','saveSentenceTranslations(vantiloTranslationStorage,');
   source=source.replace('loadSentenceTranslations(getReaderStorage()), target)','loadSentenceTranslations(vantiloTranslationStorage), target)');
@@ -280,8 +279,6 @@ export function adaptTranslationPreview(source,filename) {
   if(!source.includes(oldActions))throw new Error('Sentence bottom actions seam changed');
   source=source.replace(oldActions,'');
   source=source.replace('{currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。"}','{currentSentenceTranslationRequest.error || (currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。")}');
-  exact('        await ensureReadingTextTranslation(item.target, item.text, item.contextBefore, item.contextAfter, false, true);','        if(!await ensureReadingTextTranslation(item.target, item.text, item.contextBefore, item.contextAfter, false, true)) break;');
-  exact('Math.min(3, missing.length)','Math.min(1, missing.length)');
   exact('          <div className="reader-mode-switch" aria-label="阅读模式">', `          <details className="vantilo-translation-menu" onMouseLeave={event => { if (event.relatedTarget) event.currentTarget.open = false; }}>
         <summary title="选择阅读翻译模型">翻译模型 ▾</summary>
         <aside className="vantilo-translation-bar" aria-label="阅读翻译设置">

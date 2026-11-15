@@ -8,6 +8,7 @@ export interface ChineseListeningPosition {
   seconds: number;
   rate: number;
   completed: boolean;
+  updatedAt?: number;
 }
 type ReadStorage = Pick<Storage, "getItem">;
 export function validListeningPosition(value: unknown): value is ChineseListeningPosition {
@@ -17,16 +18,17 @@ export function validListeningPosition(value: unknown): value is ChineseListenin
     && Number.isInteger(item.paragraphIndex) && item.paragraphIndex >= 0
     && Number.isInteger(item.chunkIndex) && item.chunkIndex >= 0 && typeof item.chunkText === "string"
     && Number.isFinite(item.seconds) && item.seconds >= 0 && item.seconds <= 86_400
+    && (item.updatedAt === undefined || (Number.isFinite(item.updatedAt) && item.updatedAt >= 0))
     && [.75, 1, 1.25, 1.5].includes(item.rate) && typeof item.completed === "boolean";
 }
-export function loadChineseListeningRecords(storage: ReadStorage): ChineseListeningPosition[] {
+export function loadChineseListeningRecords(storage: ReadStorage, key = CHINESE_LISTENING_KEY): ChineseListeningPosition[] {
   try {
-    const value: unknown = JSON.parse(storage.getItem(CHINESE_LISTENING_KEY) ?? "[]");
+    const value: unknown = JSON.parse(storage.getItem(key) ?? "[]");
     return Array.isArray(value) ? value.filter(validListeningPosition).slice(0, 100) : [];
   } catch { return []; }
 }
-export function saveChineseListeningPosition(storage: ReadStorage & Pick<Storage, "setItem">, position: ChineseListeningPosition) {
-  storage.setItem(CHINESE_LISTENING_KEY, JSON.stringify([position, ...loadChineseListeningRecords(storage).filter(item => item.documentId !== position.documentId)].slice(0, 100)));
+export function saveChineseListeningPosition(storage: ReadStorage & Pick<Storage, "setItem">, position: ChineseListeningPosition, key = CHINESE_LISTENING_KEY) {
+  storage.setItem(key, JSON.stringify([position, ...loadChineseListeningRecords(storage, key).filter(item => item.documentId !== position.documentId)].slice(0, 100)));
 }
 export function resolveChineseListeningPosition(records: ChineseListeningPosition[], documentId: string, paragraphs: string[]) {
   const saved = records.find(item => item.documentId === documentId);

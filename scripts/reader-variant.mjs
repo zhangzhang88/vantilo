@@ -443,23 +443,6 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
     if (source.split(toolbar).length !== 2) throw new Error('Reader toolbar discovery insertion seam changed');
     source = source.replace(toolbar, toolbar + `\n          <button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}>▧ <span>发现好书</span></button>`);
   }
-  if (filename.endsWith('/frontend/App.tsx') && source.includes('function BookContinueCard(')) {
-    const signature = 'function BookContinueCard({ book, item, onContinue }: { book: BookSummary; item: ReadingEntryView; onContinue: () => void }) {';
-    const renderCall = '<BookContinueCard key={bookContinue.key} book={continueBook} item={bookContinue} onContinue={() => openReadingEntry(bookContinue.entry)} />';
-    if (source.split(signature).length !== 2 || source.split(renderCall).length !== 2) throw new Error('Book continue progress seam changed');
-    source = source.replace(signature, `function BookContinueCard({ book, item, onContinue, chapterProgress }: { book: BookSummary; item: ReadingEntryView; onContinue: () => void; chapterProgress: Record<string, number> }) {
-  const bookPrefix = \`reading:book:\${book.id}:\`;
-  const summedChapterProgress = Object.entries(chapterProgress)
-    .filter(([documentId]) => documentId.startsWith(bookPrefix))
-    .reduce((sum, [, value]) => sum + Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0)), 0);
-  const wholeBookProgress = item.category === "电子书"
-    ? Math.round(summedChapterProgress / Math.max(1, book.readableUnitCount))
-    : item.progress;`);
-    const progressMarkup = '<div className="continue-progress"><ProgressBar value={item.progress} /><span>{item.progress}%</span></div>';
-    if (source.split(progressMarkup).length !== 2) throw new Error('Book continue progress display seam changed');
-    source = source.replace(progressMarkup, '<div className="continue-progress"><ProgressBar value={wholeBookProgress} /><span>{wholeBookProgress}%</span></div>');
-    source = source.replace(renderCall, '<BookContinueCard key={bookContinue.key} book={continueBook} item={bookContinue} chapterProgress={readerState.bookProgress} onContinue={() => openReadingEntry(bookContinue.entry)} />');
-  }
   if (filename.endsWith('/frontend/App.tsx') && source.includes('continueCard={magazineContinue ? <GlobalContinueCard')) {
     const card = '<GlobalContinueCard item={magazineContinue} onOpen={openReadingEntry}';
     const fallback = '<ProgressBar value={currentArticle.progress} /><span>{currentArticle.progress}%</span>';

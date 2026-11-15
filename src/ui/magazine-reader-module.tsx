@@ -1,4 +1,7 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
+import { AudiobookDock } from '../../packages/reader/src/frontend/audiobook-dock';
+import { isAudiobookSnapshot, type AudiobookAction, type AudiobookSnapshot } from '../../packages/reader/src/shared/audiobook-bridge';
 import './magazine-reader-module.css';
 import { BookDiscovery } from '../reader/book-discovery';
 import { ReadingGrowthPage } from '../reader/growth-page';
@@ -18,12 +21,13 @@ type BridgeMessage = {type:string;token?:string;bookId?:string;documentId?:strin
 type VocabularyBackupEvent = {type:'freeze'|'resume'|'status';requestId:string;phase?:string;progress?:number;message?:string;result?:{name:string;size:number;sha256:string;vocabularyCount:number}};
 type HostBridge = {onSystemSuspended?:(callback:()=>void)=>()=>void;onVocabularyBackupEvent?:(callback:(event:VocabularyBackupEvent)=>void)=>()=>void;startVocabularyBackup?:(requestId:string)=>Promise<{canceled?:boolean}>;submitVocabularyBackupSnapshot?:(requestId:string,snapshot:unknown)=>Promise<{accepted:boolean}>;cancelVocabularyBackup?:(requestId:string)=>Promise<{canceled:boolean}>;revealVocabularyBackup?:()=>Promise<{shown:boolean}>;getVocabularyBackupStatus?:()=>Promise<{lastBackup:{createdAt:string;name:string;path:string;size:number;sha256:string;vocabularyCount:number}|null}>};
 
-export function MagazineReaderModule({navigationRequest,status,error,onRetry,onBack,syncState,onSync,onSetup,onAppearanceChange,visible=true}: {
-  navigationRequest?:{target:'settings'|'library'|'practice';sequence:number};status:MagazineReaderStatus;error:string|null;onRetry:()=>void;onBack:()=>void;syncState?:MagazineSyncState|null;onSync?:()=>void;onSetup?:()=>void;onAppearanceChange?:(appearance:ReaderAppearance)=>void;visible?:boolean;
+export function MagazineReaderModule({navigationRequest,status,error,onRetry,onBack,syncState,onSync,onSetup,onAppearanceChange,audiobookTarget,onShowReader,visible=true}: {
+  navigationRequest?:{target:'settings'|'library'|'practice';sequence:number};status:MagazineReaderStatus;error:string|null;onRetry:()=>void;onBack:()=>void;syncState?:MagazineSyncState|null;onSync?:()=>void;onSetup?:()=>void;onAppearanceChange?:(appearance:ReaderAppearance)=>void;visible?:boolean;audiobookTarget?:HTMLElement|null;onShowReader?:()=>void;
 }) {
   const frameRef=React.useRef<HTMLIFrameElement>(null);
   const [discoveryOpen,setDiscoveryOpen]=React.useState(false),[growthOpen,setGrowthOpen]=React.useState(false);
   const [instanceToken,setInstanceToken]=React.useState<string|null>(null);
+  const [audiobook,setAudiobook]=React.useState<AudiobookSnapshot|null>(null);
   const lastActivityAt=React.useRef(0);
   const initRetryRef=React.useRef<number|null>(null);
   const [session,setSession]=React.useState<SessionState>(()=>createReadingSession(readGrowthRecord()));
@@ -59,10 +63,21 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
     return()=>clearInterval(id);
   },[growthStorageValid]);
   React.useEffect(()=>{
+    if(status!=='ready')setAudiobook(null);
+  },[status]);
+  React.useEffect(()=>{
     const receive=(event:MessageEvent<BridgeMessage>)=>{
       if(event.source!==frameRef.current?.contentWindow||event.origin!==origin||!event.data||typeof event.data!=='object')return;
       const data=event.data;
       if(data.type==='vantilo:reader-ready'){navigate();return;}
+      if(data.type==='vantilo:audiobook-ready'){
+        if(instanceToken)frameRef.current?.contentWindow?.postMessage({type:'vantilo:audiobook-connect',token:instanceToken},origin);
+        return;
+      }
+      if(data.type==='vantilo:audiobook-state'){
+        if(instanceToken&&data.token===instanceToken&&(data.snapshot===null||isAudiobookSnapshot(data.snapshot)))setAudiobook(data.snapshot);
+        return;
+      }
       if(data.type==='vantilo:open-environment-settings'){onSetup?.();return;}
       if(data.type==='vantilo:open-discovery'){
         if(!instanceToken||data.token!==instanceToken)return;
@@ -128,17 +143,45 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
     });
   },[instanceToken,origin]);
   React.useEffect(()=>{if(!instanceToken||!frameRef.current?.contentWindow)return;const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-summary',token:instanceToken,seconds:daily,active:session.active,canResume:Boolean(growthStorageValid&&session.bookId&&session.mode)},origin);send();const id=window.setInterval(send,1000);return()=>clearInterval(id);},[instanceToken,daily,session.active,session.bookId,session.mode,growthStorageValid,origin]);
-  React.useEffect(()=>{if(status==='ready')navigate();},[status,navigate]);
+  React.useEffect(()=>{
+    if(status!=='ready'||!navigationRequest)return;
+    setGrowthOpen(false);
+    setDiscoveryOpen(false);
+    navigate();
+  },[status,navigate,navigationRequest]);
   const onFrameLoad=()=>{
     setSession(current=>current.documentId?leaveReadingSession(current,current.documentId,current.pageId??undefined):current);if(initRetryRef.current!==null)clearInterval(initRetryRef.current);
     const token=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}-${Math.random()}`;
-    setInstanceToken(token);const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-init',token},'*');send();
+    setAudiobook(null);
+    setInstanceToken(token);
+    const frame=frameRef.current?.contentWindow;
+    frame?.postMessage({type:'vantilo:audiobook-connect',token},origin);
+    const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-init',token},'*');send();
     let attempts=0;initRetryRef.current=window.setInterval(()=>{send();if(++attempts>=30&&initRetryRef.current!==null){clearInterval(initRetryRef.current);initRetryRef.current=null;}},300);navigate();
   };
   const continueReading=()=>{if(growthStorageValid)setSession(current=>resumeSession(current,Date.now()));};
-  return <section className="magazine-reader-module" aria-label="Magazine Reader" hidden={!visible}>
-    {growthOpen?<>{!growthStorageValid&&<div className="growth-storage-error" role="alert">阅读成长数据格式无效，计时已暂停，原始数据未覆盖。请先检查或恢复一份有效备份。</div>}<ReadingGrowthPage onBack={()=>setGrowthOpen(false)}/></>:discoveryOpen?<BookDiscovery onBack={()=>setDiscoveryOpen(false)} onOpenShelf={()=>{setDiscoveryOpen(false);frameRef.current?.contentWindow?.postMessage({type:'vantilo:navigate',target:'library'},origin);}}/>:status==='ready'?<iframe ref={frameRef} onLoad={onFrameLoad} className="magazine-reader-frame" title="Magazine Reader" src={MAGAZINE_READER_URL} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" allow="autoplay 'src'; clipboard-write 'src'" referrerPolicy="no-referrer"/>:status==='error'?<div className="magazine-reader-state" role="alert"><h2>无法打开 Magazine Reader</h2><p className="magazine-reader-error">{error||'阅读模块启动失败。'}</p><div className="magazine-reader-state-actions"><button type="button" onClick={onRetry}>重试</button></div></div>:<div className="magazine-reader-state" role="status" aria-live="polite"><span className="magazine-reader-spinner" aria-hidden="true"/><h2>正在启动阅读空间…</h2><p>正在连接本机 Magazine Reader 服务，请稍候。</p></div>}
+  const sendAudiobookAction=React.useCallback((action:AudiobookAction)=>{
+    if(!instanceToken||!audiobook)return;
+    if(action.type==='return'||action.type==='return-original'){
+      setGrowthOpen(false);
+      setDiscoveryOpen(false);
+      onShowReader?.();
+    }
+    frameRef.current?.contentWindow?.postMessage({type:'vantilo:audiobook-control',token:instanceToken,sessionId:audiobook.sessionId,action},origin);
+  },[instanceToken,audiobook?.sessionId,onShowReader,origin]);
+  return <>
+  <section className="magazine-reader-module" aria-label="Magazine Reader" hidden={!visible}>
+    {status==='ready'&&<iframe ref={frameRef} onLoad={onFrameLoad} className="magazine-reader-frame" title="Magazine Reader"
+      hidden={growthOpen||discoveryOpen} src={MAGAZINE_READER_URL} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+      allow="autoplay 'src'; clipboard-write 'src'" referrerPolicy="no-referrer"/>}
+    {growthOpen?<>{!growthStorageValid&&<div className="growth-storage-error" role="alert">阅读成长数据格式无效，计时已暂停，原始数据未覆盖。</div>}<ReadingGrowthPage onBack={()=>setGrowthOpen(false)}/></>
+      :discoveryOpen?<BookDiscovery onBack={()=>setDiscoveryOpen(false)} onOpenShelf={()=>{setDiscoveryOpen(false);frameRef.current?.contentWindow?.postMessage({type:'vantilo:navigate',target:'library'},origin);}}/>
+      :status==='error'?<div className="magazine-reader-state" role="alert"><h2>无法打开 Magazine Reader</h2><p className="magazine-reader-error">{error||'阅读模块启动失败。'}</p><div className="magazine-reader-state-actions"><button onClick={onRetry}>重试</button></div></div>
+      :status!=='ready'?<div className="magazine-reader-state" role="status" aria-live="polite"><span className="magazine-reader-spinner" aria-hidden="true"/><h2>正在启动阅读空间…</h2><p>正在连接本机 Magazine Reader 服务，请稍候。</p></div>:null}
     {session.reminder&&visible&&!growthOpen&&<aside className="growth-reminder" role="alertdialog" aria-label="阅读提醒"><strong>还在阅读吗？</strong><p>计时已暂停，你的阅读成果已保存。</p><button onClick={continueReading}>继续阅读</button><button onClick={()=>setSession(s=>pauseSession(s,'user'))}>先暂停</button></aside>}
     {daily>=1800&&daily-1<1800&&<div className="growth-success" role="status">今日30分钟阅读目标已达成，继续阅读也会累计。</div>}
-  </section>;
+  </section>
+    {audiobookTarget&&audiobook&&createPortal(<AudiobookDock key={audiobook.sessionId} state={audiobook}
+      send={sendAudiobookAction}/>,audiobookTarget)}
+  </>;
 }

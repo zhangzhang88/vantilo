@@ -35,3 +35,27 @@
   .chinese-reading-paragraph { padding: 10px 8px; }.chinese-paragraph-play { left: -19px; opacity: 1; width: 18px; }
   .chinese-player-settings { padding: 14px; width: min(300px,calc(100vw - 24px)); max-height: min(340px,calc(100dvh - 180px)); }
 }
+.book-library-listen { margin: 4px 10px 8px; }
+
+.audiobook-transcript { max-width: 820px; margin-inline: auto; }
+.audiobook-transcript .chinese-reading-heading { margin-top: 20px; }
+.audiobook-transcript .chinese-reading-paragraph p { cursor: auto; }
+.paragraph-listen-button {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-accent);
+  font: 500 12px/1.5 system-ui, sans-serif;
+  cursor: pointer;
+}
+.paragraph-listen-button:is(:hover, :focus-visible) {
+  background: var(--theme-selected);
+  border-color: var(--theme-line);
+}
+.audiobook-transcript .chinese-reading-paragraph.is-audiobook-source {
+  border-left-color: var(--theme-accent);
+  background: var(--theme-selected);
+}

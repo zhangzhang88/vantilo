@@ -1,3 +1,4 @@
+import { wholeBookReadingProgress } from "../packages/reader/src/frontend/global-reading.ts";
 import { describe, expect, it } from 'vitest';
 import { adaptReaderSource } from '../scripts/reader-variant.mjs';
 import ts from 'typescript';
@@ -57,16 +58,14 @@ describe('Reader build adaptation', () => {
     expect(result).toContain('type: "vantilo:open-discovery", token: (window as Window & {');expect(result).toContain('__vantiloGrowthDocumentId?: string;');expect(result).toContain('__vantiloGrowthBookId?: string;');expect(result).toContain('__vantiloGrowthPageId?: string;');
     expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
   });
-  it('shows whole-book progress on the resume card by aggregating saved chapter progress', () => {
-    const source = `function BookContinueCard({ book, item, onContinue }: { book: BookSummary; item: ReadingEntryView; onContinue: () => void }) {
-      return <div><div className="continue-progress"><ProgressBar value={item.progress} /><span>{item.progress}%</span></div></div>;
-    }
-    const card = <BookContinueCard key={bookContinue.key} book={continueBook} item={bookContinue} onContinue={() => openReadingEntry(bookContinue.entry)} />;`;
-    const result = adaptReaderSource(source, '/source/src/frontend/App.tsx');
-    expect(result).toContain('summedChapterProgress / Math.max(1, book.readableUnitCount)');
-    expect(result).toContain('chapterProgress={readerState.bookProgress}');
-    expect(result).toContain('ProgressBar value={wholeBookProgress}');
-    expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+  it('computes whole-book progress from saved chapters, including chapters the reader has not opened', () => {
+    const book = { id: 'book:id:first', readableUnitCount: 3 };
+    expect(wholeBookReadingProgress(book, {
+      'reading:book:book:id:first:chapter:1': 100,
+      'reading:book:book:id:first:chapter:2': 25,
+      'reading:book:book:id:other:chapter:1': 100,
+    })).toBe(42);
+    expect(wholeBookReadingProgress(book, {})).toBe(0);
   });
   it('removes crawlers, science routes and the second assistant login and rejects upstream seam changes', () => {
     const source = `const codexAuth = new CodexAuthService(paths.dataDir, options.aiFetchImpl);

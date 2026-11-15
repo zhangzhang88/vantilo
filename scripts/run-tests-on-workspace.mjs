@@ -38,7 +38,7 @@ const electronEntries = new Set([
   'scripts/verify-packaged-reader.cjs', 'scripts/verify-reader-host.cjs',
   'scripts/verify-reader-translation-reuse.cjs', 'scripts/verify-reader-dictionary-theme.cjs',
   'scripts/verify-reader-growth-live.cjs', 'scripts/verify-reader-qwen-detail-view.cjs',
-  'scripts/verify-reader-audio-policy.cjs',
+  'scripts/verify-reader-audio-policy.cjs', 'scripts/verify-reader-audiobook.cjs',
 ]);
 const vocabularyEntries = new Set([
   'scripts/run-vocabulary-backup-e2e.mjs',

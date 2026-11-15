@@ -1,3 +1,4 @@
+import type { BookLanguage } from "./book-language.js";
 import type { Article, PublicationId } from "./types.js";
 import type { BookCategoryId } from "./book-category.js";
 
@@ -109,6 +110,7 @@ export interface BookRecord {
   title: string;
   authors: string[];
   language: string | null;
+  languages?: string[];
   publisher: string | null;
   publishedAt: string | null;
   identifiers: string[];
@@ -127,6 +129,7 @@ export interface BookSummary {
   title: string;
   authors: string[];
   language: string | null;
+  readingLanguage?: BookLanguage;
   publisher: string | null;
   publishedAt: string | null;
   epubVersion: string;
@@ -147,6 +150,7 @@ export interface BookImportPreview {
   title?: string;
   authors?: string[];
   language?: string | null;
+  readingLanguage?: BookLanguage;
   publisher?: string | null;
   publishedAt?: string | null;
   epubVersion?: string;

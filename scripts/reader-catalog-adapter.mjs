@@ -105,7 +105,7 @@ export function adaptCatalogPreview(source,filename) {
   }
   const readLater=take('          {(\n            <button\n              className={`toolbar-button reader-focus-hidden ${queuedForLater','          )}');
   const jumpBack=take('          {jumpBackTarget && (','          )}');
-  const chinese=take('          {<button className={`toolbar-button reader-chinese-button','</button>}')
+  const chinese=take('          {onListenFromHere ? <button className="toolbar-button"','</button>}')
     .replaceAll('reader-chinese-button','reader-chinese-button vantilo-reader-translation-action')
     .replaceAll('中文阅读','听书版')
     .replace('{readerLanguage === "chinese" ? "A" : "中"}','');
@@ -159,7 +159,7 @@ export function adaptCatalogPreview(source,filename) {
   exact(autoStart,'        // Chinese directory generation requires the explicit catalog button.');
   source=source.replaceAll(/    void prepare(?:Guides|Sections)\((?:issueId|found\.issue\.id)\);/g,'    // No automatic model tasks when opening issues or articles.');
   exact('    const bookId = selectedBookRecord.id;\n    const initialize = async () => {', '    const bookId = selectedBookRecord.id;\n    const initialize = async () => {');
-  const initEffect='  useEffect(() => {\n    if (!selectedBookRecord) return;\n    let active = true;\n    const bookId = selectedBookRecord.id;';
+  const initEffect='  useEffect(() => {\n    if (!selectedBookRecord || selectedBookLanguage === "zh") return;\n    let active = true;\n    const bookId = selectedBookRecord.id;';
   exact(initEffect,`  useEffect(()=>{
     const changed=(event:Event)=>{const detail=(event as CustomEvent).detail;
       if(detail?.kind==='issue')void fetchIssue(detail.id).then(updated=>setRecords(items=>items.map(item=>item.id===detail.id?updated:item))).catch(()=>{});
@@ -205,13 +205,13 @@ export function adaptCatalogPreview(source,filename) {
   book=book.replace('    if (!readyCount || importing) return;',"    if (!readyCount || importing || vantiloImportModelBusy) return;\n    if(vantiloGenerateCatalog&&!vantiloImportEngine){setError('请先选择目录翻译模型');return;}");
   book=book.replace('        if (result.status === "imported") imported += 1;',`        if (result.status === "imported") {
           imported += 1;
-          if(vantiloGenerateCatalog&&result.bookId) {
+          if(vantiloGenerateCatalog&&result.bookId&&result.readingLanguage!=="zh") {
             try {let generated;do{generated=await vantiloCatalogRequest('/api/vantilo-catalog/book/'+encodeURIComponent(result.bookId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({engineId:vantiloImportEngine,regenerate:false})});}while(generated.state==='pending');}
             catch(e){setError('书籍已成功导入；中文目录未生成：'+(e instanceof Error?e.message:'请在目录页重试'));}
           }
         }`);
   book=book.replace('            {preparing ? (',`            <section className="vantilo-catalog-import" aria-label="导入时的目录翻译设置">
-              <label><input type="radio" name="vantilo-import-mode" checked={!vantiloGenerateCatalog} disabled={importing} onChange={()=>setVantiloGenerateCatalog(false)}/>仅导入（保留英文目录）</label>
+              <label><input type="radio" name="vantilo-import-mode" checked={!vantiloGenerateCatalog} disabled={importing} onChange={()=>setVantiloGenerateCatalog(false)}/>仅导入（保留原书目录）</label>
               <label><input type="radio" name="vantilo-import-mode" checked={vantiloGenerateCatalog} disabled={importing} onChange={()=>setVantiloGenerateCatalog(true)}/>导入并生成中文目录</label>
               {vantiloGenerateCatalog&&<VantiloCatalogPicker value={vantiloImportEngine} onChange={setVantiloImportEngine} disabled={importing} onBusy={setVantiloImportModelBusy}/>}
               <small>目录模型单独保存，不跟随助手或正文翻译模型；千问在本机运行；选择 GPT 时需要登录 ChatGPT。</small>
@@ -225,10 +225,10 @@ export function adaptCatalogPreview(source,filename) {
   const detailStart=source.indexOf('function BookDetailPage('),detailEnd=source.indexOf('\nfunction ',detailStart+10);
   let detail=source.slice(detailStart,detailEnd);
   detail=detail.replace('  if (loading) return',"  const [vantiloBookCatalog,setVantiloBookCatalog]=useState<any>(null);\n  useEffect(()=>setVantiloBookCatalog(null),[book?.id]);\n  if (loading) return");
-  detail=detail.replace('const tocTitles = tocStatus?.titles;',"const tocTitles = vantiloBookCatalog?.state==='ready'?vantiloBookCatalog.titles:tocStatus?.titles;");
-  const barStart=detail.indexOf('        <div className="book-toc-status"'),barEnd=detail.indexOf('\n        {groups.map',barStart);
+  detail=detail.replace('const tocTitles = originalChinese ? undefined : tocStatus?.titles;',"const tocTitles = originalChinese ? undefined : vantiloBookCatalog?.state==='ready'?vantiloBookCatalog.titles:tocStatus?.titles;");
+  const barStart=detail.indexOf('        {!originalChinese && <div className="book-toc-status"'),barEnd=detail.indexOf('\n        {groups.map',barStart);
   if(barStart<0||barEnd<0)throw new Error('Book catalog status boundaries changed');
-  detail=detail.slice(0,barStart)+'        <VantiloCatalogControl key={book.id} kind="book" id={book.id} onResolved={setVantiloBookCatalog}/>\n'+detail.slice(barEnd);
+  detail=detail.slice(0,barStart)+'        {!originalChinese && <VantiloCatalogControl key={book.id} kind="book" id={book.id} onResolved={setVantiloBookCatalog}/>}\n'+detail.slice(barEnd);
   source=source.slice(0,detailStart)+detail+source.slice(detailEnd);
   // Magazine title overlays do not replace historical summaries or edit source files.
   exact('  const articles = flattenArticles(issue);\n  const continueArticle = resolveIssueContinueArticle(issue, lastPosition);',`  const [vantiloIssueCatalog,setVantiloIssueCatalog]=useState<any>(null);

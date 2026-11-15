@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isReaderAppearance, MagazineReaderModule } from '../src/ui/magazine-reader-module';
 
@@ -68,4 +68,47 @@ it('synchronizes only valid appearance settings from the Reader frame',()=>{
  expect(onAppearanceChange).not.toHaveBeenCalled();
  window.dispatchEvent(new MessageEvent('message',{origin:'http://127.0.0.1:5175',source:frame.contentWindow,data}));
  expect(onAppearanceChange).toHaveBeenCalledExactlyOnceWith({theme:'blue',fontSize:20,fontFamily:'sans'});
+});
+
+it('accepts audiobook state only from the connected Reader and scopes controls to its session', () => {
+  const target = document.createElement('div');
+  document.body.append(target);
+  const onShowReader = vi.fn();
+  const view = render(<MagazineReaderModule status="ready" error={null} onRetry={vi.fn()} onBack={vi.fn()}
+    audiobookTarget={target} onShowReader={onShowReader} />);
+  try {
+    const frame = screen.getByTitle('Magazine Reader') as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => {});
+    fireEvent.load(frame);
+    const { token } = post.mock.calls.find(([data]) => data.type === 'vantilo:audiobook-connect')![0];
+    const snapshot = { sessionId: 7, mode: 'original', sourceId: 'book:sample', title: '听书测试', chapterId: 'one',
+      chapters: [{ id: 'one', title: '第一章' }], phase: 'paused', paragraphIndex: 1,
+      paragraphCount: 5, paragraphNumber: 2, error: '', rate: 1, voice: 'serena', sleepMinutes: 0 };
+    function receive(origin: string, activeToken: string, mode = snapshot.mode) {
+      act(() => window.dispatchEvent(new MessageEvent('message', {
+        source: frame.contentWindow, origin, data: { type: 'vantilo:audiobook-state', token: activeToken, snapshot: { ...snapshot, mode } },
+      })));
+    }
+
+    receive('https://evil.test', token);
+    receive('http://127.0.0.1:5175', 'stale-frame');
+    expect(screen.queryByRole('region', { name: '听书播放器' })).toBeNull();
+    receive('http://127.0.0.1:5175', token);
+    expect(screen.queryByRole('button', { name: '回到译文' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '回到原文' }));
+    expect(onShowReader).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledWith({
+      type: 'vantilo:audiobook-control', token, sessionId: 7, action: { type: 'return-original' },
+    }, 'http://127.0.0.1:5175');
+    receive('http://127.0.0.1:5175', token, 'translation');
+    fireEvent.click(screen.getByRole('button', { name: '回到译文' }));
+    fireEvent.click(screen.getByRole('button', { name: '回到原文' }));
+    expect(onShowReader).toHaveBeenCalledTimes(3);
+    expect(post).toHaveBeenCalledWith({
+      type: 'vantilo:audiobook-control', token, sessionId: 7, action: { type: 'return' },
+    }, 'http://127.0.0.1:5175');
+  } finally {
+    view.unmount();
+    target.remove();
+  }
 });

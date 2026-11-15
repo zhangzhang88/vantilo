@@ -12,5 +12,6 @@ workspaceGuard.assertWorkspaceTestEnvironment();
 // embedded upstream source tests require its separate private EPUB corpus and
 // upstream-only fixtures, so they are not part of the Vantilo test command.
 export default mergeConfig(viteConfig, defineConfig({ test: {
-  exclude: [...configDefaults.exclude, '**/native/qwen-health/.build/**', '**/packages/reader/src/**/*.test.*']
+  // The portable CI suite uses node:test and has its own CI entry point.
+  exclude: [...configDefaults.exclude, 'tests/ci-portable.test.mjs', '**/native/qwen-health/.build/**', '**/packages/reader/src/**/*.test.*']
 } }));

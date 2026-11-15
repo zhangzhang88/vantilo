@@ -1,6 +1,6 @@
 {
   "name": "vantilo",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -36,6 +36,7 @@
     "test:qwen:preview": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-qwen-preview.cjs",
     "test:qwen:resident": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-qwen-resident.cjs",
     "test:reader:preview": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-setup-preview.cjs",
+    "test:reader:audiobook": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-audiobook.cjs",
     "test:reader:layout": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-layout.cjs",
     "test:reader:growth-page": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-growth-page-live.cjs",
     "test:reader:growth-navigation": "node scripts/run-tests-on-workspace.mjs --electron scripts/verify-reader-growth-navigation.cjs",

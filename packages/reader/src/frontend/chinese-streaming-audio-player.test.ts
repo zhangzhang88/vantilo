@@ -25,6 +25,21 @@ function fixture(synthesize = vi.fn(async function* (_text: string, _signal: Abo
 }
 
 describe("Streaming Chinese audiobooks", () => {
+  it("jumps across measured speech chunks without skipping unmeasured audio", async () => {
+    const f = fixture(vi.fn(async function* () {
+      yield { sampleRate: 24000, samples: new Int16Array(24000 * 10) };
+    }), { splitText: text => text.includes("第0") ? ["第一段上半", "第一段下半"] : ["第二段"] });
+    await f.player.start({ paragraphIndex: 0, chunkIndex: 0 });
+
+    expect(f.player.seekCursor({ paragraphIndex: 0, chunkIndex: 0, seconds: 7 }, 15))
+      .toMatchObject({ paragraphIndex: 1, chunkIndex: 0, seconds: 2 });
+    expect(f.player.seekCursor({ paragraphIndex: 1, chunkIndex: 0, seconds: 2 }, -15))
+      .toMatchObject({ paragraphIndex: 0, chunkIndex: 0, seconds: 7 });
+    f.player.clearSeekHistory();
+    expect(f.player.seekCursor({ paragraphIndex: 1, chunkIndex: 0, seconds: 3 }, 15))
+      .toMatchObject({ paragraphIndex: 1, chunkIndex: 0, seconds: 3 });
+  });
+
   it("starts from the first PCM reserve without waiting for a third chunk", async () => {
     let releaseThird!: () => void;
     const third = new Promise<void>(resolve => { releaseThird = resolve; });

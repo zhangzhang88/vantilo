@@ -22,8 +22,8 @@ export function GlobalNavigation({ items, page, loading, onNavigate, compact = f
   const trigger = useRef<HTMLButtonElement | null>(null);
   const popup = useRef<HTMLDivElement>(null);
   const popupId = useId();
-  const active = (id: NavigationItem["id"]) => id === "library" ? ["library", "publication", "issue"].includes(page)
-    : id === "books" ? ["books", "book", "book-reader", "lesson-reader"].includes(page) : id === page;
+  const active = (id: NavigationItem["id"]) => id === "library" ? ["library", "publication", "issue", "reader", "magazine-transcript"].includes(page)
+    : id === "books" ? ["books", "book", "book-reader", "book-transcript", "lesson-reader"].includes(page) : id === page;
   const navigate = (id: NavigationItem["id"]) => { setMenu(null); onNavigate(id); };
   const toggle = (kind: "all" | "more", button: HTMLButtonElement) => { trigger.current = button; setMenu(current => current === kind ? null : kind); };
   const positionPopup = () => {

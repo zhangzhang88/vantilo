@@ -28,3 +28,11 @@ export function resolveReadingEntry(entry: ReadingEntry, issues: ReaderIssue[], 
     category: document.kind === "book-lesson" ? "精选阅读" : "电子书",
     progress: (document.kind === "book-lesson" ? lessons.progress : reader.bookProgress)[document.documentId] ?? 0, available: Boolean(book) };
 }
+
+export function wholeBookReadingProgress(book: Pick<BookSummary, "id" | "readableUnitCount">, chapterProgress: Record<string, number>): number {
+  const prefix = `reading:book:${book.id}:`;
+  const total = Object.entries(chapterProgress)
+    .filter(([documentId]) => documentId.startsWith(prefix))
+    .reduce((sum, [, value]) => sum + (Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0), 0);
+  return Math.min(100, Math.round(total / Math.max(1, book.readableUnitCount)));
+}

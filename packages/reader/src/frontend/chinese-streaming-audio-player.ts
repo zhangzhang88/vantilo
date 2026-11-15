@@ -4,6 +4,7 @@ import type { SpeechPcmChunk } from "./chinese-tts-stream";
 import { PcmPitchPreservingStretch } from "./pcm-pitch-preserving-stretch";
 
 type TimedCursor = { cursor: SpeechCursor; seconds: number };
+type ChunkDuration = TimedCursor & { complete: boolean; lastInParagraph: boolean };
 type AudioTimeline = TimedCursor & { start: number; end: number; rate: number };
 
 // Judge readiness using actual buffered PCM and recent delivery speed, rather
@@ -194,16 +195,56 @@ export class ChineseStreamingAudioPlayer {
   private rate = 1;
   private latest?: TimedCursor;
   private bufferingFirstPlayback = false;
+  private readonly durations = new Map<string, ChunkDuration>();
   private rebuffering = false;
   private generationFinished = false;
   private monitorTimer?: ReturnType<typeof setInterval>;
 
   constructor(private dependencies: PlayerDependencies) {}
   setRate(rate: number) { this.rate = rate; this.sink?.setRate(rate); }
+  clearSeekHistory() { this.durations.clear(); }
+
+  currentCursor(): SpeechCursor | undefined {
+    return (this.sink?.position() ?? this.latest)?.cursor;
+  }
+
+  seekCursor(fallback: SpeechCursor, deltaSeconds: number): SpeechCursor {
+    const current = this.sink?.position() ?? this.latest ?? { cursor: fallback, seconds: fallback.seconds ?? 0 };
+    const order = (a: SpeechCursor, b: SpeechCursor) =>
+      a.paragraphIndex - b.paragraphIndex || a.chunkIndex - b.chunkIndex;
+    const chunks = [...this.durations.values()].sort((a, b) => order(a.cursor, b.cursor));
+    let index = chunks.findIndex(chunk => order(chunk.cursor, current.cursor) === 0);
+    let seconds = current.seconds + deltaSeconds;
+    if (index < 0) return { ...current.cursor, seconds: Math.min(current.seconds, Math.max(0, seconds)) };
+
+    while (seconds < 0 && index > 0) {
+      const previous = chunks[index - 1];
+      const currentChunk = chunks[index].cursor;
+      if (!previous.complete || !this.adjacentChunks(previous, currentChunk)) break;
+      seconds += previous.seconds;
+      index--;
+    }
+    while (seconds >= chunks[index].seconds && chunks[index].complete && index < chunks.length - 1) {
+      if (!this.adjacentChunks(chunks[index], chunks[index + 1].cursor)) break;
+      seconds -= chunks[index].seconds;
+      index++;
+    }
+    const target = chunks[index];
+    const max = Math.max(0, target.seconds - 0.05);
+    return { ...target.cursor, seconds: Math.max(0, Math.min(seconds, max)) };
+  }
+
+  private adjacentChunks(previous: ChunkDuration, next: SpeechCursor) {
+    if (previous.cursor.paragraphIndex === next.paragraphIndex) return next.chunkIndex === previous.cursor.chunkIndex + 1;
+    const index = this.dependencies.indices.indexOf(previous.cursor.paragraphIndex);
+    return previous.lastInParagraph && next.chunkIndex === 0 && this.dependencies.indices[index + 1] === next.paragraphIndex;
+  }
+
   pause() {
     if (!this.controller) return;
     this.paused = true; this.sink?.pause();
-    if (this.latest) this.dependencies.position(this.latest.cursor, this.latest.seconds, false);
+    const position = this.sink?.position() ?? this.latest;
+    if (position) this.dependencies.position(position.cursor, position.seconds, false);
     this.dependencies.phase("paused");
   }
   resume() {
@@ -216,7 +257,8 @@ export class ChineseStreamingAudioPlayer {
   stop() {
     if (this.monitorTimer) clearInterval(this.monitorTimer);
     this.monitorTimer = undefined;
-    if (this.latest) this.dependencies.position(this.latest.cursor, this.sink?.position()?.seconds ?? this.latest.seconds, false);
+    const position = this.sink?.position() ?? this.latest;
+    if (position) this.dependencies.position(position.cursor, position.seconds, false);
     this.controller?.abort(); this.controller = undefined;
     this.wake?.(); this.wake = undefined;
     this.sink?.stop(); this.sink = undefined;
@@ -321,6 +363,11 @@ export class ChineseStreamingAudioPlayer {
         const chunkIndex: number = current.chunkText && chunks[current.chunkIndex] !== current.chunkText ? 0 : Math.min(current.chunkIndex, chunks.length - 1);
         const selected: SpeechCursor = { paragraphIndex: current.paragraphIndex, chunkIndex, chunkText: chunks[chunkIndex] };
         const resumeSeconds = current.chunkText && current.chunkText !== chunks[chunkIndex] ? 0 : current.seconds ?? 0;
+        const durationKey = `${selected.paragraphIndex}:${selected.chunkIndex}`;
+        const duration = this.durations.get(durationKey) ?? {
+          cursor: selected, seconds: 0, complete: false, lastInParagraph: chunkIndex === chunks.length - 1,
+        };
+        this.durations.set(durationKey, duration);
         let offsetSeconds = 0, hasAudio = false;
         // Tiny PCM frames can be generated slower than real-time during a
         // cold model start. Queue a small amount before scheduling the first
@@ -382,8 +429,10 @@ export class ChineseStreamingAudioPlayer {
             if (initialDuration >= 0.65) flushInitial();
           } else pushFrame(frame, offsetSeconds);
           offsetSeconds += frame.samples.length / frame.sampleRate;
+          duration.seconds = Math.max(duration.seconds, offsetSeconds);
         }
         if (!valid()) break;
+        duration.complete = true;
         flushInitial(); // A very short utterance may end before 650 ms.
         const measuredRtf = this.dependencies.generationRtf?.(chunks[chunkIndex]) ?? null;
         if (measuredRtf !== null && Number.isFinite(measuredRtf)) {

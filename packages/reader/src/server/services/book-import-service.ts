@@ -5,6 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 import { inspectBookEpubRecord } from "../../epub/book-record-contract.js";
 import type { BookImportPreview, BookRecord, BookSummary } from "../../shared/book-data-contract.js";
+import { classifyBookLanguage } from "../../shared/book-language.js";
 import { originalChapterHtml, originalResource } from "./book-original-content.js";
 
 const MAX_PREVIEW_COVER_BYTES = 2_000_000;
@@ -276,6 +277,7 @@ export class BookImportService {
       title: record.title,
       authors: record.authors,
       language: record.language,
+      readingLanguage: classifyBookLanguage(record),
       publisher: record.publisher,
       publishedAt: record.publishedAt,
       epubVersion: record.epubVersion,
@@ -297,6 +299,7 @@ export class BookImportService {
       title: record.title,
       authors: record.authors,
       language: record.language,
+      readingLanguage: classifyBookLanguage(record),
       publisher: record.publisher,
       publishedAt: record.publishedAt,
       epubVersion: record.epubVersion,

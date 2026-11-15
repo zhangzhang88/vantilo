@@ -136,6 +136,18 @@ function article(): Article {
 }
 
 describe("Book Data Contract V0.1", () => {
+  it("cleans a numbered filename-style display title while preserving metadata-based identity", () => {
+    const fixture = report();
+    fixture.metadata = { ...fixture.metadata, title: "140857_人生财富靠康波_周金涛", authors: ["周金涛"], identifiers: [] };
+    expect(bookRecordFromSpikeReport(fixture, "a".repeat(64))).toMatchObject({
+      id: createBookId(fixture.metadata), title: "人生财富靠康波", sourceFilename: fixture.sourceFilename,
+    });
+    fixture.metadata.title = "1984";
+    expect(bookRecordFromSpikeReport(fixture, "a".repeat(64)).title).toBe("1984");
+    fixture.metadata.title = "140857_数字作品_未确认的后缀";
+    expect(bookRecordFromSpikeReport(fixture, "a".repeat(64)).title).toBe(fixture.metadata.title);
+  });
+
   it("prefers a valid ISBN for stable book identity and ignores invalid ISBN-like identifiers", () => {
     expect(isbnFromIdentifiers(["3877376244", "9780226239873"])).toBe("9780226239873");
     expect(createBookId({

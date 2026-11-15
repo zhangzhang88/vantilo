@@ -84,8 +84,8 @@ export function adaptReaderGrowthBridge(source, filename) {
 }`;
   const appComponentSeam='export default function App() {';
   if(source.split(appComponentSeam).length===2)source=source.replace(appComponentSeam,`${appCardFunction}\n\n${appComponentSeam}`);
-  const bookCardSeam='      {continueCard}\n      <section className="section-block library-shelf-section">';
-  if(source.split(bookCardSeam).length===2)source=source.replace(bookCardSeam,'      {continueCard}\n      <VantiloGrowthHomeCard />\n      <section className="section-block library-shelf-section">');
+  const bookCardSeam='\n      <section className="section-block library-shelf-section">\n        <div className="section-title-row"><div><div className="eyebrow">Bookshelf';
+  if(source.split(bookCardSeam).length===2)source=source.replace(bookCardSeam,'\n      <VantiloGrowthHomeCard />'+bookCardSeam);
   const magazineCardSeam='\n      <section className="section-block library-shelf-section">\n        <div className="section-title-row"><div><div className="eyebrow">Magazine shelf';
   if(source.split(magazineCardSeam).length===2)source=source.replace(magazineCardSeam,'\n      <VantiloGrowthHomeCard />'+magazineCardSeam);
   return source;

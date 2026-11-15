@@ -121,3 +121,8 @@
 @media (prefers-reduced-motion: reduce) {
   .vantilo-macos-shell .app-rail-cell .react-aria-Button { transition:none; }
 }
+
+.vantilo-macos-shell:has(> .vantilo-audiobook-slot:not(:empty)) { grid-template-rows: 52px minmax(0, 1fr) auto; }
+.vantilo-audiobook-slot { grid-row: 3; grid-column: 2; min-width: 0; z-index: 15; }
+.vantilo-audiobook-slot:not(:empty) { padding: 2px 12px 5px; }
+.vantilo-audiobook-slot:empty { display: none; }

@@ -8022,3 +8022,14 @@ input.learning-slot { outline-offset: 4px; border-bottom-color: var(--accent); }
     margin-top: 16px;
   }
 }
+
+.reading-paragraph-block.is-audiobook-source {
+  border-radius: 5px;
+  background: var(--theme-selected);
+  box-shadow: -3px 0 var(--theme-accent);
+  scroll-margin-top: 90px;
+}
+
+.reading-paragraph-block.is-audiobook-source > .translation-panel {
+  border-left-color: var(--theme-accent);
+}

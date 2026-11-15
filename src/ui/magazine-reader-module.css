@@ -233,3 +233,5 @@
 
 .account-controls span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-controls button { flex: none; }
+
+.magazine-reader-frame[hidden] { display: none; }

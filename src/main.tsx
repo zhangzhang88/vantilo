@@ -78,14 +78,21 @@ function App() {
   const [sidebarHidden,setSidebarHidden]=React.useState(false);
   const [account,setAccount]=React.useState<AccountState|null>(null);
   const [accountBusy,setAccountBusy]=React.useState(false);
-  const [readerDestination,setReaderDestination]=React.useState<{target:'settings'|'library'|'practice';sequence:number}>({target:'library',sequence:0});
+  const [readerDestination,setReaderDestination]=React.useState<{target:'settings'|'library'|'practice';sequence:number}|undefined>({target:'library',sequence:0});
   const [settingsActive,setSettingsActive]=React.useState(false);
-  function openReaderDestination(target:'settings'|'library'|'practice') {setSettingsActive(target==='settings');setReaderDestination(previous=>({target,sequence:previous.sequence+1}));void enterMagazineReader();}
+  function openReaderDestination(target:'settings'|'library'|'practice') {setSettingsActive(target==='settings');setReaderDestination(previous=>({target,sequence:(previous?.sequence??0)+1}));void enterMagazineReader();}
+  const [audiobookTarget,setAudiobookTarget]=React.useState<HTMLElement|null>(null);
   const [activeModule,setActiveModule]=React.useState<'agent'|'magazine-reader'>('agent');
   const [magazineReaderStatus,setMagazineReaderStatus]=React.useState<MagazineReaderStatus>('idle');
   const [magazineReaderError,setMagazineReaderError]=React.useState<string|null>(null);
   const [magazineSyncState,setMagazineSyncState]=React.useState<MagazineSyncState|null>(null);
   const [readerSetupOpen,setReaderSetupOpen]=React.useState(false);
+  const showAudiobookOriginal=React.useCallback(()=>{
+    setReaderSetupOpen(false);
+    setSettingsActive(false);
+    setReaderDestination(undefined);
+    setActiveModule('magazine-reader');
+  },[]);
   const [runtime,setRuntime]=React.useState<RuntimeState>({status:'connecting'});
   const [sessions,setSessions]=React.useState<SessionSummary[]>([]);
   const [selectedSessionId,setSelectedSessionId]=React.useState<string|null>(null);
@@ -422,9 +429,10 @@ function App() {
 
   return <Provider colorScheme="dark" background="base"><main className={`vantilo-macos-shell ${sidebarHidden && activeModule === 'agent' ? 'sidebar-collapsed' : ''}`}>
     <div className="app-titlebar"><span className="app-window-title" aria-hidden="true">Vantilo</span>{account && <div className="account-controls"><span>{account.connected ? `ChatGPT 已登录${account.email ? ' · ' + account.email : ''}` : 'Agent 与 Reader 共用 ChatGPT 账号'}</span><button type="button" disabled={accountBusy || busy} onClick={() => void changeAccount()}>{accountBusy ? '正在处理…' : account.connected ? '退出账号' : '登录 ChatGPT'}</button></div>}</div>
-    <MainNavigation onHome={()=>{setSettingsActive(false);setActiveModule('agent');}} onMagazineReader={()=>openReaderDestination('library')} onPractice={()=>openReaderDestination('practice')} onSettings={()=>openReaderDestination('settings')} activeSection={settingsActive&&activeModule==='magazine-reader'?'settings':activeModule==='magazine-reader'&&readerDestination.target==='practice'?'practice':activeModule}/>
+    <MainNavigation onHome={()=>{setSettingsActive(false);setActiveModule('agent');}} onMagazineReader={()=>openReaderDestination('library')} onPractice={()=>openReaderDestination('practice')} onSettings={()=>openReaderDestination('settings')} activeSection={settingsActive&&activeModule==='magazine-reader'?'settings':activeModule==='magazine-reader'&&readerDestination?.target==='practice'?'practice':activeModule}/>
     <div className={activeModule === 'magazine-reader' ? 'workspace-sheet workspace-sheet-reader' : 'workspace-sheet'} style={{'--sidebar-width':`${sidebarWidth}px`} as React.CSSProperties}>
-    {(magazineReaderStatus !== 'idle' || activeModule === 'magazine-reader') && <MagazineReaderModule navigationRequest={readerDestination} visible={activeModule === 'magazine-reader'} status={magazineReaderStatus} error={magazineReaderError} onRetry={() => void enterMagazineReader()} onBack={() => setActiveModule('agent')} syncState={magazineSyncState} onSync={() => void syncMagazineReader()} onSetup={() => setReaderSetupOpen(true)} />}
+    {(magazineReaderStatus !== 'idle' || activeModule === 'magazine-reader') && <MagazineReaderModule navigationRequest={readerDestination} visible={activeModule === 'magazine-reader'} status={magazineReaderStatus} error={magazineReaderError} onRetry={() => void enterMagazineReader()} onBack={() => setActiveModule('agent')} syncState={magazineSyncState} onSync={() => void syncMagazineReader()} onSetup={() => setReaderSetupOpen(true)} audiobookTarget={audiobookTarget}
+      onShowReader={showAudiobookOriginal} />}
     {activeModule === 'agent' && <>
     {!sidebarHidden&&<WorkspaceSidebar label="会话侧栏" width={sidebarWidth} onResize={setSidebarWidth}><SidebarHeading>Vantilo</SidebarHeading><button className="new" onClick={()=>void newSession()} disabled={!storage.available}><AddCircle aria-hidden="true"/><span>新建会话</span></button>
       <section className="sidebar-projects" aria-label="项目"><div className="sidebar-section-heading"><span>项目</span><button aria-label={workspace.root?'更改工作区':'添加工作区'} onClick={()=>void chooseWorkspace()} disabled={workspaceBusy||busy}><Add aria-hidden="true"/></button></div>{workspace.root?<div className="workspace-project-row"><button className="workspace-project-main" onContextMenu={event=>{event.preventDefault();void showProjectMenu(workspace.root!)}} onClick={()=>void chooseWorkspace()} disabled={workspaceBusy||busy} title={workspace.root}><span className="workspace-project-icon"><Folder aria-hidden="true"/></span><span className="workspace-project-copy"><strong>{workspace.root.split(/[\\/]/).at(-1)||workspace.root}</strong><small>{workspace.root}</small></span></button><button className="workspace-remove" aria-label="取消工作区授权" title="取消工作区授权" onClick={()=>void clearWorkspace()} disabled={workspaceBusy||busy}>×</button></div>:<button className="workspace-project-empty" onClick={()=>void chooseWorkspace()} disabled={workspaceBusy||busy}>＋　添加工作区</button>}</section>
@@ -450,6 +458,7 @@ function App() {
       </article>
     </section>
     </div>
+    <div ref={setAudiobookTarget} className="vantilo-audiobook-slot" />
     {readerSetupOpen && window.vantilo && <ReaderOnboarding api={window.vantilo} onDismiss={dismissReaderSetup} onStartReader={async()=>{await dismissReaderSetup('finished');await enterMagazineReader();}} />}
     {renameRequest&&<div className="session-rename-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setRenameRequest(null)}}><form className="session-rename-dialog" role="dialog" aria-modal="true" aria-labelledby="session-rename-heading" onSubmit={event=>void saveSessionRename(event)}><h2 id="session-rename-heading">重命名会话</h2><input autoFocus maxLength={120} aria-label="会话名称" value={renameTitle} onChange={event=>setRenameTitle(event.target.value)} onKeyDown={event=>{if(event.key==='Escape')setRenameRequest(null)}}/><div className="session-rename-actions"><button type="button" onClick={()=>setRenameRequest(null)}>取消</button><button type="submit" disabled={!renameTitle.trim()}>保存</button></div></form></div>}
   </main></Provider>;

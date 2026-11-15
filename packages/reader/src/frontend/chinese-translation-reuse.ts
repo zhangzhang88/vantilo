@@ -10,9 +10,20 @@ import type { ReaderStorageBackend } from "./reader-storage";
 
 type ListeningStorage = Pick<ReaderStorageBackend, "getItem" | "setItem">;
 
+export function isListeningTranslationEngine(value: unknown): value is string {
+  return typeof value === "string" && /^(?:custom-api:[a-f0-9]{12}|codex:[a-zA-Z0-9._-]{1,128}|qwen:[a-zA-Z0-9._-]{1,128}@[a-f0-9]{40})$/.test(value);
+}
+
+export function loadListeningTranslationEngine(storage: Pick<ListeningStorage, "getItem">): string | undefined {
+  try {
+    const saved = storage.getItem("vantilo-translation-engine-v1");
+    return isListeningTranslationEngine(saved) ? saved : undefined;
+  } catch { return undefined; }
+}
+
 /** The translation preview persists each selected engine into a separate key. */
 export function chineseTranslationStorage(storage: ListeningStorage, engineId?: string): ListeningStorage {
-  if (!engineId) return storage;
+  if (engineId === undefined) return storage;
   return {
     getItem: key => storage.getItem(`${key}:vantilo-v2:${engineId}`),
     setItem: (key, value) => storage.setItem(`${key}:vantilo-v2:${engineId}`, value),

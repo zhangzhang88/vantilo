@@ -103,13 +103,17 @@ function isParagraphTranslationRecord(value: unknown): boolean {
     && (item.contextFingerprint === undefined || typeof item.contextFingerprint === "string");
 }
 
+// Keep the most recent decoded snapshot while the serialized cache is unchanged.
+let lastParsedCache: { raw: string; records: ParagraphTranslationRecord[] } | undefined;
+
 export function loadParagraphTranslations(storage: ReadStorage): ParagraphTranslationRecord[] {
   const raw = storage.getItem(PARAGRAPH_TRANSLATIONS_KEY);
   if (!raw) return [];
+  if (lastParsedCache?.raw === raw) return lastParsedCache.records;
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    const records = parsed
       .filter(isParagraphTranslationRecord)
       .slice(0, MAX_PARAGRAPH_TRANSLATIONS)
       .map((item) => {
@@ -120,6 +124,8 @@ export function loadParagraphTranslations(storage: ReadStorage): ParagraphTransl
             ? { ...stored, ...headingTranslationTarget(stored as ParagraphTranslationRecord & { headingIndex: number }) }
             : { ...stored, ...paragraphTranslationTarget(stored as ParagraphTranslationRecord & { paragraphIndex: number }) };
       });
+    lastParsedCache = { raw, records };
+    return records;
   } catch {
     return [];
   }

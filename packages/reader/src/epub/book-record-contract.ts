@@ -65,6 +65,14 @@ function chapterRole(unit: BookReadableUnitSpike, orderIndex: number, firstPartI
   return "supplement";
 }
 
+function displayBookTitle(title: string, authors: string[]): string {
+  const fileStyle = /^\d{5,}_(.+)_([^_]+)$/u.exec(title);
+  if (!fileStyle || !/\p{Script=Han}/u.test(fileStyle[1])) return title;
+  const author = fileStyle[2].trim();
+  if (!authors.some(name => name.trim() === author)) return title;
+  return fileStyle[1].trim() || title;
+}
+
 export function bookRecordFromSpikeReport(report: BookEpubSpikeReport, sourceFingerprint: string): BookRecord {
   const bookId = createBookId(report.metadata);
   const partIdByTitle = new Map(report.parts.map((part, index) => [part.title, createBookPartId(index + 1, part.title)]));
@@ -124,9 +132,10 @@ export function bookRecordFromSpikeReport(report: BookEpubSpikeReport, sourceFin
     id: bookId,
     sourceFilename: report.sourceFilename,
     sourceFingerprint: normalizedSourceFingerprint(sourceFingerprint),
-    title: report.metadata.title,
+    title: displayBookTitle(report.metadata.title, report.metadata.authors),
     authors: report.metadata.authors,
     language: report.metadata.language,
+    ...(report.metadata.languages ? { languages: report.metadata.languages } : {}),
     publisher: report.metadata.publisher,
     publishedAt: report.metadata.publishedAt,
     identifiers: report.metadata.identifiers,

@@ -20,3 +20,15 @@ it("treats old records as uncategorized and clears back to all books", () => {
   expect(filterBookShelf(books, { query: "", categoryId: "uncategorized" })).toEqual([books[2]]);
   expect(filterBookShelf(books, { query: " ", categoryId: "all" })).toEqual(books);
 });
+
+it("combines language, title and category and keeps bilingual and unknown books in All", () => {
+  const multilingual: BookSummary[] = [
+    { ...books[0], language: "en-US" },
+    { ...books[1], language: null, readingLanguage: "zh" },
+    { ...books[2], language: null },
+    { ...books[1], id: "book:four", readingLanguage: "mixed" },
+  ];
+  expect(filterBookShelf(multilingual, { query: "经济", categoryId: "economics", language: "zh" })).toEqual([multilingual[1]]);
+  expect(filterBookShelf(multilingual, { query: "", categoryId: "all", language: "en" })).toEqual([multilingual[0]]);
+  expect(filterBookShelf(multilingual, { query: "", categoryId: "all", language: "all" })).toEqual(multilingual);
+});
