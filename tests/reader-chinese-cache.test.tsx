@@ -9,6 +9,19 @@ import { QWEN_TTS_VOICE_STORAGE_KEY } from "../packages/reader/src/shared/qwen-t
 import { CHINESE_AUDIOBOOK_PREFERENCES_KEY } from "../packages/reader/src/frontend/chinese-audiobook-preferences";
 import { saveChineseListeningPosition } from "../packages/reader/src/frontend/chinese-listening-state";
 
+// jsdom has no IndexedDB. Exercise the real database in Electron, and use
+// the same cache interface here for playback rendering and failure handling.
+const cache = vi.hoisted(() => ({
+  read: vi.fn(),
+  load: vi.fn(),
+  save: vi.fn(),
+}));
+vi.mock("../packages/reader/src/frontend/issue-translation-cache", () => ({
+  readIssueTranslation: cache.read,
+  loadIssueDocumentTranslations: cache.load,
+  saveIssueTranslation: cache.save,
+}));
+
 const engineId = "custom-api:012345abcdef";
 const source = [
   "A complete translated first paragraph with several important ideas.",
@@ -34,6 +47,12 @@ function translatedRecords(): ParagraphTranslationRecord[] {
   }));
 }
 beforeEach(() => {
+  const records = new Map<string, ParagraphTranslationRecord>();
+  cache.read.mockReset().mockImplementation(async (engine: string, key: string) => records.get(engine + ":" + key));
+  cache.load.mockReset().mockResolvedValue([]);
+  cache.save.mockReset().mockImplementation(async (engine: string, record: ParagraphTranslationRecord) => {
+    records.set(engine + ":" + record.key, record);
+  });
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => {});
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -77,6 +96,13 @@ it("translates only the missing paragraph using the selected engine while preser
   const translationCall = fetcher.mock.calls.find(call => call[0] === "/api/vantilo-translation/translate");
   expect(translationCall?.[0]).toBe("/api/vantilo-translation/translate");
   expect(JSON.parse(String(translationCall?.[1].body)).engineId).toBe(engineId);
+});
+
+it("reports an unreadable cache and does not send another translation request", async () => {
+  cache.read.mockRejectedValue(new Error("IndexedDB unavailable"));
+  const fetcher = mount(translatedRecords().slice(0, 1));
+  await waitFor(() => expect(screen.getAllByText(/无法读取已保存的译文/).length).toBeGreaterThan(0));
+  expect(fetcher.mock.calls.filter(call => (call as unknown[])[0] === "/api/vantilo-translation/translate")).toHaveLength(0);
 });
 
 it("disables playback until the starting paragraph translation arrives, without waiting for all paragraphs", async () => {

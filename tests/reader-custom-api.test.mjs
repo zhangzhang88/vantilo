@@ -76,6 +76,54 @@ describe('custom OpenAI-compatible API provider',()=>{
    await expect(service.complete({instruction:'Translate faithfully.',input:'A short passage.'})).resolves.toBe('本地模型译文');
   }finally{await rm(dir,{recursive:true,force:true});}
  });
+ it('binds saved credentials to their exact service and versions edited models',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-api-identity-'));
+  try {
+   const fetchImpl=vi.fn(async()=>Response.json({choices:[{message:{content:'OK'}}]}));
+   const filePath=path.join(dir,'provider.json');
+   const service=createReaderCustomApi({filePath,safeStorage:safeStorage(),fetchImpl});
+   const {customApiEngineId}=require('../electron/reader-custom-api-engines.cjs');
+   const selected=await service.save(config);
+   const initialEngine=customApiEngineId(selected);
+   const draft={id:'',name:'Keyless LAN',model:'lan',baseUrl:'http://127.0.0.1:7777/v1',apiKey:''};
+   await service.test(draft);
+   await service.test({...draft,id:selected.id});
+   await service.test({...config,id:selected.id,model:'alternate',apiKey:''});
+   expect(fetchImpl.mock.calls.map(([,options])=>options.headers.authorization)).toEqual([undefined,undefined,'Bearer '+config.apiKey]);
+   await expect(service.save({...draft,id:selected.id})).rejects.toMatchObject({code:'credential_reentry_required'});
+   expect((await service.get()).baseUrl).toBe(selected.baseUrl);
+   const edited=await service.save({...config,id:selected.id,model:'alternate',apiKey:''});
+   expect(customApiEngineId(edited)).not.toBe(initialEngine);
+   await expect(service.complete({instruction:'Translate',input:'Fixture',selectedProfileId:selected.id,expectedEngineId:initialEngine})).rejects.toMatchObject({code:'engine_changed'});
+   expect(fetchImpl).toHaveBeenCalledTimes(3);
+   const restarted=createReaderCustomApi({filePath,safeStorage:safeStorage(),fetchImpl});
+   expect(customApiEngineId(await restarted.get())).toBe(customApiEngineId(edited));
+   await restarted.save(draft);
+   await restarted.complete({instruction:'Translate',input:'Fixture'});
+   expect(fetchImpl.mock.calls.at(-1)[1].headers.authorization).toBeUndefined();
+  } finally { await rm(dir,{recursive:true,force:true}); }
+ });
+ it('uses the explicitly selected saved profile while leaving the active profile and its credentials unchanged',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-custom-api-selection-'));
+  try {
+   const filePath=path.join(dir,'provider.json');
+   const fetchImpl=vi.fn(async()=>Response.json({choices:[{message:{content:'译文'}}]}));
+   const service=createReaderCustomApi({filePath,safeStorage:safeStorage(),fetchImpl});
+   const first=await service.save(config);
+   const active=await service.save({id:'e2e00000-0000-4000-8000-000000000001',name:'另一服务',model:'other-model',baseUrl:'https://example.test/v1',apiKey:'other-fixture-key'});
+   const stored=await readFile(filePath,'utf8');
+   await service.complete({instruction:'Translate',input:'A phrase.',selectedProfileId:first.id});
+   const [url,request]=fetchImpl.mock.calls[0];
+   expect(url).toBe('http://192.168.1.20:1234/v1/chat/completions');
+   expect(request.headers.authorization).toBe('Bearer '+config.apiKey);
+   expect(JSON.parse(request.body).model).toBe(config.model);
+   expect((await service.get()).activeId).toBe(active.id);
+   expect(await readFile(filePath,'utf8')).toBe(stored);
+   await service.remove(first.id);
+   await expect(service.complete({instruction:'Translate',input:'A phrase.',selectedProfileId:first.id})).rejects.toThrow('所选自定义 API 已不存在');
+   expect(fetchImpl).toHaveBeenCalledOnce();
+  } finally { await rm(dir,{recursive:true,force:true}); }
+ });
 });
 
 

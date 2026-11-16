@@ -1,7 +1,9 @@
 import {describe, expect, it} from 'vitest';
 import path from 'node:path';
 import {readFileSync} from 'node:fs';
-import {universalOutputDirectory} from '../scripts/universal-output-path.mjs';
+import {mkdir, mkdtemp, rm, symlink} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {assertUniversalOutputAbsent, universalOutputDirectory} from '../scripts/universal-output-path.mjs';
 
 describe('Universal release output directory',()=>{
   it('scopes artifacts to an out/<version> directory',()=>{
@@ -23,6 +25,21 @@ describe('Universal release output directory',()=>{
     const scriptPath=process.env.VANTILO_UNIVERSAL_SCRIPT_UNDER_TEST ?? path.join(process.cwd(),'scripts/build-mac-universal.mjs');
     const source=readFileSync(scriptPath,'utf8');
     expect(source).toContain('universalOutputDirectory(repo,metadata.version,');
+  });
+
+  it('rejects an existing version directory or a broken link at the output path',async()=>{
+    const root=await mkdtemp(path.join(tmpdir(),'vantilo-release-output-'));
+    try {
+      const directory=universalOutputDirectory(root,'0.1.17');
+      const link=universalOutputDirectory(root,'0.1.18');
+      await expect(assertUniversalOutputAbsent(directory)).resolves.toBeUndefined();
+      await mkdir(directory,{recursive:true});
+      await symlink(path.join(root,'missing'),link);
+      await expect(assertUniversalOutputAbsent(directory)).rejects.toThrow('发行产物目录已存在');
+      await expect(assertUniversalOutputAbsent(link)).rejects.toThrow('发行产物目录已存在');
+    } finally {
+      await rm(root,{recursive:true,force:true});
+    }
   });
 
   it('rejects relative roots and path traversal/non-version input',()=>{

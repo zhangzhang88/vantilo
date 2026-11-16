@@ -1045,6 +1045,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   );
 
   app.get("/api/issues", async () => service.listIssues());
+  app.get("/api/issue-headers", async () => service.listIssueHeaders());
 
   app.delete<{ Params: { issueId: string } }>("/api/issues/:issueId", async (request, reply) => {
     const issueId = request.params.issueId;

@@ -10,6 +10,12 @@ import {readerSourceRoot} from './reader-source-path.mjs';
 import {runtimeModuleInventoryPlugin} from './runtime-module-inventory.mjs';
 import {copyOriginalGameSoundsToWeb,verifyOriginalGameSoundDirectory} from './original-game-sound-assets.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const checkOnly=process.argv.includes("--check");
+if (checkOnly) {
+  process.env.VANTILO_RELEASE_READER='1';
+  process.env.VANTILO_TRANSLATION_READER='1';
+  process.env.VANTILO_CATALOG_READER_PREVIEW='1';
+}
 process.env.VANTILO_QWEN_READER_PREVIEW=process.env.VANTILO_RELEASE_READER==='1'?'0':'1';
 const original=readerSourceRoot;
 await verifyOriginalGameSoundDirectory(path.join(original,'assets/worm'));
@@ -22,9 +28,9 @@ await build({
   cacheDir:path.resolve(process.env.VANTILO_QWEN_VITE_CACHE||path.join(repo,'build/reader-vite-cache')),
   resolve:{dedupe:['react','react-dom']},
   define: { __VANTILO_ORIGINAL_GAME_SOUNDS__: 'true' },
-  plugins:[sharedReaderComposerPlugin(),parcelMacros.vite(),readerVariantPlugin(),react(),runtimeModuleInventoryPlugin(moduleInventoryPath)],
+  plugins:[sharedReaderComposerPlugin(),parcelMacros.vite(),readerVariantPlugin(),react(),...(checkOnly ? [] : [runtimeModuleInventoryPlugin(moduleInventoryPath)])],
   base:'/',
-  build:{outDir:path.resolve(process.env.VANTILO_QWEN_WEB_OUTPUT || path.join(repo,'build/reader-qwen-translation-stage/web')),emptyOutDir:true,sourcemap:false},
+  build:{outDir:path.resolve(process.env.VANTILO_QWEN_WEB_OUTPUT || path.join(repo,'build/reader-qwen-translation-stage/web')),emptyOutDir:!checkOnly,write:!checkOnly,sourcemap:false},
 });
-await copyOriginalGameSoundsToWeb(path.resolve(process.env.VANTILO_QWEN_WEB_OUTPUT || path.join(repo,'build/reader-qwen-translation-stage/web')));
-console.log('READER_WEB_REBUILT_WITH_QWEN_PREVIEW=true; EPUB_AND_SOURCE_FILES_UNCHANGED=true');
+if (!checkOnly) await copyOriginalGameSoundsToWeb(path.resolve(process.env.VANTILO_QWEN_WEB_OUTPUT || path.join(repo,'build/reader-qwen-translation-stage/web')));
+console.log(checkOnly ? 'Reader release UI bundle verified in memory' : 'READER_WEB_REBUILT_WITH_QWEN_PREVIEW=true; EPUB_AND_SOURCE_FILES_UNCHANGED=true');

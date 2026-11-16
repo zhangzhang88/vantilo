@@ -79,11 +79,29 @@ class PortableReaderSupervisor {
           const send=(ok,result,error)=>{if(this.child===child&&!this.stopping)child.postMessage({type:'custom-api-result',requestId,ok,...(ok?{result}:{error})});};
           const idOk=typeof requestId==='string'&&/^[0-9a-f-]{36}$/i.test(requestId);
           const validConfig=config=>config&&typeof config==='object'&&!Array.isArray(config)&&Object.keys(config).every(key=>['id','name','baseUrl','model','apiKey'].includes(key))&&(config.id===undefined||typeof config.id==='string')&&typeof config.name==='string'&&typeof config.baseUrl==='string'&&typeof config.model==='string'&&(config.apiKey===undefined||typeof config.apiKey==='string');
-          const valid=operation==='get'?Object.keys(message).sort().join(',')==='operation,requestId,type':operation==='save'||operation==='test'?Object.keys(message).sort().join(',')==='config,operation,requestId,type'&&validConfig(message.config):operation==='activate'||operation==='remove'?Object.keys(message).sort().join(',')==='id,operation,requestId,type'&&typeof message.id==='string'&&/^[a-f0-9-]{36}$/i.test(message.id):operation==='complete'?['input,instruction,operation,requestId,type','input,instruction,operation,profileId,requestId,task,type'].includes(Object.keys(message).sort().join(','))&&(message.task===undefined||(message.task==='word-context'&&typeof message.profileId==='string'&&/^[a-f0-9-]{36}$/i.test(message.profileId)))&&typeof message.instruction==='string'&&message.instruction.length>0&&message.instruction.length<=8000&&typeof message.input==='string'&&message.input.length>0&&message.input.length<=18000&&message.instruction.length+message.input.length<=19000:false;
+          const fields=Object.keys(message).sort().join(',');
+          const validProfileId=id=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id);
+          const completionFields=Object.keys(message).filter(key=>key!=='expectedEngineId').sort().join(',');
+          const validEngineIdentity=message.expectedEngineId===undefined ||
+            (validProfileId(message.selectedProfileId) && typeof message.expectedEngineId==='string' && /^custom-api:[a-f0-9]{12}$/.test(message.expectedEngineId));
+          const validCompletion=validEngineIdentity && (
+            completionFields==='input,instruction,operation,requestId,type' ||
+            (completionFields==='input,instruction,operation,profileId,requestId,task,type' && message.task==='word-context' && validProfileId(message.profileId)) ||
+            ((completionFields==='input,instruction,operation,requestId,selectedProfileId,type' ||
+              (completionFields==='input,instruction,operation,requestId,selectedProfileId,task,type' && message.task==='word-context')) && validProfileId(message.selectedProfileId))
+          ) && typeof message.instruction==='string' && message.instruction.length>0 && message.instruction.length<=8000 &&
+            typeof message.input==='string' && message.input.length>0 && message.input.length<=18000 && message.instruction.length+message.input.length<=19000;
+          const valid=operation==='get'?fields==='operation,requestId,type':operation==='save'||operation==='test'?fields==='config,operation,requestId,type'&&validConfig(message.config):operation==='activate'||operation==='remove'?fields==='id,operation,requestId,type'&&validProfileId(message.id):operation==='complete'&&validCompletion;
           if(!idOk||!valid||!this.customApi){if(idOk)send(false,null,'自定义 API 请求无效');return;}
           const controller=operation==='complete'?new AbortController():null;
           if(controller)this.customApiRequests.set(requestId,controller);
-          const payload=operation==='get'?{}:operation==='complete'?{instruction:message.instruction,input:message.input,...(message.task?{task:message.task,profileId:message.profileId}:{})}:operation==='save'||operation==='test'?message.config:{id:message.id};
+          const payload=operation==='get'?{}:operation==='complete'?{
+            instruction:message.instruction,input:message.input,
+            ...(message.task?{task:message.task}:{}),
+            ...(message.profileId?{profileId:message.profileId}:{}),
+            ...(message.selectedProfileId?{selectedProfileId:message.selectedProfileId}:{}),
+            ...(message.expectedEngineId?{expectedEngineId:message.expectedEngineId}:{}),
+          }:operation==='save'||operation==='test'?message.config:{id:message.id};
           void Promise.resolve(this.customApi(operation,payload,controller?.signal)).then(result=>send(true,result),error=>send(false,null,error instanceof Error?error.message:'自定义 API 请求失败')).finally(()=>{if(this.customApiRequests.get(requestId)===controller)this.customApiRequests.delete(requestId);});
           return;
         }

@@ -104,6 +104,8 @@ export interface IssueSummary {
   statusCounts: StatusCounts;
 }
 
+export type IssueHeader = Pick<IssueSummary, "id" | "publicationId" | "publicationName" | "filename" | "title" | "date" | "label">;
+
 export interface IssueFile {
   id: string;
   publicationId: PublicationId;

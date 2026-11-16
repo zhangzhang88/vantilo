@@ -56,7 +56,7 @@ type RuntimeApi = {
   revealVocabularyBackup:()=>Promise<{shown:boolean}>;
   getVocabularyBackupStatus:()=>Promise<{lastBackup:{createdAt:string;name:string;path:string;size:number;sha256:string;vocabularyCount:number}|null}>;
   onVocabularyBackupEvent:(callback:(event:VocabularyBackupEvent)=>void)=>()=>void;
-  requestGutenberg:(request:{operation:'introEngines'}|{operation:'search';query?:string;topic?:string;page?:number}|{operation:'detail';id:number}|{operation:'acquire';id:number;filename:string;categoryId:string}|{operation:'intro'|'introCached'|'introCancel';id:number;engine?:'custom'|'codex';force?:boolean;modelId?:string|null;reasoningEffort?:string|null})=>Promise<any>;
+  requestGutenberg:(request:{operation:'introEngines'}|{operation:'search';query?:string;topic?:string;page?:number}|{operation:'detail';id:number}|{operation:'acquire';id:number;filename:string;categoryId:string}|{operation:'intro'|'introCached'|'introCancel';id:number;engine?:'custom'|'codex';force?:boolean;modelId?:string|null;reasoningEffort?:string|null;customEngineId?:string})=>Promise<any>;
   getReaderSetupState:()=>Promise<{show:boolean}>;
   checkReaderSetup:()=>Promise<ReaderSetupCheck>;
   finishReaderSetup:(decision:'finished'|'skipped')=>Promise<{show:boolean}>;

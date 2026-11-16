@@ -1,12 +1,17 @@
 import {
   findParagraphTranslation,
   loadParagraphTranslations,
+  saveParagraphTranslations,
+  upsertParagraphTranslation,
   translationCacheMetadata,
   type ParagraphTranslationRecord,
   type ParagraphTranslationTarget,
   type TranslationCacheContext,
 } from "./paragraph-translation-state";
 import type { ReaderStorageBackend } from "./reader-storage";
+
+import { loadIssueDocumentTranslations, readIssueTranslation, saveIssueTranslation } from "./issue-translation-cache";
+import type { ReadingDocumentIdentity } from "../shared/reading-document-identity";
 
 type ListeningStorage = Pick<ReaderStorageBackend, "getItem" | "setItem">;
 
@@ -69,18 +74,50 @@ export function loadListeningTranslations(storage: ListeningStorage, engineId?: 
   return loadParagraphTranslations(chineseTranslationStorage(storage, engineId));
 }
 
+export async function loadDocumentTranslations(storage: ListeningStorage, document: ReadingDocumentIdentity, engineId?: string) {
+  const existing = loadListeningTranslations(storage, engineId);
+  if (!engineId || document.kind !== "article") return existing;
+  const batch = await loadIssueDocumentTranslations(engineId, document.documentId).catch(cacheReadError);
+  return [...existing, ...batch].sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
+}
+
+function cacheReadError(cause: unknown): never {
+  throw new Error("无法读取已保存的译文，请重试。", { cause });
+}
+
+export async function lookupDocumentTranslation(
+  storage: ListeningStorage, target: ParagraphTranslationTarget, context: TranslationCacheContext, engineId?: string,
+) {
+  const existing = findListeningTranslation(loadListeningTranslations(storage, engineId), target, context, Boolean(engineId));
+  if (!engineId || target.document.kind !== "article") return existing;
+  const record = await readIssueTranslation(engineId, target.key).catch(error => {
+    if (existing) return undefined;
+    return cacheReadError(error);
+  });
+  const batch = record && findListeningTranslation([record], target, context, true);
+  return batch && (!existing || batch.generatedAt >= existing.generatedAt) ? batch : existing;
+}
+
+export async function saveDocumentTranslation(storage: ListeningStorage, record: ParagraphTranslationRecord, engineId?: string) {
+  if (engineId && record.document.kind === "article") {
+    await saveIssueTranslation(engineId, record);
+    return;
+  }
+  saveParagraphTranslations(chineseTranslationStorage(storage, engineId), upsertParagraphTranslation(loadListeningTranslations(storage, engineId), record));
+}
+
 /** Only a missing segment enters the selected translation engine's endpoint. */
-export async function translateMissingListeningText(text: string, engineId: string, signal: AbortSignal): Promise<{
+export async function translateMissingListeningText(text: string, engineId: string, signal: AbortSignal, background = false): Promise<{
   translation: string; model: string; provider: ParagraphTranslationRecord["provider"]; profileId?: string;
 }> {
   const response = await fetch("/api/vantilo-translation/translate", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, engineId }), signal,
+    body: JSON.stringify({ text, engineId, ...(background ? { background } : {}) }), signal,
   });
   const value: unknown = await response.json();
   if (!value || typeof value !== "object") throw new Error("翻译服务响应格式无效");
   const result = value as Record<string, unknown>;
-  if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "中文翻译失败");
+  if (!response.ok) throw Object.assign(new Error(typeof result.error === "string" ? result.error : "中文翻译失败"), { status: response.status });
   if (result.engineId !== engineId) throw new Error("翻译引擎已变化，请重试");
   if (typeof result.translation !== "string" || !result.translation.trim() || typeof result.model !== "string" || !result.model.trim()
     || !["easycliproxy", "custom-api", "vantilo-agent", "qwen-mlx", "qwen-gguf"].includes(String(result.provider))) {

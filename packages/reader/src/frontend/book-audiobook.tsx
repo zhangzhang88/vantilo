@@ -45,7 +45,7 @@ export type AudiobookCommand = AudiobookAction | { type: "play-from"; position: 
 
 export type AudiobookSource =
   | { kind: "book"; book: BookRecord }
-  | { kind: "magazine"; issueId: string; label: string; article: ReaderDocumentView };
+  | { kind: "magazine"; issueId: string; label: string; article: ReaderDocumentView; translationEngineId?: string };
 
 export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, onState, onTranscript, onReturn, onClose }: {
   source: AudiobookSource;
@@ -100,7 +100,9 @@ export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, o
       startAt: first && start ? firstNarratableParagraph(first.document, start.paragraphIndex) ?? first.first : first?.first,
       autoplay: true };
   });
-  const [engineId, setEngineId] = useState(() => mode === "translation" ? loadListeningTranslationEngine(getReaderStorage()) : undefined);
+  const [engineId, setEngineId] = useState(() => mode === "translation"
+    ? (source.kind === "magazine" ? source.translationEngineId : undefined) ?? loadListeningTranslationEngine(getReaderStorage())
+    : undefined);
   const [engineError, setEngineError] = useState("");
   const [engineAttempt, setEngineAttempt] = useState(0);
   useEffect(() => {

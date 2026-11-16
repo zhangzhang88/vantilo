@@ -5,8 +5,10 @@ const path = require('node:path');
 const { CodexDriver } = require('./codex-driver.cjs');
 const { ApprovalService } = require('./approval-service.cjs');
 const { ToolCatalog } = require('./tool-catalog.cjs');
+const { redactSecrets } = require('./session-store.cjs');
 
 const MAX_PROMPT_LENGTH = 20000;
+const STREAM_CHECKPOINT_MS = 200;
 
 class AgentRuntime extends EventEmitter {
   constructor({ driver = new CodexDriver({ cwd: process.cwd() }), store, workspace, projectStore, approvalService = new ApprovalService(), enableWriteTools = false } = {}) {
@@ -186,6 +188,11 @@ class AgentRuntime extends EventEmitter {
     } else if (session.codexThreadId && this.status.status !== 'ready') {
       connectionError = this.status.error || 'Codex is not connected; showing local history only.';
     }
+    const task = this.activeTask;
+    if (task?.sessionId === sessionId && task.assistantText) {
+      session = { ...session, messages: session.messages.map(message =>
+        message.id === task.assistantMessageId ? { ...message, text: redactSecrets(task.assistantText) } : message) };
+    }
     const compatibility = this.#toolCompatibility(session);
     return { session, threadState, connectionError, toolCatalogCompatibility: compatibility.status, availableToolNames: compatibility.availableToolNames };
   }
@@ -304,17 +311,34 @@ class AgentRuntime extends EventEmitter {
     const task = this.activeTask;
     if (!task || task.terminalQueued || (delta.turnId && task.turnId && delta.turnId !== task.turnId)) return;
     task.assistantText += delta.delta;
-    task.eventChain = task.eventChain.then(async () => {
-      const updated = await this.store.updateAssistant(task.sessionId, task.assistantMessageId, task.assistantText);
-      this.emit('event', { type: 'message-delta', taskId: task.id, sessionId: task.sessionId, messageId: updated.message.id, delta: delta.delta });
-      this.emit('event', { type: 'session-updated', session: this.#summary(updated.session, true) });
-    }).catch(error => this._storageFailure(task, error));
+    this.emit('event', { type: 'message-delta', taskId: task.id, sessionId: task.sessionId, messageId: task.assistantMessageId, delta: delta.delta });
+    this._scheduleStreamCheckpoint(task);
+  }
+
+  _scheduleStreamCheckpoint(task) {
+    if (task.terminalQueued || task.checkpointTimer || task.checkpointWriting) return;
+    task.checkpointTimer = setTimeout(() => {
+      task.checkpointTimer = null;
+      if (task.terminalQueued) return;
+      const snapshot = task.assistantText;
+      task.checkpointWriting = true;
+      task.eventChain = task.eventChain.then(async () => {
+        const updated = await this.store.updateAssistant(task.sessionId, task.assistantMessageId, snapshot);
+        this.emit('event', { type: 'session-updated', session: this.#summary(updated.session, true) });
+      }).catch(error => this._storageFailure(task, error)).finally(() => {
+        task.checkpointWriting = false;
+        if (snapshot !== task.assistantText) this._scheduleStreamCheckpoint(task);
+      });
+    }, STREAM_CHECKPOINT_MS);
+    task.checkpointTimer.unref();
   }
 
   _finish(taskId, status, error = null) {
     const task = this.activeTask;
     if (!task || task.id !== taskId || task.terminalQueued) return;
     task.terminalQueued = true;
+    clearTimeout(task.checkpointTimer);
+    task.checkpointTimer = null;
     this._publishTaskState();
     task.abortController.abort();
     this.approvals.rejectTask(taskId, 'cancelled');

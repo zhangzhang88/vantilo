@@ -113,6 +113,21 @@ describe("Fastify app", () => {
     }finally{await app.close();}
   });
 
+  it("lists shelf headers before opening or parsing an EPUB", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "reader-issue-headers-"));
+    roots.push(root);
+    const issues = path.join(root, "issues");
+    await mkdir(issues);
+    await writeFile(path.join(issues, "TheEconomist.2099.01.01.epub"), "intentionally invalid EPUB");
+    const app = await buildServer({ projectRoot: root, serveFrontend: false });
+    try {
+      const response = await app.inject("/api/issue-headers");
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject([{ id: "economist:2099-01-01", filename: "TheEconomist.2099.01.01.epub" }]);
+      expect(response.json()[0]).not.toHaveProperty("articles");
+    } finally { await app.close(); }
+  });
+
   it("serves health and an empty issue list", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "magazine-reader-server-"));
     roots.push(root);

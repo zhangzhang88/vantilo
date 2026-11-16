@@ -50,7 +50,7 @@ export function adaptTranslationPreview(source,filename) {
     '<ChineseReader key={`${article.identity.documentId}:${vantiloEngine}`} translationEngineId={vantiloEngine} article={article}');
   const sentenceStateIndex=source.indexOf(sentenceStateAnchor);
   if(sentenceStateIndex<0)throw new Error('Sentence state seam changed');
-  source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>loadListeningTranslationEngine(getReaderStorage()) ?? '');
+  source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>(article.identity.kind==='article' ? preferredTranslationEngine ?? bilingualEngine : undefined) ?? loadListeningTranslationEngine(getReaderStorage()) ?? '');
   const vantiloEngineRef=useRef(vantiloEngine);vantiloEngineRef.current=vantiloEngine;
   const [vantiloEngines,setVantiloEngines] = useState<{id:string;label:string}[]>([]);
   const [vantiloEngineError,setVantiloEngineError] = useState('');
@@ -72,14 +72,17 @@ export function adaptTranslationPreview(source,filename) {
     setFullArticleTranslationRunning(false);setFullArticleTranslationExpanded(false);setTranslations({});
     setSentenceTranslationRequests({});
   }
-  function changeVantiloEngine(id:string) {
+  function changeVantiloEngine(id:string, remember=true) {
     cancelVantiloTranslation();
+    setVantiloEngineError('');
     onBilingualViewChange?.(article.identity.documentId);
     setVantiloChunkProgress(null);
     vantiloEngineRef.current=id;
     setVantiloEngine(id);
-    try{getReaderStorage().setItem('vantilo-translation-engine-v1',id);}catch{}
-    window.dispatchEvent(new Event('vantilo-translation-engine-change'));
+    if(remember){
+      try{getReaderStorage().setItem('vantilo-translation-engine-v1',id);}catch{}
+      window.dispatchEvent(new Event('vantilo-translation-engine-change'));
+    }
     setParagraphTranslationRecords(loadParagraphTranslations(chineseTranslationStorage(getReaderStorage(), id)));
     setSentenceTranslationRecords(loadSentenceTranslations({getItem:key=>getReaderStorage().getItem(key+':vantilo-v2:'+id)}));
     setSentenceTranslationRequests({});
@@ -88,7 +91,16 @@ export function adaptTranslationPreview(source,filename) {
   useEffect(()=>{
     let ctl:AbortController|null=null;
     const load=()=>{ctl?.abort();ctl=new AbortController();setVantiloEngineError('');fetch('/api/vantilo-translation/engines',{signal:ctl.signal}).then(async r=>{if(!r.ok)throw new Error('无法读取引擎列表');return r.json();})
-      .then(data=>{setVantiloEngines(data.engines);if(!data.engines.some((engine:any)=>engine.id===vantiloEngineRef.current))changeVantiloEngine(data.defaultId);})
+      .then(data=>{
+        if(ctl?.signal.aborted)return;
+        setVantiloEngines(data.engines);
+        const remembered=vantiloEngineRef.current;
+        if(!remembered&&data.defaultId)changeVantiloEngine(data.defaultId,!preferredTranslationEngine);
+        else if(remembered&&!data.engines.some((engine:{id:string})=>engine.id===remembered)){
+          cancelVantiloTranslation();
+          setVantiloEngineError('原选模型已变更或不可用，请重新选择。');
+        }
+      })
       .catch(e=>{if(!ctl?.signal.aborted)setVantiloEngineError(e.message);});};
     load();window.addEventListener('vantilo-custom-api-updated',load);return ()=>{ctl?.abort();window.removeEventListener('vantilo-custom-api-updated',load);};
   },[]);
@@ -180,6 +192,13 @@ export function adaptTranslationPreview(source,filename) {
   if(start<0||end<0)throw new Error('Translation boundaries changed');
   let part=source.slice(start,end);
   part=part.replace('    if (!isTranslatableText(text)) return false;','    if (!isTranslatableText(text) || vantiloBusy.current) return false;\n    const epoch=vantiloEpoch.current;\n    const ctl=new AbortController();\n    const requestEngineId=vantiloEngine;');
+  part=part.replace('        if (cached) {',
+    '        if(epoch!==vantiloEpoch.current || vantiloBusy.current)return false;\n        if (cached) {');
+  part=part.replace('\n    setTranslations((items) => ({\n      ...items,', '\n    if(vantiloEngines.length&&!vantiloEngines.some(engine=>engine.id===requestEngineId)){setVantiloEngineError("请选择可用的阅读翻译模型");return false;}\n    setTranslations((items) => ({\n      ...items,');
+  part=part.replace('      } catch (error) {',
+    '      } catch (error) {\n        if(epoch!==vantiloEpoch.current)return false;');
+  part=part.replace('      setParagraphTranslationRecords(records => upsertParagraphTranslation(records, record));',
+    '      if(epoch!==vantiloEpoch.current)return false;\n      setParagraphTranslationRecords(records => upsertParagraphTranslation(records, record));');
   part=part.replace('    try {\n      const result = await translateParagraph({\n        text,\n        contextBefore,\n        contextAfter,\n      }, undefined, config);',`    vantiloBusy.current=true;vantiloRequests.current.add(ctl);
     const timer=window.setTimeout(()=>ctl.abort(),vantiloEngine.startsWith('qwen:')?600000:115000);
     const progressPoll=vantiloEngine.startsWith('qwen:')?window.setInterval(()=>{
@@ -284,8 +303,9 @@ export function adaptTranslationPreview(source,filename) {
         <aside className="vantilo-translation-bar" aria-label="阅读翻译设置">
           <label className="vantilo-translation-engine">
             <span>阅读翻译模型</span>
-            <select aria-label="阅读翻译引擎，适用于段落、全文和逐句模式" value={vantiloEngine} onChange={e=>changeVantiloEngine(e.target.value)}>
-              {!vantiloEngines.length && <option value="">暂无可用模型，请在设置中配置 API 或登录 ChatGPT</option>}
+            <select aria-label="阅读翻译引擎，适用于段落、全文和逐句模式" value={vantiloEngine} disabled={!vantiloEngines.length} onChange={e=>changeVantiloEngine(e.target.value)}>
+              {vantiloEngine&&!vantiloEngines.some(engine=>engine.id===vantiloEngine)&&<option value={vantiloEngine} disabled>原选模型不可用</option>}
+              {!vantiloEngine && <option value="">暂无可用模型，请在设置中配置 API 或登录 ChatGPT</option>}
               {vantiloEngines.map(engine=><option key={engine.id} value={engine.id}>{engine.label}</option>)}
             </select>
           </label>

@@ -3,8 +3,8 @@ import { renderBookLayout, tableParagraphIndexes } from "./book-table";
 import type { ReaderDocumentView } from "./reading-document-view";
 import { fetchActiveTranslationProfile, translateParagraph } from "./api";
 import { getReaderStorage } from "./reader-storage";
-import { headingTranslationTarget, titleTranslationTarget, paragraphTranslationTarget, saveParagraphTranslations, translationCacheMetadata, upsertParagraphTranslation, type ParagraphTranslationRecord, type ParagraphTranslationTarget } from "./paragraph-translation-state";
-import { chineseTranslationStorage, findListeningTranslation, loadListeningTranslations, restoredListeningTranslations, translateMissingListeningText } from "./chinese-translation-reuse";
+import { headingTranslationTarget, titleTranslationTarget, paragraphTranslationTarget, translationCacheMetadata, type ParagraphTranslationRecord, type ParagraphTranslationTarget } from "./paragraph-translation-state";
+import { loadDocumentTranslations, loadListeningTranslations, lookupDocumentTranslation, saveDocumentTranslation, restoredListeningTranslations, translateMissingListeningText } from "./chinese-translation-reuse";
 import { isChapterNumberParagraph, isTranslatableText } from "../shared/translation-text";
 import type { SpeechCursor, SpeechPhase } from "./chinese-audio-types";
 import { ChineseStreamingAudioPlayer } from "./chinese-streaming-audio-player";
@@ -158,8 +158,20 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
 
   useEffect(() => {
     const lifetime = new AbortController();
-    const storage = original ? undefined : chineseTranslationStorage(getReaderStorage(), translationEngineId);
     const activeProfile = original || translationEngineId ? undefined : fetchActiveTranslationProfile();
+    const cachedDocument = !original && translationEngineId && article.identity.kind === "article"
+      ? loadDocumentTranslations(getReaderStorage(), article.identity, translationEngineId)
+      : undefined;
+    if (cachedDocument) void cachedDocument.then(records => {
+      if (lifetime.signal.aborted) return;
+      const cached = restoredListeningTranslations(records, entries.map(entry => ({
+        target: entry.target,
+        contextBefore: entry.kind === "paragraph" ? article.paragraphs[entry.index - 1] : undefined,
+        contextAfter: entry.kind === "paragraph" ? article.paragraphs[entry.index + 1] : undefined,
+      })), true);
+      textsRef.current = { ...cached, ...textsRef.current };
+      setTexts(textsRef.current);
+    }).catch(() => { /* On-demand lookup reports the error to the player. */ });
     const pending = new Map<string, Promise<string>>();
     let translationQueue: Promise<unknown> = Promise.resolve();
     const ensure = async (entry: Entry): Promise<string> => {
@@ -170,12 +182,13 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
       const contextAfter = entry.kind === "paragraph" ? article.paragraphs[entry.index + 1] : undefined;
       const config = translationEngineId ? undefined : await activeProfile;
       const cacheContext = { ...config, provider: "easycliproxy", targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter };
-      const cached = findListeningTranslation(loadListeningTranslations(getReaderStorage(), translationEngineId), entry.target, cacheContext, Boolean(translationEngineId));
-      if (cached) { textsRef.current = { ...textsRef.current, [key]: cached.translationZh }; setTexts(textsRef.current); return Promise.resolve(cached.translationZh); }
       if (pending.has(key)) return pending.get(key)!;
       const translate = async () => {
         try {
           lifetime.signal.throwIfAborted();
+          const cached = await lookupDocumentTranslation(getReaderStorage(), entry.target, cacheContext, translationEngineId);
+          lifetime.signal.throwIfAborted();
+          if (cached) { textsRef.current = { ...textsRef.current, [key]: cached.translationZh }; setTexts(textsRef.current); return cached.translationZh; }
           setErrors(current => { const next = { ...current }; delete next[key]; return next; });
           const result = translationEngineId
             ? await translateMissingListeningText(entry.target.sourceText, translationEngineId, lifetime.signal)
@@ -190,7 +203,8 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
           const record: ParagraphTranslationRecord = { ...entry.target, translationZh: result.translation, model: result.model, provider: result.provider, profileId: result.profileId,
             ...translationCacheMetadata({ ...metadataProfile, provider: translationEngineId ? "easycliproxy" : result.provider, targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter }),
             generatedAt: new Date().toISOString() };
-          saveParagraphTranslations(storage!, upsertParagraphTranslation(loadListeningTranslations(getReaderStorage(), translationEngineId), record));
+          await saveDocumentTranslation(getReaderStorage(), record, translationEngineId);
+          lifetime.signal.throwIfAborted();
           textsRef.current = { ...textsRef.current, [key]: record.translationZh }; setTexts(textsRef.current);
           callbacks.current.onTranslation?.(record);
           return record.translationZh;

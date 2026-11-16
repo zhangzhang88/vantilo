@@ -12,13 +12,16 @@ import {pipeline} from 'node:stream/promises';
 import {Transform} from 'node:stream';
 import {makeUniversalApp} from '@electron/universal';
 import {readerSourceRoot} from './reader-source-path.mjs';
-import {universalOutputDirectory} from './universal-output-path.mjs';
+import {assertUniversalOutputAbsent,universalOutputDirectory} from './universal-output-path.mjs';
 import {assertNoEpubEntries,assertNoEpubFiles} from './package-artifact-policy.mjs';
 import {helperBuildIdentity,prepareIntelDictionaryHelper,readSwiftCompilerVersion} from './intel-dictionary-helper.mjs';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const require=createRequire(import.meta.url);
 const metadata=JSON.parse(await fs.readFile(path.join(repo,'package.json'),'utf8'));
+const configuredOutputRoot=process.env.VANTILO_UNIVERSAL_OUTPUT_ROOT;
+const outDir=universalOutputDirectory(repo,metadata.version,configuredOutputRoot||path.join(repo,'out'));
+await assertUniversalOutputAbsent(outDir);
 const sourceCommit=execFileSync('/usr/bin/git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim();
 const sourceStatus=execFileSync('/usr/bin/git',['status','--porcelain','--untracked-files=all'],{cwd:repo,encoding:'utf8'}).trim();
 if(sourceStatus)throw new Error('Universal 发布构建要求干净的 Git 源码快照');
@@ -234,9 +237,6 @@ for(const file of [appExecutable,path.join(universalApp,'Contents/Resources/app/
 }
 nativeDictionaryVerification.universalAppSha256=createHash('sha256').update(await fs.readFile(path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary'))).digest('hex');
 
-const configuredOutputRoot=process.env.VANTILO_UNIVERSAL_OUTPUT_ROOT;
-if(configuredOutputRoot&&!path.isAbsolute(configuredOutputRoot))throw new Error('VANTILO_UNIVERSAL_OUTPUT_ROOT 必须是绝对路径');
-const outDir=universalOutputDirectory(repo,metadata.version,configuredOutputRoot||path.join(repo,'out'));
 await fs.mkdir(path.dirname(outDir),{recursive:true});
 await fs.mkdir(outDir); // A version directory is single-use; never reuse an old release directory.
 const zip=path.join(outDir,`Vantilo-Beta-${metadata.version}-universal.zip`);

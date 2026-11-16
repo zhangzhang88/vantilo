@@ -141,6 +141,11 @@ export function fetchIssues(): Promise<IssueSummary[]> {
   return request<IssueSummary[]>("/api/issues");
 }
 
+export function fetchIssueHeaders(): Promise<import("../shared/types").IssueHeader[]> {
+  return request("/api/issue-headers");
+}
+
+
 export function issueCoverUrl(issueId: string): string {
   return `/api/issues/${encodeURIComponent(issueId)}/cover`;
 }

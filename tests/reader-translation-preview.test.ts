@@ -28,6 +28,22 @@ function setup({customApi}:any={}) {
  return {handlers,model,runAi,listModels,post,postSentence,getAccountStatus};
 }
 describe('explicit preview translation engines',()=>{
+ it('lets a foreground translation interrupt the issue queue and leaves its paragraph retryable',async()=>{
+  const c=setup();
+  let indicateStarted!: () => void;
+  const started=new Promise<void>(resolve=>{indicateStarted=resolve;});
+  c.runAi.mockImplementationOnce(async(_input?: any,options?: any)=>{
+   indicateStarted();
+   return new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  });
+  const engineId='codex:gpt-test';
+  const background=c.post({engineId,text:'Background issue paragraph.',background:true});
+  await started;
+  const foreground=await c.post({engineId,text:'Foreground listening paragraph.'});
+  expect(foreground.status).toBe(200);
+  expect(await background).toMatchObject({status:409});
+  expect((await c.post({engineId,text:'Background issue paragraph.',background:true})).status).toBe(200);
+ });
  it('keeps offline Qwen translation local while loading choices for the model selector',async()=>{
   const c=setup();const r=await c.post({engineId:localId,text:'The bark is rough.'});
   expect(r.status).toBe(200);expect(r.result).toMatchObject({engineId:localId,provider:'qwen-mlx'});
@@ -104,6 +120,23 @@ describe('explicit preview translation engines',()=>{
   expect(r.result).toMatchObject({provider:'vantilo-agent',model:'gpt-test',engineId:'codex:gpt-test'});
   expect(c.runAi).toHaveBeenCalledWith(expect.objectContaining({modelId:'gpt-test',reasoningEffort:'low'}),expect.objectContaining({signal:expect.any(AbortSignal)}));
   expect(c.model.translate).not.toHaveBeenCalled();
+ });
+ it('lists all saved API profiles and routes full-text and sentence requests to the chosen one',async()=>{
+  const inactive={id:'10000000-0000-4000-8000-000000000001',name:'同一服务',model:'model-one',baseUrl:'http://127.0.0.1:1001/v1'};
+  const active={id:'10000000-0000-4000-8000-000000000002',name:'同一服务',model:'model-two',baseUrl:'http://127.0.0.1:1001/v1'};
+  const customApi={get:vi.fn(async()=>({configured:true,...active,activeId:active.id,profiles:[inactive,active]})),complete:vi.fn(async(_request:unknown)=> '树皮粗糙。')};
+  const c=setup({customApi});
+  const list=await c.handlers['/api/vantilo-translation/engines']({}, {header:vi.fn()});
+  const custom=list.engines.filter((engine:any)=>engine.engine==='custom-api');
+  expect(custom.map((engine:any)=>engine.label)).toEqual(['自定义 API · 同一服务 / model-two','自定义 API · 同一服务 / model-one']);
+  expect(custom[0].id).toBe(list.defaultId);
+  expect(custom[0].id).not.toBe(custom[1].id);
+  expect(custom[1]).not.toHaveProperty('selectedProfileId');
+  const text='The bark is rough.';
+  expect((await c.post({engineId:custom[1].id,text})).result).toMatchObject({model:inactive.model,profileId:custom[1].id});
+  expect((await c.postSentence({engineId:custom[1].id,text,paragraphContext:text,task:'translation'})).result).toMatchObject({model:inactive.model,profileId:custom[1].id});
+  expect(customApi.complete).toHaveBeenCalledTimes(2);
+  for (const call of customApi.complete.mock.calls) expect(call[0]).toMatchObject({selectedProfileId:inactive.id});
  });
  it('accepts plain Chinese from a translation focused custom model when optional expressions are omitted',async()=>{
   const customApi={get:vi.fn(async()=>({configured:true,id:'local-index',name:'Local-Index',model:'index-translate-2b'})),complete:vi.fn(async()=> '埃迪·拉马表示，他不会辞去总理职务，并警告称，抗议者正在危及阿尔巴尼亚加入欧盟的进程。')};

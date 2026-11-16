@@ -144,7 +144,7 @@ it('generates an on-demand Chinese recommendation from the existing API without 
   expect(await screen.findByText('道林·格雷的画像')).toBeTruthy();
   expect(screen.getByText(/基于原著开头/)).toBeTruthy();
   expect(document.querySelector('.discovery-generated small')?.textContent).toContain('qwen3.5-4b');
-  expect(api.requestGutenberg).toHaveBeenCalledWith({ operation: 'intro', id: 174, engine: 'custom', force: false });
+  expect(api.requestGutenberg).toHaveBeenCalledWith({ operation: 'intro', id: 174, engine: 'custom', force: false, customEngineId: 'custom-api:aaaaaaaaaaaa' });
 });
 
 it('loads a cached Chinese introduction without regenerating', async () => {

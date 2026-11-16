@@ -269,6 +269,27 @@ describe('AgentRuntime sessions and tasks',()=>{
     const rejectedCall=call(103);await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===3);const rejectedApproval=events.filter(event=>event.type==='tool-approval-requested').at(-1);const readsBeforeReject=read.mock.calls.length;runtime.resolveToolApproval({approvalId:rejectedApproval.approvalId,sessionId:session.id,taskId,decision:'rejected'});expect((await rejectedCall).success).toBe(false);expect(read.mock.calls.length).toBe(readsBeforeReject);expect(events.some(event=>event.type==='tool-execution'&&event.approvalId===rejectedApproval.approvalId&&event.stage==='denied')).toBe(true);
     const cancelledCall=call(104);await waitFor(()=>events.filter(event=>event.type==='tool-approval-requested').length===4);const cancelledApproval=events.filter(event=>event.type==='tool-approval-requested').at(-1);await runtime.cancel(taskId);expect((await cancelledCall).success).toBe(false);expect(events.some(event=>event.type==='tool-execution'&&event.approvalId===cancelledApproval.approvalId&&event.stage==='cancelled')).toBe(true);driver.emit('turn',{status:'cancelled',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
   });
+  it('streams a burst immediately, persists one checkpoint, and flushes the final output on shutdown',async()=>{
+    const {runtime,store,driver}=await runtimeWith();
+    const {session}=await runtime.createSession();
+    const writes=vi.spyOn(store,'updateAssistant');
+    const deltas:string[]=[];
+    runtime.on('event',(event:any)=>{if(event.type==='message-delta')deltas.push(event.delta);});
+    await runtime.submit(session.id,'Stream an answer');
+    await waitFor(()=>runtime.activeTask?.turnId==='turn-1');
+    for(let index=0;index<100;index++)driver.emit('delta',{delta:'x',turnId:'turn-1'});
+    expect(deltas.join('')).toBe('x'.repeat(100));
+    expect(writes).not.toHaveBeenCalled();
+    expect((await runtime.openSession(session.id)).session.messages.at(-1).text).toBe('x'.repeat(100));
+    await waitFor(()=>store.get(session.id).messages.at(-1).text.length===100);
+    expect(writes).toHaveBeenCalledTimes(1);
+    driver.emit('delta',{delta:' final',turnId:'turn-1'});
+    await runtime.stop();
+    expect(writes).toHaveBeenCalledTimes(2);
+    const reopened=new SessionStore({filePath:store.filePath});
+    await reopened.load();
+    expect(reopened.get(session.id).messages.at(-1)).toMatchObject({text:'x'.repeat(100)+' final',status:'cancelled'});
+  });
   it('reports persistence failure and interrupts the active Codex turn',async()=>{
     const {runtime,store,driver}=await runtimeWith();const {session}=await runtime.createSession();const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));
     const {taskId}=await runtime.submit(session.id,'save this turn');await waitFor(()=>driver.startTurn.mock.results.length>0);

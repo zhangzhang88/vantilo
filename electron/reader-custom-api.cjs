@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const net = require('node:net');
 const { randomUUID } = require('node:crypto');
+const { customApiEngineId } = require('./reader-custom-api-engines.cjs');
 
 const LIMIT = 1024 * 1024;
 function isPrivateHost(host) {
@@ -34,7 +35,7 @@ function validateConfig(input) {
   return { id, name, baseUrl: url.toString().replace(/\/$/, ''), model, apiKey };
 }
 function publicProfile(config) {
-  return { id: config.id, name: config.name, baseUrl: config.baseUrl, model: config.model, hasApiKey: config.encryptedApiKey != null, credentialStatus: config.credentialStatus || (config.encryptedApiKey == null ? 'missing' : 'unchecked') };
+  return { id: config.id, ...(config.cacheRevision ? { cacheRevision: config.cacheRevision } : {}), name: config.name, baseUrl: config.baseUrl, model: config.model, hasApiKey: config.encryptedApiKey != null, credentialStatus: config.credentialStatus || (config.encryptedApiKey == null ? 'missing' : 'unchecked') };
 }
 function publicConfig(config, profiles = [], activeId = '') {
   return config ? { ...publicProfile(config), configured: true, profiles: profiles.map(publicProfile), activeId: activeId || config.id } : { configured: false, id: '', name: '', baseUrl: '', model: '', hasApiKey: false, profiles: profiles.map(publicProfile), activeId: '' };
@@ -66,7 +67,9 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
     if (!item || typeof item !== 'object' || !item.config || typeof item.config.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(item.config.id)) throw failure('corrupt_json', '自定义 API 配置格式无效，原文件已保留');
     const config = validateConfig({ ...item.config, apiKey: '' });
     const encryptedApiKey = item.encryptedApiKey;
-    return { ...config, encryptedApiKey: encryptedApiKey ?? null };
+    const cacheRevision = item.cacheRevision;
+    if (cacheRevision !== undefined && (typeof cacheRevision !== 'string' || !/^[a-f0-9-]{36}$/i.test(cacheRevision))) throw failure('corrupt_json', 'API 模型标识错误，原文件已保留');
+    return { ...config, cacheRevision, encryptedApiKey: encryptedApiKey ?? null };
   }
   async function read() {
     let raw;
@@ -110,7 +113,7 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
   }
   async function persist(state, previous) {
     await fs.mkdir(path.dirname(filePath), { recursive:true, mode:0o700 });
-    const record = { version:2, activeId:state.activeId, profiles:state.profiles.map(({id,name,baseUrl,model,encryptedApiKey}) => ({config:{id,name,baseUrl,model},encryptedApiKey})) };
+    const record = { version:2, activeId:state.activeId, profiles:state.profiles.map(({id,name,baseUrl,model,encryptedApiKey,cacheRevision}) => ({config:{id,name,baseUrl,model},encryptedApiKey,cacheRevision})) };
     const temp = filePath + '.' + randomUUID() + '.tmp';
     try {
       if (previous?.version === 1) {
@@ -160,12 +163,18 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
       const config = validateConfig({...input,...(input?.id===undefined&&state.activeId?{id:state.activeId}:{})});
       const index = state.profiles.findIndex(item => item.id === config.id);
       const previous = index >= 0 ? state.profiles[index] : null;
+      const addressChanged = previous && previous.baseUrl !== config.baseUrl;
+      if (addressChanged && previous.encryptedApiKey != null && !config.apiKey) {
+        throw failure('credential_reentry_required', 'API 地址已变更。请填写新地址的密钥，或将无需密钥的地址保存为新服务。');
+      }
       let encryptedApiKey = previous?.encryptedApiKey ?? null;
-      if (config.apiKey || !previous) {
+      if (config.apiKey) {
         if (!safeStorage.isEncryptionAvailable()) throw failure('keychain_unavailable','系统安全存储不可用，暂时无法保存 API 密钥');
         encryptedApiKey = safeStorage.encryptString(config.apiKey).toString('base64');
       }
-      const profile = {...config, apiKey:'', encryptedApiKey};
+      const cacheRevision = previous && (addressChanged || previous.model !== config.model)
+        ? randomUUID() : previous?.cacheRevision;
+      const profile = {...config, apiKey:'', encryptedApiKey, cacheRevision};
       const profiles = [...state.profiles];
       if (index >= 0) profiles[index] = profile; else { if (profiles.length >= 50) throw Error('最多保存 50 个 API 服务'); profiles.push(profile); }
       const next = { profiles, activeId:profile.id };
@@ -174,10 +183,23 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
     }); },
     async activate(id){return mutate(async()=>{const state=await read();if(!state||!state.profiles.some(item=>item.id===id))throw Error('找不到已保存的 API 服务');const next={...state,activeId:id};await persist(next,state);return display(next);});},
     async remove(id){return mutate(async()=>{const state=await read();if(!state||!state.profiles.some(item=>item.id===id))throw Error('找不到已保存的 API 服务');const profiles=state.profiles.filter(item=>item.id!==id);if(profiles.length){const next={...state,profiles,activeId:state.activeId===id?profiles[0].id:state.activeId};await persist(next,state);statuses.delete(id);return display(next);}await fs.rm(filePath,{force:true});statuses.delete(id);return display(null);});},
-    async test(input){await writes;const config=validateConfig(input);if(!config.apiKey){const state=await read();const profile=state?.profiles.find(item=>item.id===config.id)||state?.profiles.find(item=>item.id===state.activeId);if(profile)config.apiKey=decrypt(profile);}await request(config,{test:true});return {ok:true,message:'连接成功，模型已返回测试内容'};},
-    async complete({instruction,input,signal,task,profileId}){
+    async test(input) {
+      await writes;
+      const config = validateConfig(input);
+      if (!config.apiKey && input.id === config.id) {
+        const state = await read();
+        const profile = state?.profiles.find(item => item.id === config.id && item.baseUrl === config.baseUrl);
+        if (profile) config.apiKey = decrypt(profile);
+      }
+      await request(config, { test: true });
+      return { ok: true, message: '连接成功，模型已返回测试内容' };
+    },
+    async complete({instruction,input,signal,task,profileId,selectedProfileId,expectedEngineId}){
       if(typeof instruction!=='string'||!instruction.trim()||instruction.length>8000||typeof input!=='string'||!input.trim()||input.length>18000||instruction.length+input.length>19000)throw new Error('自定义 API 请求超出允许长度');
-      await writes;const state=await read();const profile=state?.profiles.find(item=>item.id===state.activeId);if(!profile)throw new Error('请先在阅读设置中配置自定义 API');
+      await writes;const state=await read();
+      const profile=state?.profiles.find(item=>item.id===(selectedProfileId ?? state.activeId));
+      if(!profile)throw new Error(selectedProfileId === undefined ? '请先在阅读设置中配置自定义 API' : '所选自定义 API 已不存在，请重新选择翻译模型');
+      if(expectedEngineId!==undefined && expectedEngineId!==customApiEngineId(profile)) throw failure('engine_changed', '所选 API 模型或地址已变更，请重新选择模型');
       if(task!==undefined&&task!=='word-context')throw new Error('自定义 API 请求类型无效');
       if(profileId!==undefined&&profileId!==profile.id)throw new Error('自定义 API 已切换，请重新点词');
       return request({...profile,apiKey:decrypt(profile)},{instruction,input,signal,task});

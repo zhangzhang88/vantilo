@@ -5,17 +5,20 @@ import { describe, expect, it, vi } from 'vitest';
 const { listGutenbergIntroEngines } = createRequire(import.meta.url)('../electron/gutenberg-intro-engines.cjs');
 
 describe('Book introduction model menu follows Reader translation catalog', () => {
-  it('uses the currently configured custom API plus all models from live Codex catalog', async () => {
+  it('includes every saved API before the live Codex catalog', async () => {
     const profile = {configured:true,id:'saved-profile-123',name:'Local Qwen',model:'qwen3.5-4b'};
     const listModels = vi.fn(async()=>({models:[
       {id:'gpt-6-luna',displayName:'GPT-6-Luna',defaultEffort:'high'},
       {id:'gpt-7-future',displayName:'GPT-7-Future',defaultEffort:'medium'}
     ]}));
-    const result=await listGutenbergIntroEngines({customApi:{get:async()=>profile},listModels});
+    const other={id:'other-profile',name:'Second API',model:'second-model',apiKey:'synthetic-secret'};
+    const result=await listGutenbergIntroEngines({customApi:{get:async()=>({...profile,activeId:profile.id,profiles:[other,profile]})},listModels});
     const expectedCustom='custom-api:'+createHash('sha256').update(profile.id).digest('hex').slice(0,12);
+    const secondCustom='custom-api:'+createHash('sha256').update(other.id).digest('hex').slice(0,12);
     expect(result.defaultId).toBe(expectedCustom);
     expect(result.engines).toEqual([
       {id:expectedCustom,label:'自定义 API · Local Qwen / qwen3.5-4b',engine:'custom',modelId:'qwen3.5-4b',effort:null},
+      {id:secondCustom,label:'自定义 API · Second API / second-model',engine:'custom',modelId:'second-model',effort:null},
       {id:'codex:gpt-6-luna',label:'Codex / ChatGPT · GPT-6-Luna',engine:'codex',modelId:'gpt-6-luna',effort:'high'},
       {id:'codex:gpt-7-future',label:'Codex / ChatGPT · GPT-7-Future',engine:'codex',modelId:'gpt-7-future',effort:'medium'}
     ]);

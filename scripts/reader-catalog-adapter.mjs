@@ -177,14 +177,13 @@ export function adaptCatalogPreview(source,filename) {
       if(pending||document.visibilityState==='hidden')return;
       pending=true;
       try{
-        const summaries=await fetchIssues();if(!active)return;
+        const summaries=await fetchIssueHeaders();if(!active)return;
         const added=summaries.filter(summary=>!records.some(record=>record.id===summary.id));
         if(!added.length)return;
-        const loaded=await Promise.all(added.map(summary=>fetchIssue(summary.id)));
+        const {records:loaded}=await loadIssueRecords(added,fetchIssueForDisplay);
         if(active)setRecords(current=>[...current,...loaded.filter(record=>!current.some(item=>item.id===record.id))]);
       }catch{}finally{pending=false;}
     };
-    void refreshNewIssues();
     const timer=window.setInterval(()=>void refreshNewIssues(),15000);
     const focus=()=>void refreshNewIssues();window.addEventListener('focus',focus);document.addEventListener('visibilitychange',focus);
     return ()=>{active=false;window.clearInterval(timer);window.removeEventListener('focus',focus);document.removeEventListener('visibilitychange',focus);};
@@ -202,7 +201,7 @@ export function adaptCatalogPreview(source,filename) {
   function closeDialog()`);
 
   book=book.replace('    setOpen(true);','    setOpen(true);setVantiloGenerateCatalog(false);');
-  book=book.replace('    if (!readyCount || importing) return;',"    if (!readyCount || importing || vantiloImportModelBusy) return;\n    if(vantiloGenerateCatalog&&!vantiloImportEngine){setError('请先选择目录翻译模型');return;}");
+  book=book.replace('    if (!readyCount || importing) return;',"    if (!readyCount || importing) return;\n    if(vantiloGenerateCatalog&&(vantiloImportModelBusy||!vantiloImportEngine)){setError('请先选择目录翻译模型');return;}");
   book=book.replace('        if (result.status === "imported") imported += 1;',`        if (result.status === "imported") {
           imported += 1;
           if(vantiloGenerateCatalog&&result.bookId&&result.readingLanguage!=="zh") {
@@ -217,7 +216,7 @@ export function adaptCatalogPreview(source,filename) {
               <small>目录模型单独保存，不跟随助手或正文翻译模型；千问在本机运行；选择 GPT 时需要登录 ChatGPT。</small>
             </section>
             {preparing ? (`);
-  book=book.replace('disabled={preparing || importing} onClick={() => void confirmImport()}', 'disabled={preparing || importing || vantiloImportModelBusy || (vantiloGenerateCatalog&&!vantiloImportEngine)} onClick={() => void confirmImport()}');
+  book=book.replace('disabled={preparing || importing} onClick={() => void confirmImport()}', 'disabled={preparing || importing || (vantiloGenerateCatalog&&(vantiloImportModelBusy||!vantiloImportEngine))} onClick={() => void confirmImport()}');
   book=book.replace('`导入 ${readyCount} 本`','`${vantiloGenerateCatalog?"导入并生成中文目录":"仅导入"} ${readyCount} 本`');
   source=source.slice(0,bookStart)+book+source.slice(bookEnd);
   // Books display cached generation provenance and a direct model picker.
@@ -230,17 +229,15 @@ export function adaptCatalogPreview(source,filename) {
   if(barStart<0||barEnd<0)throw new Error('Book catalog status boundaries changed');
   detail=detail.slice(0,barStart)+'        {!originalChinese && <VantiloCatalogControl key={book.id} kind="book" id={book.id} onResolved={setVantiloBookCatalog}/>}\n'+detail.slice(barEnd);
   source=source.slice(0,detailStart)+detail+source.slice(detailEnd);
+  source='import type { IssueCatalogTitles } from "./issue-translation";\n'+source;
   // Magazine title overlays do not replace historical summaries or edit source files.
-  exact('  const articles = flattenArticles(issue);\n  const continueArticle = resolveIssueContinueArticle(issue, lastPosition);',`  const [vantiloIssueCatalog,setVantiloIssueCatalog]=useState<any>(null);
-  useEffect(()=>setVantiloIssueCatalog(null),[issue.id]);
-  if(vantiloIssueCatalog?.state==='ready')issue={...issue,sections:issue.sections.map(section=>({...section,nameZh:vantiloIssueCatalog.titles.sections[section.name]??section.nameZh,articles:section.articles.map(article=>({...article,titleZh:vantiloIssueCatalog.titles.articles[article.id]??article.titleZh}))}))};
-  const articles = flattenArticles(issue);
-  const continueArticle = resolveIssueContinueArticle(issue, lastPosition);`);
+  exact('  const tocIssue = issueWithTranslationTitles(issue, batchTitles);', `  const [vantiloIssueCatalog,setVantiloIssueCatalog]=useState<{titles:IssueCatalogTitles}|null>(null);
+  const tocIssue = issueWithTranslationTitles(issue, batchTitles, vantiloIssueCatalog?.titles);`);
   const issueStart=source.indexOf('function IssuePage('),issueEnd=source.indexOf('\nfunction ',issueStart+10);let issue=source.slice(issueStart,issueEnd);
   const statusStart=issue.indexOf('          <div className="guide-status-group">'),statusEnd=issue.indexOf('\n        </div>\n\n        <div className="issue-toc-search">',statusStart);
   if(statusStart<0||statusEnd<0)throw new Error('Magazine catalog status boundaries changed');
   issue=issue.slice(0,statusStart)+issue.slice(statusEnd);
-  issue=issue.replace('        <div className="issue-toc-search">','        <VantiloCatalogControl key={issue.id} kind="issue" id={issue.id} onResolved={setVantiloIssueCatalog}/>\n        <div className="issue-toc-search">');
+  issue=issue.replace('        <div className="issue-toc-search">','        <VantiloCatalogControl key={issue.id} kind="issue" id={issue.id} hasBatchTitles={Object.keys(batchTitles).length > 0} onResolved={setVantiloIssueCatalog}/>\n        <div className="issue-toc-search">');
   issue=issue.replace('中文标题准备中…','保留英文标题；可在上方生成中文目录');
   source=source.slice(0,issueStart)+issue+source.slice(issueEnd);
   source+='\n'+readFileSync(new URL('../src/reader/custom-api-settings.tsx',import.meta.url),'utf8');

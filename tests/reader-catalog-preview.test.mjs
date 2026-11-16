@@ -11,13 +11,13 @@ const {registerCatalogPreview}=require('../electron/reader-catalog-preview.cjs')
 const {startPortableReader}=require('../electron/portable-reader-service.cjs');
 const book={id:'fixture',sourceFingerprint:'v1',parts:[{id:'p1',title:'Part One'}],chapters:[{id:'c1',title:'One idea'}]};
 const issue={id:'fixture',sourceFingerprint:'v1',sections:['Ideas'],articles:[{id:'a1',title:'Clear writing'}]};
-async function fixture(fn){
+async function fixture(fn, customApi){
  const dir=await mkdtemp(path.join(os.tmpdir(),'catalog-test-'));const api=Fastify();
  const runAi=vi.fn(async p=>JSON.stringify(JSON.parse(p.input).map(r=>({id:r.id,titleZh:'中文 '+r.title}))));
  const account=vi.fn(async()=>({connected:true}));const docs=vi.fn(async kind=>kind==='book'?book:issue);
  const listModels=async()=>({models:[{id:'model-a',displayName:'A',isDefault:true,defaultEffort:'low'},{id:'model-b',displayName:'B',defaultEffort:'medium'}]});
  const lifetime=new AbortController();
- registerCatalogPreview(api,{dataDir:dir,getDocument:docs,listModels,getAccountStatus:account,runAi,lifetime});
+ registerCatalogPreview(api,{dataDir:dir,getDocument:docs,listModels,getAccountStatus:account,runAi,lifetime,customApi});
  const call=async(method,url,payload)=>{const r=await api.inject({method,url,payload});return {code:r.statusCode,body:r.json()};};
  try{await fn({call,runAi,account,docs,lifetime});}finally{await api.close();await rm(dir,{recursive:true,force:true});}
 }
@@ -28,6 +28,27 @@ describe('explicit independent catalog generation',()=>{
   for(const kind of ['book','issue'])expect((await c.call('GET','/api/vantilo-catalog/'+kind+'/fixture')).body.state).toBe('idle');
   expect(c.runAi).not.toHaveBeenCalled();
  }));
+ it('lists every saved API and uses the selected configuration for magazine catalog generation',()=>{
+  const profiles=[
+   {id:'active-profile',name:'Local',model:'fixture-local'},
+   {id:'second-profile',name:'Local',model:'fixture-remote'},
+   {id:'third-profile',name:'Other',model:'fixture-alt'},
+  ];
+  const complete=vi.fn(async({input})=>JSON.stringify(JSON.parse(input).map(row=>({id:row.id,titleZh:'中文 '+row.title}))));
+  return fixture(async c=>{
+   const settings=(await c.call('GET','/api/vantilo-catalog/settings')).body;
+   const engines=settings.engines.filter(engine=>engine.custom);
+   expect(engines.map(engine=>engine.modelId)).toEqual(profiles.map(profile=>profile.model));
+   expect(engines.every(engine=>!('selectedProfileId' in engine))).toBe(true);
+   expect(settings.engineId).toBe(engines[0].id);
+   expect((await c.call('PUT','/api/vantilo-catalog/settings',{engineId:engines[1].id})).code).toBe(200);
+   expect((await c.call('POST','/api/vantilo-catalog/issue/fixture',generation(engines[1].id))).body).toMatchObject({
+    model:'fixture-remote',titles:{articles:{a1:'中文 Clear writing'}},
+   });
+   expect(complete).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({selectedProfileId:profiles[1].id}));
+   expect(c.runAi).not.toHaveBeenCalled();
+  },{get:async()=>({configured:true,...profiles[0],activeId:profiles[0].id,profiles}),complete});
+ });
  it('persists an independent model and retains model-specific cached variants',()=>fixture(async c=>{
   expect((await c.call('PUT','/api/vantilo-catalog/settings',{engineId:'codex:model-b'})).code).toBe(200);
   expect((await c.call('GET','/api/vantilo-catalog/settings')).body.engineId).toBe('codex:model-b');
@@ -42,7 +63,26 @@ describe('explicit independent catalog generation',()=>{
  it('translates only magazine section and article titles',()=>fixture(async c=>{
   const r=await c.call('POST','/api/vantilo-catalog/issue/fixture',generation());
   expect(r.body.titles).toMatchObject({sections:{Ideas:'中文 Ideas'},articles:{a1:'中文 Clear writing'}});
-  expect(JSON.parse(c.runAi.mock.calls[0][0].input)).toEqual([{id:'section:0',title:'Ideas'},{id:'article:a1',title:'Clear writing'}]);
+  expect(JSON.parse(c.runAi.mock.calls[0][0].input)).toEqual([{id:'1',title:'Ideas'},{id:'2',title:'Clear writing'}]);
+ }));
+ it('returns completed magazine titles during generation and resumes after a later batch fails',()=>fixture(async c=>{
+  const articles=Array.from({length:14},(_,i)=>({id:'long-epub-identifier-'+i,title:'Idea '+i}));
+  c.docs.mockResolvedValue({...issue,articles,sectionTranslations:{Ideas:'历史栏目'}});
+  const url='/api/vantilo-catalog/issue/fixture';
+  const post=()=>c.call('POST',url,generation());
+  c.runAi.mockImplementationOnce(async({input})=>{
+   const first=JSON.parse(input)[1];
+   return '<think>internal</think>\n```json\n'+JSON.stringify([{id:Number(first.id),titleZh:'已验证译名'}])+'\n```';
+  });
+  expect((await post()).body).toMatchObject({state:'pending',done:1,titles:{articles:{[articles[0].id]:'已验证译名'}}});
+  c.runAi.mockRejectedValueOnce(Error('Temporary failure'));
+  expect((await post()).code).toBe(502);
+  expect((await c.call('GET',url)).body).toMatchObject({state:'pending',done:1,titles:{articles:{[articles[0].id]:'已验证译名'}}});
+  expect((await post()).body).toMatchObject({state:'pending',done:13});
+  const final=(await post()).body;
+  expect(final.state).toBe('ready');
+  expect(Object.keys(final.titles.articles)).toHaveLength(14);
+  expect(final.titles.articles[articles[0].id]).toBe('已验证译名');
  }));
  it('keeps the prior directory when regeneration fails and refuses unselected models',()=>fixture(async c=>{
   await c.call('POST','/api/vantilo-catalog/book/fixture',generation());

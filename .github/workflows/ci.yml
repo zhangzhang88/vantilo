@@ -22,6 +22,8 @@ jobs:
         run: npm ci
       - name: Type-check app and Reader sources
         run: npm run typecheck
+      - name: Compile the release Reader frontend and API in memory
+        run: npm run check:reader:release
       # This portable Node suite needs no macOS services, userData or test files.
       # Full Vitest/Reader/Electron tests require the verified local Workspace.
       # Never bypass the guarded Vitest config on a GitHub-hosted runner.

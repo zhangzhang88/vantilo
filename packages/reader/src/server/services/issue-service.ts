@@ -27,6 +27,13 @@ export class IssueService {
     private readonly sectionTranslationProvider: SectionTranslationProvider | null = null,
   ) {}
 
+  async listIssueHeaders() {
+    const files = await scanIssueFiles(this.issuesDir);
+    return files.map(({ id, publicationId, publicationName, filename, date, label }) => ({
+      id, publicationId, publicationName, filename, date, label, title: label,
+    }));
+  }
+
   async listIssues(): Promise<IssueSummary[]> {
     await this.waitForAllIssueMutations();
     const files = await scanIssueFiles(this.issuesDir);

@@ -107,6 +107,24 @@ describe('portable Reader process ownership',()=>{
     child.emit('message',{type:'custom-api-cancel',requestId:completeId});await new Promise(resolve=>setImmediate(resolve));
     expect(observedSignal?.aborted).toBe(true);expect(rejectCall).toBeTypeOf('function');await supervisor.stop();
   });
+  it('forwards explicit reading profiles for translation and word context through the approved IPC shape',async()=>{
+    const customApi=vi.fn(async()=>({output:'测试译文'}));
+    const {supervisor,children}=fixture(undefined,{customApi});
+    const starting=supervisor.start();const child=children[0];child.emit('message',{type:'ready'});await starting;
+    const profile='30000000-0000-4000-8000-000000000003';
+    const request={type:'custom-api',requestId:'30000000-0000-4000-8000-000000000002',operation:'complete',instruction:'Translate',input:'source'};
+    const expectedEngineId='custom-api:012345abcdef';
+    child.emit('message',{...request,selectedProfileId:profile,expectedEngineId});
+    await new Promise(resolve=>setImmediate(resolve));
+    expect(customApi).toHaveBeenCalledWith('complete',{instruction:'Translate',input:'source',selectedProfileId:profile,expectedEngineId},expect.any(AbortSignal));
+    child.emit('message',{...request,selectedProfileId:profile,task:'word-context'});
+    await new Promise(resolve=>setImmediate(resolve));
+    expect(customApi).toHaveBeenCalledWith('complete',{instruction:'Translate',input:'source',selectedProfileId:profile,task:'word-context'},expect.any(AbortSignal));
+    child.emit('message',{...request,selectedProfileId:'invalid'});
+    child.emit('message',{...request,selectedProfileId:profile,expectedEngineId:'invalid'});
+    expect(customApi).toHaveBeenCalledTimes(2);
+    await supervisor.stop();
+  });
   it('forwards a safe error category without exposing backend details',async()=>{
     const {supervisor,children}=fixture(vi.fn(async()=>{throw new Error('request timed out; secret-token');}));
     const pending=supervisor.start();children[0].emit('message',{type:'ready'});await pending;

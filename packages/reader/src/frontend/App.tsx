@@ -34,7 +34,7 @@ import { loadLessonReaderState, saveLessonReaderState } from "./lesson-reader-st
 import { loadIssueRecords, type IssueLoadFailure } from "./issue-loading";
 import { getReaderStorage } from "./reader-storage";
 import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { articleImageUrl, assistSelection, bookCoverUrl, deleteBook, deleteIssue, explainWordContext, fetchArticleImages, fetchBook, fetchBooks, fetchBookTocChinese, fetchGuidePreparationStatus, fetchIssue, fetchIssues, generateBookTocChinese, importBookEpub, importEpub, issueCoverUrl, lookupDictionary, prepareSectionTranslations, previewBookEpubImport, previewEpubImport, previewEpubReplacement, replaceEpub, resumeGuidePreparation, translateParagraph } from "./api";
+import { articleImageUrl, assistSelection, bookCoverUrl, deleteBook, deleteIssue, explainWordContext, fetchArticleImages, fetchBook, fetchBooks, fetchBookTocChinese, fetchGuidePreparationStatus, fetchIssue, fetchIssueHeaders, fetchIssues, generateBookTocChinese, importBookEpub, importEpub, issueCoverUrl, lookupDictionary, prepareSectionTranslations, previewBookEpubImport, previewEpubImport, previewEpubReplacement, replaceEpub, resumeGuidePreparation, translateParagraph } from "./api";
 import type { BookTocChineseStatus } from "../shared/book-toc-chinese";
 import {
   articleKey,
@@ -72,7 +72,7 @@ import {
   type ReadingHistoryState,
 } from "./reading-history-state";
 import { loadNotesState, notesStateFromItems, readerNoteBelongsToDocument, readerNoteDocument, removeNoteFromState, resolveNoteAnchor, resolvedAnchoredNotesForDocument, saveNotesState, updateNoteText, type ReaderNote, type ReaderNoteAnchor, type ReaderNoteSelectionAnchor, type ResolvedNoteAnchor } from "./notes-state";
-import type { ArticleImage, DictionaryLookupResponse, EpubImportPreview, EpubReplacementPreview, GuidePreparationStatus, IssueRecord } from "../shared/types";
+import type { ArticleImage, DictionaryLookupResponse, EpubImportPreview, EpubReplacementPreview, GuidePreparationStatus, IssueHeader, IssueRecord } from "../shared/types";
 import type { BookImportPreview, BookRecord, BookSummary } from "../shared/book-data-contract";
 import type { ContentDiscoverySnapshot, DiscoveryCandidate } from "../shared/content-discovery";
 import type { ScienceArticle } from "../shared/science-article";
@@ -173,18 +173,19 @@ import {
   titleTranslationTarget,
   loadParagraphTranslations,
   paragraphTranslationTarget,
-  saveParagraphTranslations,
   upsertParagraphTranslation,
   translationCacheMetadata,
   type ParagraphTranslationRecord,
 } from "./paragraph-translation-state";
-import { chineseTranslationStorage, findListeningTranslation, loadListeningTranslationEngine } from "./chinese-translation-reuse";
+import { chineseTranslationStorage, findListeningTranslation, loadDocumentTranslations, loadListeningTranslationEngine, lookupDocumentTranslation, saveDocumentTranslation } from "./chinese-translation-reuse";
 import { copyTextToClipboard } from "./clipboard";
 import { findArticleMatches, type ArticleFindMatch } from "./article-find";
 import { createReaderReturnTarget, type ReaderReturnSource, type ReaderReturnTarget } from "./reader-return";
 import { resolveParagraphNavigationTarget, type ParagraphNavigationDirection } from "./reader-paragraph-navigation";
 import { captureReaderJumpBackTarget, resolveReaderJumpBackTarget, type ReaderJumpBackTarget } from "./reader-jump-back";
 import { bookChapterRoleLabel, buildBookTocGroups, resolveBookContinueChapter } from "./book-library";
+import { issueWithTranslationTitles, magazineTranslationTargets, savedIssueTranslationEngine } from "./issue-translation";
+import { IssueTranslationControls, useIssueArticleTitles, useIssueTranslationQueue } from "./issue-translation-controls";
 import { bookReaderCollection, bookLessonReaderCollection, magazineReaderCollection, type ReaderCollectionView, type ReaderDocumentView } from "./reading-document-view.js";
 
 type Drawer = "toc" | "notes" | "vocabulary" | null;
@@ -2094,7 +2095,7 @@ function LibraryPage({ continueCard, issues, lastPosition, publicationFilter, on
           {visiblePublications.map((publication) => {
             const progressIssue = publication.recentIssue;
             const progressLabel = progressIssue.id === publication.latestIssue.id ? `最新一期已读 ${progressIssue.progress}%` : `${progressIssue.displayDate} 已读 ${progressIssue.progress}%`;
-            return <button className="library-book" key={publication.publicationId} onClick={() => onOpenPublication(publication.publicationId)} data-testid={`publication-card-${publication.publicationId}`} data-publication-id={publication.publicationId}><IssueCover issue={publication.latestIssue} compact preferReal /><div className="library-book-copy"><span className="library-book-publication">{publication.publicationName}</span><strong>最新一期 · {publication.latestIssue.displayDate}</strong><span>共 {publication.issueCount} 期 · 最新一期 {publication.latestArticleCount} 篇文章</span><ProgressBar value={progressIssue.progress} /><span className="book-progress-label">{progressLabel}</span></div></button>;
+            return <button className="library-book" key={publication.publicationId} onClick={() => onOpenPublication(publication.publicationId)} data-testid={`publication-card-${publication.publicationId}`} data-publication-id={publication.publicationId}><IssueCover issue={publication.latestIssue} compact preferReal /><div className="library-book-copy"><span className="library-book-publication">{publication.publicationName}</span><strong>最新一期 · {publication.latestIssue.displayDate}</strong><span>共 {publication.issueCount} 期{!publication.latestIssue.loadingArticles && ` · 最新一期 ${publication.latestArticleCount} 篇文章`}</span><ProgressBar value={progressIssue.progress} /><span className="book-progress-label">{progressLabel}</span></div></button>;
           })}
         </div>
         {!visiblePublications.length && <div className="empty-panel">{publicationFilter === "all" ? "书库还没有 EPUB。可以使用上方“导入 EPUB”添加期刊。" : "这个杂志暂时还没有可阅读的 EPUB。"}</div>}
@@ -2221,7 +2222,7 @@ function PublicationIssuesPage({ issues, publicationId, onBack, onOpenIssue, onD
             <div className="publication-issue-card" key={issue.id}>
               <button className="library-book" onClick={() => onOpenIssue(issue.id)} data-testid={`issue-card-${issue.id}`} data-publication-id={issue.publicationId} disabled={deletingIssueId === issue.id || replacingIssueId === issue.id}>
                 <IssueCover issue={issue} compact preferReal />
-                <div className="library-book-copy"><span className="library-book-publication">{index === 0 ? "最新一期" : "往期"}</span><strong>{issue.displayDate}</strong><span>{flattenArticles(issue).length} 篇文章</span><ProgressBar value={issue.progress} /><span className="book-progress-label">已读 {issue.progress}%</span></div>
+                <div className="library-book-copy"><span className="library-book-publication">{index === 0 ? "最新一期" : "往期"}</span><strong>{issue.displayDate}</strong><span>{issue.loadingArticles ? "打开查看文章" : `${flattenArticles(issue).length} 篇文章`}</span><ProgressBar value={issue.progress} /><span className="book-progress-label">已读 {issue.progress}%</span></div>
               </button>
               <div className="issue-management-actions">
                 <button
@@ -2282,8 +2283,10 @@ function PublicationIssuesPage({ issues, publicationId, onBack, onOpenIssue, onD
   );
 }
 
-function IssuePage({ issue, readLaterState, guideState, guideRequestError, lastPosition, viewState, restoreScrollY, onViewStateChange, onBack, onOpenArticle, onToggleReadLater, onRetryGuides }: {
+function IssuePage({ issue, issueTranslation, batchTranslationPhase, readLaterState, guideState, guideRequestError, lastPosition, viewState, restoreScrollY, onViewStateChange, onBack, onOpenArticle, onToggleReadLater, onRetryGuides }: {
   issue: ReaderIssue;
+  issueTranslation?: ReactNode;
+  batchTranslationPhase?: "running" | "paused" | "complete" | "partial";
   readLaterState: ReadLaterState;
   guideState?: GuideUiState;
   guideRequestError?: string;
@@ -2296,8 +2299,10 @@ function IssuePage({ issue, readLaterState, guideState, guideRequestError, lastP
   onToggleReadLater: (articleId: string) => void;
   onRetryGuides: () => void;
 }) {
-  const articles = flattenArticles(issue);
-  const continueArticle = resolveIssueContinueArticle(issue, lastPosition);
+  const batchTitles = useIssueArticleTitles(issue, batchTranslationPhase);
+  const tocIssue = issueWithTranslationTitles(issue, batchTitles);
+  const articles = flattenArticles(tocIssue);
+  const continueArticle = resolveIssueContinueArticle(tocIssue, lastPosition);
   const guidedCount = articles.filter((article) => article.titleZh && article.summaryZh).length;
   const savedSelections = loadSavedSelections(getReaderStorage());
   const activeViewState = viewState.issueId === issue.id ? viewState : freshIssueTocViewState(issue.id);
@@ -2315,8 +2320,8 @@ function IssuePage({ issue, readLaterState, guideState, guideRequestError, lastP
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
   }, [issue.id]);
-  const readingFilterCounts = issueReadingFilterCounts(issue, readLaterState, tocQuery);
-  const visibleSections = filterIssueSections(issue, readLaterState, readingFilter, tocQuery);
+  const readingFilterCounts = issueReadingFilterCounts(tocIssue, readLaterState, tocQuery);
+  const visibleSections = filterIssueSections(tocIssue, readLaterState, readingFilter, tocQuery);
   const readingFilters: Array<{ id: IssueReadingFilter; label: string }> = [
     { id: "all", label: "全部" },
     { id: "unread", label: "未读" },
@@ -2354,6 +2359,7 @@ function IssuePage({ issue, readLaterState, guideState, guideRequestError, lastP
             <div className="eyebrow">Table of contents</div>
             <h2>本期目录</h2>
           </div>
+          {issueTranslation}
           <div className="guide-status-group">
             <span className={`muted-text guide-status ${guideState?.state === "error" ? "is-error" : ""}`}>
               {guidedCount === articles.length
@@ -2784,6 +2790,7 @@ function ReaderPage({
   onQuietViewChange,
   onAssistantContext,
   onListenFromHere,
+  preferredTranslationEngine,
   audiobookMode,
   audiobookPosition,
   audiobookJump,
@@ -2819,7 +2826,8 @@ function ReaderPage({
   globalNavigation: ReactNode;
   onQuietViewChange?: (quiet: boolean) => void;
   onAssistantContext?: (context: ReaderAssistantContext | null) => void;
-  onListenFromHere?: (paragraphIndex: number, explicit?: boolean) => void;
+  onListenFromHere?: (paragraphIndex: number, explicit?: boolean, engineId?: string) => void;
+  preferredTranslationEngine?: string;
   audiobookMode?: AudiobookMode;
   audiobookPosition?: AudiobookPosition & { following: boolean };
   audiobookJump?: AudiobookJump | null;
@@ -2869,6 +2877,7 @@ function ReaderPage({
   const [translations, setTranslations] = useState<Record<string, ParagraphTranslationState>>({});
   const [fullArticleTranslationExpanded, setFullArticleTranslationExpanded] = useState(false);
   const [fullArticleTranslationRunning, setFullArticleTranslationRunning] = useState(false);
+  const [fullArticleCacheError, setFullArticleCacheError] = useState("");
   const [articleImages, setArticleImages] = useState<ArticleImage[]>([]);
   const [zoomedArticleImage, setZoomedArticleImage] = useState<ArticleImage | null>(null);
   const [articleImageZoomDetailSize, setArticleImageZoomDetailSize] = useState(false);
@@ -2988,6 +2997,7 @@ function ReaderPage({
       && !(article.visuals ?? []).some(visual => visual.coveredParagraphIndexes.includes(index) || visual.captionParagraphIndexes.includes(index)), [isChapterNumber, article.visuals]);
   const articleTitleTranslationTarget = useMemo(() => titleTranslationTarget({ document: article.identity, sourceText: article.title }), [article.identity.documentId, article.title]);
   const fullArticleTranslationTargets = useMemo(() => {
+    if (article.identity.kind === "article") return magazineTranslationTargets(article);
     const targets = [
       ...(!article.titleZh && isTranslatableText(article.title) ? [titleTranslationTarget({ document: article.identity, sourceText: article.title })] : []),
       ...(() => { let headingIndex = 0; return article.blocks.flatMap(block => {
@@ -3000,7 +3010,7 @@ function ReaderPage({
         ? [paragraphTranslationTarget({ document: article.identity, paragraphIndex, sourceText })] : []),
     ];
     return [...new Map(targets.map(target => [target.key, target])).values()];
-  }, [article.identity.documentId, article.title, article.blocks, article.paragraphs, canTranslateParagraph]);
+  }, [article, canTranslateParagraph]);
   const fullArticleTranslationEntries = useMemo(() => fullArticleTranslationTargets.map(target => ({
     target,
     contextBefore: target.targetKind ? undefined : article.paragraphs[target.paragraphIndex - 1],
@@ -3087,6 +3097,7 @@ function ReaderPage({
     articleImageZoomTriggerRef.current = null;
     setArticleImageZoomDetailSize(false);
     fullArticleTranslationRunRef.current += 1;
+    setFullArticleCacheError("");
     setFullArticleTranslationExpanded(false);
     setFullArticleTranslationRunning(false);
     // Stop the previous word when leaving Reader or opening another document.
@@ -3095,17 +3106,21 @@ function ReaderPage({
 
   useEffect(() => {
     if (fullArticleTranslationExpanded || !paragraphTranslationEngine || bilingualEngine !== paragraphTranslationEngine) return;
-    const records = loadParagraphTranslations(chineseTranslationStorage(getReaderStorage(), paragraphTranslationEngine));
-    const indexed = indexParagraphTranslations(records);
-    const visible: Record<string, ParagraphTranslationState> = {};
-    for (const { target, contextBefore, contextAfter } of fullArticleTranslationEntries) {
-      const cached = findListeningTranslation(indexed.get(target.key) ?? [], target, { contextBefore, contextAfter }, true);
-      if (cached) visible[target.key] = expandedParagraphTranslation(cached);
-    }
-    setParagraphTranslationRecords(records);
-    setTranslations(items => ({ ...items, ...visible }));
-    setFullArticleTranslationExpanded(true);
-  }, [bilingualEngine, paragraphTranslationEngine, fullArticleTranslationExpanded, fullArticleTranslationEntries]);
+    let current = true;
+    void loadDocumentTranslations(getReaderStorage(), article.identity, paragraphTranslationEngine).then(records => {
+      if (!current) return;
+      const indexed = indexParagraphTranslations(records);
+      const visible: Record<string, ParagraphTranslationState> = {};
+      for (const { target, contextBefore, contextAfter } of fullArticleTranslationEntries) {
+        const cached = findListeningTranslation(indexed.get(target.key) ?? [], target, { contextBefore, contextAfter }, true);
+        if (cached) visible[target.key] = expandedParagraphTranslation(cached);
+      }
+      setParagraphTranslationRecords(records);
+      setTranslations(items => ({ ...items, ...visible }));
+      setFullArticleTranslationExpanded(true);
+    }).catch((error: Error) => { if (current) setFullArticleCacheError(error.message); });
+    return () => { current = false; };
+  }, [article.identity, bilingualEngine, paragraphTranslationEngine, fullArticleTranslationExpanded, fullArticleTranslationEntries]);
 
   useLayoutEffect(() => {
     const anchor = readerDrawerLayoutAnchorRef.current;
@@ -4683,12 +4698,17 @@ function ReaderPage({
     }
 
     if (!force) {
-      const records = loadParagraphTranslations(paragraphTranslationStorage);
-      const cached = findListeningTranslation(records, target, cacheContext, engineScoped);
-      if (cached) {
-        setParagraphTranslationRecords(records);
-        setTranslations(items => ({ ...items, [key]: expandedParagraphTranslation(cached, expanded) }));
-        return true;
+      try {
+        const cached = await lookupDocumentTranslation(getReaderStorage(), target, cacheContext, paragraphTranslationEngine);
+        if (cached) {
+          setParagraphTranslationRecords(records => upsertParagraphTranslation(records, cached));
+          setTranslations(items => ({ ...items, [key]: expandedParagraphTranslation(cached, expanded) }));
+          return true;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "无法读取已保存的译文";
+        setTranslations(items => ({ ...items, [key]: { status: "error", expanded, error: message } }));
+        return false;
       }
     }
 
@@ -4717,9 +4737,8 @@ function ReaderPage({
         provider: result.provider,
         generatedAt: new Date().toISOString(),
       };
-      const next = upsertParagraphTranslation(loadParagraphTranslations(paragraphTranslationStorage), record);
-      saveParagraphTranslations(paragraphTranslationStorage, next);
-      setParagraphTranslationRecords(next);
+      await saveDocumentTranslation(getReaderStorage(), record, paragraphTranslationEngine);
+      setParagraphTranslationRecords(records => upsertParagraphTranslation(records, record));
       setTranslations(items => ({ ...items, [key]: expandedParagraphTranslation(record, expanded) }));
       return true;
     } catch (error) {
@@ -4792,8 +4811,18 @@ function ReaderPage({
     const config = engineScoped ? {} : await fetchActiveTranslationProfile();
     if (fullArticleTranslationRunRef.current !== runToken) return;
 
-    // Listening can populate the engine's cache while this Reader stays mounted.
-    const records = loadParagraphTranslations(paragraphTranslationStorage);
+    setFullArticleCacheError("");
+    let records: ParagraphTranslationRecord[];
+    try {
+      records = await loadDocumentTranslations(getReaderStorage(), article.identity, paragraphTranslationEngine);
+    } catch (error) {
+      if (fullArticleTranslationRunRef.current !== runToken) return;
+      setFullArticleTranslationExpanded(false);
+      onBilingualViewChange?.(article.identity.documentId);
+      setFullArticleCacheError(error instanceof Error ? error.message : "无法读取已保存的译文");
+      return;
+    }
+    if (fullArticleTranslationRunRef.current !== runToken) return;
     const indexed = indexParagraphTranslations(records);
     const visible: Record<string, ParagraphTranslationState> = {};
     const missing: typeof fullArticleTranslationEntries = [];
@@ -5509,7 +5538,7 @@ function ReaderPage({
             >↩ <span>刚才位置</span></button>
           )}
           {onListenFromHere ? <button className="toolbar-button" onClick={() =>
-            onListenFromHere(readerMode === "sentence" ? currentSentence?.paragraphIndex ?? 0 : currentReadingParagraphIndex() ?? 0)
+            onListenFromHere(readerMode === "sentence" ? currentSentence?.paragraphIndex ?? 0 : currentReadingParagraphIndex() ?? 0, false, paragraphTranslationEngine)
           }>{audiobookMode === "translation" ? "听中文译文" : "从这里听"}</button> : <button className={`toolbar-button reader-chinese-button ${readerLanguage === "chinese" ? "is-active" : ""}`} aria-label={readerLanguage === "chinese" ? "返回英文阅读" : "中文阅读"} aria-pressed={readerLanguage === "chinese"} title={readerLanguage === "chinese" ? "返回对应英文段落" : "中文全文与听书"} onClick={toggleChineseReader}>{readerLanguage === "chinese" ? "A" : "中"}<span>{readerLanguage === "chinese" ? "返回英文" : "中文阅读"}</span></button>}
           {issue.kind === "book" && <BookSourceButton identity={article.identity} className="toolbar-button reader-source-button" />}
           <button
@@ -5531,6 +5560,7 @@ function ReaderPage({
             {fullArticleTranslationRunning ? "…" : fullArticleTranslationExpanded ? "收" : "译"}
             <span>{fullArticleTranslationRunning ? `${fullArticleTranslatedCount}/${fullArticleTranslationTargets.length}` : fullArticleTranslationExpanded ? "译文" : "全文"}</span>
           </button>
+          {fullArticleCacheError && <span role="alert">{fullArticleCacheError}</span>}
           {copyEnglishText !== undefined && <CuratedArticleCopyButton key={article.identity.documentId} english={copyEnglishText} />}
           <button className={`toolbar-button ${drawer === "notes" ? "is-active" : ""}`} aria-label="阅读笔记" aria-keyshortcuts="N" title="阅读笔记 (N)" onClick={() => toggleDrawer("notes")}>✎ <span>笔记</span></button>
           <button
@@ -5748,7 +5778,7 @@ function ReaderPage({
                       onClick={() => beginParagraphNote(index, paragraph)}
                     >记</button>
                     {onListenFromHere && listenableParagraphs.has(index) && <button type="button" className="paragraph-listen-button"
-                      aria-label={`从第 ${index + 1} 段开始听`} onClick={() => onListenFromHere(index, true)}>▶ 从本段听</button>}
+                      aria-label={`从第 ${index + 1} 段开始听`} onClick={() => onListenFromHere(index, true, paragraphTranslationEngine)}>▶ 从本段听</button>}
                     {expanded && (
                       <div className={`translation-panel ${translation?.status === "error" ? "is-error" : ""}`}>
                         <div className="translation-label">
@@ -7196,6 +7226,7 @@ function SettingsPage({
 const VANTILO_MAGAZINE_AUDIOBOOK = false;
 
 export default function App() {
+  const issueTranslationQueue = useIssueTranslationQueue();
   const [initialNavigation] = useState(() => loadNavigation(getNavigationStorage()));
   const [navigationReady, setNavigationReady] = useState(!["book", "book-reader", "lesson-reader"].includes(initialNavigation.page));
   const [page, setPage] = useState<Page>(initialNavigation.page === "book-reader" || initialNavigation.page === "lesson-reader" ? "book" : initialNavigation.page);
@@ -7208,6 +7239,20 @@ export default function App() {
     return () => window.removeEventListener("message", navigateFromVantilo);
   }, []);
   const [records, setRecords] = useState<IssueRecord[]>([]);
+  const [issueHeaders, setIssueHeaders] = useState<IssueHeader[]>([]);
+  const issueHydrationRevision = useRef(0);
+  const issueSelectionSequence = useRef(0);
+  const pendingIssueRecords = useRef(new Map<string, Promise<IssueRecord>>());
+  const [openingIssue, setOpeningIssue] = useState(false);
+
+  function fetchIssueForDisplay(id: string) {
+    const existing = pendingIssueRecords.current.get(id);
+    if (existing) return existing;
+    const request = fetchIssue(id).finally(() => pendingIssueRecords.current.delete(id));
+    pendingIssueRecords.current.set(id, request);
+    return request;
+  }
+
   const [books, setBooks] = useState<BookSummary[]>([]);
   const [bookShelfView, setBookShelfView] = useState<BookShelfView>(() => ({
     query: "", categoryId: "all", language: loadBookShelfLanguage(getReaderStorage()),
@@ -7270,8 +7315,9 @@ export default function App() {
     paragraphIndex: activeAudiobook.paragraphIndex,
     following: activeAudiobook.phase === "playing" || activeAudiobook.phase === "loading",
   } : undefined;
-  const returnToBilingual = activeAudiobook?.mode === "translation" && audiobookPosition && readerTranslationEngine
-    ? bilingualViews.get(audiobookPosition.documentId) === readerTranslationEngine : false;
+  const playbackEngine = (audiobookSource?.kind === "magazine" ? audiobookSource.translationEngineId : undefined) ?? readerTranslationEngine;
+  const returnToBilingual = activeAudiobook?.mode === "translation" && audiobookPosition && playbackEngine
+    ? bilingualViews.get(audiobookPosition.documentId) === playbackEngine : false;
   const dockAudiobook = useMemo(() => activeAudiobook && returnToBilingual
     ? { ...activeAudiobook, returnToBilingual: true }
     : activeAudiobook, [activeAudiobook, returnToBilingual]);
@@ -7338,7 +7384,16 @@ export default function App() {
     () => records.map((record) => toReaderIssue(record, readerState.progress)),
     [records, readerState.progress],
   );
-  const publicationShelf = useMemo(() => buildPublicationShelf(readerIssues), [readerIssues]);
+  const shelfIssues = useMemo(() => {
+    const byId = new Map(readerIssues.map(issue => [issue.id, issue]));
+    const entries = issueHeaders.map(header => {
+      const issue = byId.get(header.id);
+      byId.delete(header.id);
+      return issue ?? { ...toReaderIssue({ ...header, schemaVersion: 1, sourceFingerprint: "", articles: [], sections: [] }, {}), loadingArticles: true };
+    });
+    return [...entries, ...byId.values()];
+  }, [readerIssues, issueHeaders]);
+  const publicationShelf = useMemo(() => buildPublicationShelf(shelfIssues), [shelfIssues]);
   const selectedIssue = findIssue(readerIssues, selectedIssueId) ?? readerIssues[0];
   const selectedArticle = selectedIssue
     ? flattenArticles(selectedIssue).find((article) => article.id === selectedArticleId) ?? flattenArticles(selectedIssue)[0]
@@ -7467,38 +7522,47 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const revision = issueHydrationRevision.current;
+    const selection = issueSelectionSequence.current;
+    const active = () => !cancelled && revision === issueHydrationRevision.current;
     void (async () => {
       try {
-        const summaries = await fetchIssues();
-        const result = await loadIssueRecords(summaries, fetchIssue);
-        const loaded = result.records;
-        if (cancelled) return;
-        setIssueLoadFailures(result.failures);
-        if (!loaded.length) {
-          setRecords([]);
-          setSelectedIssueId("");
-          setSelectedArticleId("");
-          setLoadError(null);
-          if (["issue", "reader"].includes(initialNavigation.page)) setPage((current) => current === initialNavigation.page ? "library" : current);
-          return;
+        const summaries = await fetchIssueHeaders();
+        if (!active()) return;
+        setIssueHeaders(summaries);
+        const restoring = initialNavigation.page === "issue" || initialNavigation.page === "reader";
+        const saved = restoring ? { issueId: initialNavigation.issueId, articleId: initialNavigation.articleId } : readerState.lastPosition;
+        const priority = summaries.find(header => header.id === saved?.issueId) ?? summaries[0];
+        const first = await loadIssueRecords(priority ? [priority] : [], fetchIssueForDisplay);
+        if (!active()) return;
+        const firstRecord = first.records[0];
+        if (firstRecord) setRecords(current => current.some(record => record.id === firstRecord.id) ? current : [...current, firstRecord]);
+        if (issueSelectionSequence.current === selection) {
+          const issue = firstRecord && toReaderIssue(firstRecord, readerState.progress);
+          const exactIssue = issue?.id === saved?.issueId;
+          const article = issue && (exactIssue ? flattenArticles(issue).find(item => item.id === saved?.articleId) : undefined);
+          setSelectedIssueId(issue?.id ?? "");
+          setSelectedArticleId(article?.id ?? (issue && flattenArticles(issue)[0]?.id) ?? "");
+          if (issue && initialNavigation.page !== "publication") setSelectedPublicationId(issue.publicationId);
+          if (restoring && (!exactIssue || !article)) {
+            setPage(current => current === initialNavigation.page ? exactIssue && issue ? "issue" : "library" : current);
+          }
         }
-        setRecords(loaded);
-        const converted = loaded.map((record) => toReaderIssue(record, readerState.progress));
-        const saved = ["issue", "reader"].includes(initialNavigation.page) ? { issueId: initialNavigation.issueId, articleId: initialNavigation.articleId } : readerState.lastPosition;
-        const savedIssue = saved ? findIssue(converted, saved.issueId) : undefined;
-        const savedArticle = savedIssue && saved
-          ? flattenArticles(savedIssue).find((article) => article.id === saved.articleId)
-          : undefined;
-        const initialIssue = savedIssue ?? converted[0];
-        const initialArticle = savedArticle ?? flattenArticles(initialIssue)[0];
-        setSelectedIssueId(initialIssue.id);
-        if (initialNavigation.page !== "publication") setSelectedPublicationId(initialIssue.publicationId);
-        setSelectedArticleId(initialArticle?.id ?? "");
-        if (["issue", "reader"].includes(initialNavigation.page) && (!savedIssue || !savedArticle)) setPage((current) => current === initialNavigation.page ? savedIssue ? "issue" : "library" : current);
+        setIssueLoadFailures(first.failures);
+        setLoadError(null);
+        setLoading(false);
+        const remaining = await loadIssueRecords(summaries.filter(header => header.id !== priority?.id), id =>
+          active() ? fetchIssueForDisplay(id) : Promise.reject(new Error("期刊加载已取消")));
+        if (!active()) return;
+        setIssueLoadFailures([...first.failures, ...remaining.failures]);
+        setRecords(current => {
+          const missing = remaining.records.filter(record => !current.some(item => item.id === record.id));
+          return [...current, ...missing];
+        });
       } catch (error) {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : "读取 EPUB 失败");
+        if (active()) setLoadError(error instanceof Error ? error.message : "读取 EPUB 失败");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (active()) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -7582,11 +7646,14 @@ export default function App() {
   }
 
   async function refreshIssueRecords(): Promise<IssueRecord[]> {
-    const summaries = await fetchIssues();
+    const summaries = await fetchIssueHeaders();
+    issueHydrationRevision.current += 1;
+    setIssueHeaders(summaries);
     const result = await loadIssueRecords(summaries, fetchIssue);
     const loaded = mergeSearchRefreshedIssues(summaries, records, result.records);
     setIssueLoadFailures(result.failures);
     setRecords(loaded);
+    setLoading(false);
     setLoadError(null);
     if (!loaded.length) {
       setSelectedIssueId("");
@@ -7985,15 +8052,16 @@ export default function App() {
     beginAudiobook({ kind: "book", book }, mode, start);
   }
 
-  function startMagazineAudiobook(issue: ReaderIssue, article: ReaderDocumentView, paragraphIndex: number, explicit = false) {
+  function startMagazineAudiobook(issue: ReaderIssue, article: ReaderDocumentView, paragraphIndex: number, explicit = false, translationEngineId?: string) {
     const current = audiobookSession?.source;
     const position = { chapterId: article.id, paragraphIndex, preferSavedPosition: !explicit };
-    if (current?.kind === "magazine" && current.article.identity.documentId === article.identity.documentId) {
+    if (current?.kind === "magazine" && current.article.identity.documentId === article.identity.documentId
+      && (translationEngineId === undefined || current.translationEngineId === translationEngineId)) {
       if (explicit) controlAudiobook({ type: "play-from", position });
       else resumeAudiobook();
       return;
     }
-    beginAudiobook({ kind: "magazine", issueId: issue.id, label: `${issue.publicationName} · ${issue.displayDate}`, article },
+    beginAudiobook({ kind: "magazine", issueId: issue.id, label: `${issue.publicationName} · ${issue.displayDate}`, article, translationEngineId },
       "translation", position);
   }
 
@@ -8095,6 +8163,8 @@ export default function App() {
   }
 
   function openPublication(publicationId: PublicationId) {
+    issueSelectionSequence.current += 1;
+    setOpeningIssue(false);
     setReaderReturnTarget(null);
     setSelectedPublicationId(publicationId);
     setPage("publication");
@@ -8119,9 +8189,29 @@ export default function App() {
     });
   }
 
-  function openIssue(issueId: string) {
-    const issue = findIssue(readerIssues, issueId);
-    if (!issue) return;
+  async function openIssue(issueId: string) {
+    const sequence = ++issueSelectionSequence.current;
+    let issue = findIssue(readerIssues, issueId);
+    if (!issue) {
+      setOpeningIssue(true);
+      try {
+        const record = await fetchIssueForDisplay(issueId);
+        if (sequence !== issueSelectionSequence.current) return;
+        setRecords(current => current.some(existing => existing.id === issueId) ? current : [...current, record]);
+        issue = toReaderIssue(record, readerState.progress);
+      } catch (error) {
+        if (sequence === issueSelectionSequence.current) {
+          setIssueLoadFailures(current => current.some(failure => failure.issueId === issueId) ? current
+            : [...current, { issueId, label: issueHeaders.find(header => header.id === issueId)?.label ?? issueId, message: error instanceof Error ? error.message : "读取失败" }]);
+        }
+        return;
+      } finally {
+        if (sequence === issueSelectionSequence.current) setOpeningIssue(false);
+      }
+    } else {
+      setOpeningIssue(false);
+    }
+    setIssueLoadFailures(current => current.filter(failure => failure.issueId !== issueId));
     setReaderReturnTarget(null);
     setSelectedIssueId(issueId);
     setSelectedPublicationId(issue.publicationId);
@@ -8273,6 +8363,8 @@ export default function App() {
   ];
 
   function handleNav(id: Page | "recent") {
+    issueSelectionSequence.current += 1;
+    setOpeningIssue(false);
     setNavigationReady(true);
     bookOpenSequenceRef.current += 1;
     setReaderReturnTarget(null);
@@ -8345,7 +8437,7 @@ export default function App() {
 
         {page === "library" && (
           <LibraryPage
-            issues={readerIssues}
+            issues={shelfIssues}
             lastPosition={readerState.lastPosition}
             continueCard={magazineContinue ? <GlobalContinueCard item={magazineContinue} onOpen={openReadingEntry} cover={continueIssue ? <IssueCover issue={continueIssue} compact preferReal /> : undefined} /> : undefined}
             publicationFilter={libraryPublicationFilter}
@@ -8355,7 +8447,8 @@ export default function App() {
             onImported={() => refreshIssueRecords().then(() => undefined)}
           />
         )}
-        {page === "publication" && <PublicationIssuesPage issues={readerIssues} publicationId={selectedPublicationId} onBack={() => setPage("library")} onOpenIssue={openIssue} onDeleteIssue={handleDeleteIssue} onReplaceIssue={handleReplaceIssue} />}
+        {openingIssue && page === "publication" && <p role="status">正在读取本期文章…</p>}
+        {page === "publication" && <PublicationIssuesPage issues={shelfIssues} publicationId={selectedPublicationId} onBack={() => { issueSelectionSequence.current += 1; setOpeningIssue(false); setPage("library"); }} onOpenIssue={openIssue} onDeleteIssue={handleDeleteIssue} onReplaceIssue={handleReplaceIssue} />}
         {page === "books" && <BookLibraryPage view={bookShelfView} onViewChange={changeBookShelfView} onDeleted={handleBookDeleted}
           readingByBook={readingByBook} chapterProgress={readerState.bookProgress} onRead={openReadingEntry} books={shelfBooks} loading={bookLibraryLoading} error={bookLibraryError} onOpenBook={(bookId) => { void openBook(bookId); }} onListen={bookId => { void openBook(bookId, { listen: true }); }} onImported={() => refreshBookRecords().then(() => undefined)} />}
         {page === "articles" && <ScienceArticleLibraryPage />}
@@ -8376,7 +8469,10 @@ export default function App() {
         />} readerState={readerState} book={selectedBookRecord} loading={bookDetailLoading} error={bookDetailError} tocStatus={bookTocStatus} tocError={bookTocError} onRegenerate={() => { void regenerateBookToc(); }} onBack={() => { bookOpenSequenceRef.current += 1; setPage("books"); }} onOpenChapter={openBookChapter} onListen={() => startBookAudiobook()} readingLanguage={selectedBookLanguage} languageOverride={selectedLanguageOverride} onLanguageChange={changeSelectedBookLanguage} />}
         {page === "issue" && selectedIssue && (
           <IssuePage
+            key={selectedIssue.id}
             issue={selectedIssue}
+            batchTranslationPhase={issueTranslationQueue.jobs.get(selectedIssue.id)?.phase}
+            issueTranslation={VANTILO_MAGAZINE_AUDIOBOOK && <IssueTranslationControls key={selectedIssue.id} issue={selectedIssue} queue={issueTranslationQueue} />}
             readLaterState={readLaterState}
             guideState={guideStates[selectedIssue.id]}
             guideRequestError={guideRequestErrors[selectedIssue.id]}
@@ -8396,6 +8492,7 @@ export default function App() {
         )}
         {page === "reader" && selectedIssue && selectedArticle && selectedIssueReaderCollection && selectedArticleDocument && (
           <ReaderPage
+            key={selectedIssue.id}
             globalNavigation={readerNavigation}
             onQuietViewChange={setQuietReaderView}
             onAssistantContext={registerAssistantContext}
@@ -8407,7 +8504,11 @@ export default function App() {
             audiobookJump={audiobookJump}
             onConsumeAudiobookJump={consumeAudiobookJump}
             audiobookMode={VANTILO_MAGAZINE_AUDIOBOOK ? "translation" : undefined}
-            onListenFromHere={VANTILO_MAGAZINE_AUDIOBOOK ? (paragraphIndex, explicit) => startMagazineAudiobook(selectedIssue, selectedArticleDocument, paragraphIndex, explicit) : undefined}
+            preferredTranslationEngine={VANTILO_MAGAZINE_AUDIOBOOK
+              ? (audiobookSource?.kind === "magazine" && audiobookJump?.documentId === selectedArticleDocument.identity.documentId
+                ? audiobookSource.translationEngineId : undefined) ?? savedIssueTranslationEngine(selectedIssue.id)
+              : undefined}
+            onListenFromHere={VANTILO_MAGAZINE_AUDIOBOOK ? (paragraphIndex, explicit, engineId) => startMagazineAudiobook(selectedIssue, selectedArticleDocument, paragraphIndex, explicit, engineId) : undefined}
             readLaterState={readLaterState}
             notes={notes}
             preferences={effectiveReaderPreferences}

@@ -49,6 +49,35 @@ describe('Gutenberg Chinese introduction V0.2', () => {
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
+  it('generates with an inactive saved API, scopes its cache, and refuses a removed selection', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'vantilo-intro-selected-profile-'));
+    try {
+      const { createReaderCustomApi } = require('../electron/reader-custom-api.cjs');
+      const { listGutenbergIntroEngines } = require('../electron/gutenberg-intro-engines.cjs');
+      const requests: Array<{ url: string; model: string }> = [];
+      const customApi = createReaderCustomApi({
+        filePath: path.join(dir, 'providers.json'),
+        safeStorage: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() },
+        fetchImpl: async (url: string, options: RequestInit) => {
+          requests.push({ url, model: JSON.parse(String(options.body)).model });
+          return Response.json({ choices: [{ message: { content: JSON.stringify(generated) } }] });
+        },
+      });
+      const first = await customApi.save({ id: '', name: 'First', model: 'reader-a', baseUrl: 'https://first.invalid/v1', apiKey: '' });
+      const second = await customApi.save({ id: '', name: 'Second', model: 'reader-b', baseUrl: 'https://second.invalid/v1', apiKey: '' });
+      const models = await listGutenbergIntroEngines({ customApi, listModels: async () => ({ models: [] }) });
+      const customEngineId = models.engines.find((choice: { modelId: string }) => choice.modelId === 'reader-a')!.id;
+      const service = createGutenbergIntroService({ cacheDir: path.join(dir, 'cache'), customApi, fetchImpl: async () => response() });
+      await expect(service.generate({ id: 35, customEngineId })).resolves.toMatchObject({ model: 'reader-a', cached: false });
+      await expect(service.cached({ id: 35, customEngineId })).resolves.toMatchObject({ model: 'reader-a', cached: true });
+      await expect(service.cached({ id: 35 })).resolves.toBeNull();
+      expect((await customApi.get()).activeId).toBe(second.id);
+      await customApi.remove(first.id);
+      await expect(service.generate({ id: 35, customEngineId })).rejects.toThrow('请刷新列表并重新选择模型');
+      expect(requests).toEqual([{ url: 'https://first.invalid/v1/chat/completions', model: 'reader-a' }]);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
   it('invalidates previous cache when the active model or API profile changes', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'vantilo-intro-'));
     try {

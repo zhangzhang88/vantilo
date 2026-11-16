@@ -18,6 +18,8 @@ Treat these as separate gates and record evidence and PASS, FAIL or NOT RUN for 
 
 Any feature source change after an older artifact was built requires a new version-specific Universal ZIP built and accepted from the corresponding intended source commit; never reuse the older commit's package. Reuse an already accepted ZIP only when its version, exact feature source commit, build report, SHA-256 and applicable acceptance evidence all match the intended release. Documentation-only commits after the build do not move the release tag away from the build commit.
 
+在 macOS Workspace 上可用 `npm run test:release:source` 串行跑源码回归。该入口包括类型检查、发行版 Reader 前后端编译、Agent 会话恢复及迁移测试、Reader 离线测试、整期翻译到听书的 Electron 流程和词汇备份恢复。发行版 Reader 编译也在云端 CI 中运行。最终 Universal ZIP 的验收按上述第三项单独记录。
+
 For the vocabulary-backup feature, run `npm run test:e2e:vocabulary-backup` serially. It launches isolated Electron processes and exercises the actual Reader UI, IPC, localStorage allowlist, backup writer, restore transaction and restart recovery with synthetic records. Required safety cases include writes at the backup freeze/snapshot boundary, writes immediately after restore commit, primary-restore plus rollback failure with recovery on a new process, a genuinely capacity-limited temporary APFS image, and an unwritable directory. Preserve the APFS image under the test temp root, verify the kernel returns `ENOSPC`, run the application backup against that volume, record free space versus estimated backup size, then detach and verify the exact image is gone. Never fill a real system or Workspace volume. Record failures honestly; do not convert mock-only evidence to PASS.
 
 The final package gate must run the exact `.app` extracted from the final Universal ZIP with a fresh isolated `userData`, not a previous app or a separately packaged E2E wrapper. A helper that packages a dedicated E2E app is useful supplementary evidence only. Exercise real package UI, files, restore and restart persistence; repeat the applicable failure cases on the artifact. Test both architectures through `lipo` separately from physical-device testing. Apple Silicon execution does not establish Intel hardware acceptance.
@@ -33,6 +35,14 @@ Beta 版可在下列持续性决定的范围内，或经负责人对另行识别
 **0.1.14 Beta 的明确接受范围：** 用户明确接受当前候选应用为 ad-hoc 签名、未取得公证票据、Gatekeeper 接受状态未验证，以及 Intel 真机验收未运行；要求在中文 Release 和发布记录中逐项披露，状态保留为未公证/未验证/NOT RUN。该项授权只适用于本次 `v0.1.14` Beta 候选，不是将其标记为 PASS，也不适用于后续版本。
 
 ## Before building
+
+在耗时测试和构建前，从正式工作区运行发布预检。目标版本应已写入预定提交。预检会并行列出工作树、版本、本地及远端标签、GitHub 草稿或已发布版本、Workspace 身份和剩余空间、目标产物目录等检查结果。存在冲突时返回非零，集中报告待处理项。空间下限按当次构建估算填写。
+
+```sh
+npm run release:preflight -- --version "$VERSION" --commit "$SOURCE_COMMIT" --required-gib "$BUILD_GIB"
+```
+
+预检只读，使用日常 GitHub CLI 登录读取含草稿的远端状态。正式构建的 `prebuild:mac:universal` 会在编译前复核外置副本、真实输出路径、干净源码和目标目录。已有的版本目录保留原位。若其中已有通过验收的同一候选，按下文续跑 GitHub 发布。
 
 For routine tests, use `npm test` from the canonical checkout. All Vantilo E2E, Electron UI, Reader offline, packaged-app and profile/data-generating tests must use the Workspace runner (named `npm run test:*` commands or the runner's allowlisted `--electron`, `--node`, `--reader` and `--e2e` modes). Standalone E2E scripts and direct Vitest config loading fail closed without the active run marker. Before test payload creation, the runner verifies Workspace identity, APFS, mount path, writability, free space and canonical paths, then creates a unique owner-marked run directory at `/Volumes/Workspace/Development/Vantilo/test-runs/e2e/<run-id>/`. It isolates HOME, CODEX_HOME, XDG paths, TMPDIR, Electron userData, Chromium and Reader data. On success, owned transient payloads are removed and logs/results retained; on failure, bounded diagnostics are retained and large payload is removed only after the child process group is confirmed stopped. Interrupted/unknown runs are not automatically deleted; inspect process identity and open files before using the exact-run cleanup command. Workspace unavailable or path validation failure is a hard stop with no internal-disk fallback. The only documented local test-cache exception is the small versioned SWC native cache under `~/Library/Caches/Vantilo/swc-native/`. This does not redirect `npm run build` or Reader build outputs: production builds must use the separate external work copy and documented output routing. See [测试环境与磁盘占用规则](../testing/workspace-test-environment.md).
 
@@ -51,6 +61,30 @@ For routine tests, use `npm test` from the canonical checkout. All Vantilo E2E, 
 - **0.1.12 历史更新器限制：** 该版本仅检查稳定版，不能发现 Beta 预发布。0.1.13 已加入 Beta 更新通道；历史用户仍可使用直接下载链接。
 
 ## GitHub 发布
+
+### Beta 发布续跑
+
+在源码和最终 ZIP 验收完成后，从正式工作区运行。`$SOURCE_COMMIT` 是构建报告中的完整提交，`$NOTES` 是按下方发布格式准备的中文 Markdown 文件，`$EVIDENCE` 汇总实际验收证据。说明和验收文件放在版本产物目录之外。省略 `--publish` 可预览缺失步骤，明确发布时直接带上 `--publish`。GitHub 发布标题默认为「Vantilo 版本号 测试版」。使用 `--title` 可在该标题后以 ` · ` 追加中文摘要，并用于核对已有草稿标题。
+
+```sh
+npm run release:resume -- --version "$VERSION" --commit "$SOURCE_COMMIT" --notes "$NOTES" --evidence "$EVIDENCE" --publish
+```
+
+将以下示例值替换为本次真实验收记录。`development` 引用真人验收或符合上文条件的自动化验收。`package` 引用该 ZIP 解包后的功能和数据安全验收。`distribution` 为 `PASS` 或 `ACCEPTED_BETA_RISKS`，后者引用本版实测状态与已获接受的具体分发风险。实际 `FAIL`、`NOT RUN` 仍按原状披露。
+
+```json
+{
+  "version": "本次版本号",
+  "commit": "构建提交的完整 Git SHA",
+  "sha256": "最终 ZIP 的 SHA-256",
+  "source": { "status": "PASS", "reference": "本次源码测试及日志位置" },
+  "development": { "status": "PASS", "reference": "本次开发版验收证据位置" },
+  "package": { "status": "PASS", "reference": "最终 ZIP 的安装包验收日志位置" },
+  "distribution": { "status": "ACCEPTED_BETA_RISKS", "reference": "本版分发检查与风险接受记录位置" }
+}
+```
+
+续跑重新计算 ZIP 和校验文件的摘要，并核对构建报告、Git 提交与验收记录。已确认的源码、标签、草稿和附件自动跳过。推送或上传返回超时时，以 GitHub 再次查询到的状态为准。两份附件均通过大小和摘要核对后才公开 Beta，再验证匿名下载。下载核验复用现有终端代理设置，终端未配置代理时也可使用 macOS 已启用的 HTTPS 代理。版本已公开时，预览也可执行匿名下载核验。若远端留下未完成或内容冲突的同名附件，脚本会保留现有记录以便核对。公开成功后仍按下文更新 README 并提交发布记录。
 
 1. Recheck exact remote main and ensure fast-forward; verify release commit ancestry and no conflicting tag or Release. Confirm ZIP size, actual SHA-256, sidecar and build report commit. Never force-push or replace historical assets.
 2. Push reviewed commits to main. Create the version tag at the exact build commit, then publish a GitHub pre-release with ZIP and sidecar. Do not claim Intel hardware, notarization or packaged-app scenarios that were not tested. Disclose relevant third-party service authorization and privacy limitations.

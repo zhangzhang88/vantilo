@@ -19,9 +19,11 @@ node scripts/run-tests-on-workspace.mjs --vitest tests/workspace-test-infrastruc
 
 ## GitHub 云端 CI 与本地完整测试
 
-GitHub Actions 的 `Core checks` 运行于 Ubuntu，检查 TypeScript 并用 Node 内置测试框架执行 `tests/ci-portable.test.mjs` 中无需文件写入、账户、macOS 服务或用户数据的纯逻辑回归测试。云端 CI 通过不代表完整 Vantilo 测试、Reader/Electron E2E 或 Universal 安装包验收通过。
+GitHub Actions 的 `Core checks` 运行于 Ubuntu，检查 TypeScript，在内存编译正式发行版 Reader 前后端，并用 Node 内置测试框架执行 `tests/ci-portable.test.mjs` 中无需文件写入、账户、macOS 服务或用户数据的纯逻辑回归测试。云端 CI 通过不代表完整 Vantilo 测试、Reader/Electron E2E 或 Universal 安装包验收通过。
 
 原有根目录 Vitest、Reader 离线、Electron UI、词汇备份与打包应用验收仍须在已验证的 macOS Workspace 上，通过 `npm test`、`npm run test:reader:offline` 和各自 `npm run test:*` 包装入口运行。不能因为云端缺少 Workspace 就直接调用 Vitest、取消其环境守卫、跳过必要测试或将本地未运行的检查标为 PASS。发布门禁与发布流程保持不变。
+
+本机准备发布时，可用 `npm run test:release:source` 按顺序执行源码回归。各测试继续使用 Workspace 入口。
 
 ## 每次运行的路径和门禁
 

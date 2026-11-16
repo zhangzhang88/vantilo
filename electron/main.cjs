@@ -392,7 +392,7 @@ ipcMain.handle('gutenberg:request', async (event, request) => {
   if (!usePortableReader || quitting || magazineReaderSupervisor.status !== 'ready') throw new Error('请先打开阅读空间');
   if (!request || typeof request !== 'object' || Array.isArray(request) || !['search','detail','acquire','intro','introCached','introCancel','introEngines'].includes(request.operation)) throw new Error('Invalid Gutenberg request');
   const isIntro = ['intro','introCached','introCancel'].includes(request.operation);
-  const allowed = request.operation === 'introEngines' ? ['operation'] : isIntro ? ['operation','id','engine','force','modelId','reasoningEffort'] : request.operation === 'detail' ? ['operation','id'] : request.operation === 'search' ? ['operation','query','topic','page'] : ['operation','id','filename','categoryId'];
+  const allowed = request.operation === 'introEngines' ? ['operation'] : isIntro ? ['operation','id','engine','force','modelId','reasoningEffort','customEngineId'] : request.operation === 'detail' ? ['operation','id'] : request.operation === 'search' ? ['operation','query','topic','page'] : ['operation','id','filename','categoryId'];
   if (Object.keys(request).some(key => !allowed.includes(key))) throw new Error('Invalid Gutenberg request');
   if (request.operation === 'introEngines') {
     return listGutenbergIntroEngines({
@@ -403,6 +403,9 @@ ipcMain.handle('gutenberg:request', async (event, request) => {
   if (isIntro) {
     if (!Number.isSafeInteger(request.id) || request.id < 1 || request.id > 10000000) throw new Error('Gutenberg ID 无效');
     if (request.engine !== undefined && !['custom','codex'].includes(request.engine)) throw new Error('中文介绍引擎无效');
+    if (request.customEngineId !== undefined && ((request.engine ?? 'custom') !== 'custom' ||
+      request.operation === 'introCancel' || typeof request.customEngineId !== 'string' ||
+      !/^custom-api:[a-f0-9]{12}$/.test(request.customEngineId))) throw new Error('自定义 API 模型标识无效');
     if (request.modelId !== undefined && request.modelId !== null && (typeof request.modelId !== 'string' || request.modelId.length > 256 || !request.modelId)) throw new Error('模型设置无效');
     if (request.reasoningEffort !== undefined && request.reasoningEffort !== null && (typeof request.reasoningEffort !== 'string' || request.reasoningEffort.length > 64 || !request.reasoningEffort)) throw new Error('思考强度无效');
     if (request.force !== undefined && (request.operation !== 'intro' || typeof request.force !== 'boolean')) throw new Error('重新生成参数无效');
@@ -410,12 +413,12 @@ ipcMain.handle('gutenberg:request', async (event, request) => {
       gutenbergIntroRequests.get(request.id)?.abort(new Error('用户取消生成'));
       return { canceled: true };
     }
-    if (request.operation === 'introCached') return getGutenbergIntroService().cached({ id: request.id, engine: request.engine ?? 'custom', modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null });
+    if (request.operation === 'introCached') return getGutenbergIntroService().cached({ id: request.id, engine: request.engine ?? 'custom', modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null, customEngineId: request.customEngineId });
     gutenbergIntroRequests.get(request.id)?.abort(new Error('新请求已替换旧请求'));
     const controller = new AbortController();
     gutenbergIntroRequests.set(request.id, controller);
     const timer = setTimeout(() => controller.abort(new Error('中文介绍生成超时')), request.engine === 'codex' ? 150000 : 75000);
-    try { return await getGutenbergIntroService().generate({ id: request.id, engine: request.engine ?? 'custom', force: request.force ?? false, modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null }, { signal: controller.signal }); }
+    try { return await getGutenbergIntroService().generate({ id: request.id, engine: request.engine ?? 'custom', force: request.force ?? false, modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null, customEngineId: request.customEngineId }, { signal: controller.signal }); }
     finally { clearTimeout(timer); if (gutenbergIntroRequests.get(request.id) === controller) gutenbergIntroRequests.delete(request.id); }
   }
   const path = request.operation==='search' ? '/api/vantilo-gutenberg/search' : request.operation==='detail' ? '/api/vantilo-gutenberg/books/'+encodeURIComponent(String(request.id)) : '/api/vantilo-gutenberg/acquire';

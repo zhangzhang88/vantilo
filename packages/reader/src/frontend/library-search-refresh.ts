@@ -13,7 +13,7 @@ export function searchRefreshIssueIds(summaries: IssueSummary[], current: IssueR
 }
 
 export function mergeSearchRefreshedIssues(
-  summaries: IssueSummary[],
+  summaries: Pick<IssueSummary, "id">[],
   current: IssueRecord[],
   refreshed: IssueRecord[],
 ): IssueRecord[] {

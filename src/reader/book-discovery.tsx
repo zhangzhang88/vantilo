@@ -25,6 +25,7 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
   const [introEngineId,setIntroEngineId]=React.useState('');
   const [introModelsBusy,setIntroModelsBusy]=React.useState(false);
   const [introModelsError,setIntroModelsError]=React.useState('');
+  const preferredIntroId=React.useRef("");
   const currentIntroOption=React.useRef<IntroEngineChoice|null>(null);
   const activeBookId=React.useRef<number|null>(null);
   const cacheRevision=React.useRef(0);
@@ -46,11 +47,14 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
         item=>item&&typeof item.id==='string'&&typeof item.label==='string'&&
           (item.engine==='custom'||item.engine==='codex')&&typeof item.modelId==='string'
       );
-      const previous=currentIntroOption.current?.id;
+      const previous=preferredIntroId.current;
       let saved='';try{saved=window.localStorage.getItem(BOOK_INTRO_MODEL_KEY)||'';}catch{}
-      const candidate=[previous,saved,response.defaultId,choices[0]?.id].find(id=>choices.some(item=>item.id===id));
+      const remembered=previous||saved;
+      const candidate=remembered||response.defaultId||choices[0]?.id;
       const option=choices.find(item=>item.id===candidate)||null;
-      setIntroOptions(choices);currentIntroOption.current=option;setIntroEngineId(option?.id||'');
+      setIntroOptions(choices);currentIntroOption.current=option;
+      preferredIntroId.current=option?.id||remembered||'';setIntroEngineId(preferredIntroId.current);
+      if(remembered&&!option)setIntroModelsError('原选模型已变更或不可用，请重新选择。');
       if(previous!==option?.id){++cacheRevision.current;setIntro(null);}
       if(bookId!==null&&option)void loadIntroCache(bookId,option);
     }catch(error){
@@ -59,7 +63,7 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
   }
   async function loadIntroCache(id:number,option:IntroEngineChoice){
     const revision=++cacheRevision.current;
-    const model=option.engine==='codex'?{modelId:option.modelId,reasoningEffort:option.effort}:{};
+    const model=option.engine==='codex'?{modelId:option.modelId,reasoningEffort:option.effort}:{customEngineId:option.id};
     try{
       const cached:GeneratedIntro|null=await window.vantilo!.requestGutenberg({operation:'introCached',id,engine:option.engine,...model});
       if(activeBookId.current===id&&currentIntroOption.current?.id===option.id&&revision===cacheRevision.current)setIntro(cached);
@@ -72,7 +76,7 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
     if(introBusy)return;
     const option=introOptions.find(item=>item.id===id);
     if(!option)return;
-    currentIntroOption.current=option;setIntroEngineId(id);++cacheRevision.current;setIntro(null);setIntroError('');
+    preferredIntroId.current=id;currentIntroOption.current=option;setIntroEngineId(id);++cacheRevision.current;setIntro(null);setIntroError('');setIntroModelsError('');
     try{window.localStorage.setItem(BOOK_INTRO_MODEL_KEY,id);}catch{}
     if(activeBookId.current!==null)void loadIntroCache(activeBookId.current,option);
   }
@@ -99,7 +103,7 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
     if(!option){setIntroError('请先选择可用的中文介绍模型');return;}
     const id=selected.id;const revision=++generationRevision.current;++cacheRevision.current;
     setIntroBusy(true);setIntroError('');
-    const model=option.engine==='codex'?{modelId:option.modelId,reasoningEffort:option.effort}:{};
+    const model=option.engine==='codex'?{modelId:option.modelId,reasoningEffort:option.effort}:{customEngineId:option.id};
     try{
       const result=await window.vantilo!.requestGutenberg({operation:'intro',id,engine:option.engine,force,...model});
       if(activeBookId.current===id&&currentIntroOption.current?.id===option.id&&revision===generationRevision.current)setIntro(result);
@@ -116,6 +120,7 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
     setIntroBusy(false);setIntroError('已取消本次生成');
   }
   const selectedCurated=selected&&'titleZh'in selected?selected:null;
+  const introModelAvailable=introOptions.some(option=>option.id===introEngineId);
   const selectedOnline=selected&&!('titleZh'in selected)?selected:null;
   async function acquire(){if(!detail?.epubUrl)return;setGetting(true);setMessage('正在从 Project Gutenberg 获取 EPUB 并校验…');try{const result=await window.vantilo!.requestGutenberg({operation:'acquire',id:detail.id,filename:detail.title,categoryId:'uncategorized'});setMessage(result.status==='duplicate'?'这本书已在书架中。':`已加入书架：《${result.title}》`);}catch(error){setMessage(error instanceof Error?error.message:'获取失败；你可以打开官方页面后通过书架导入。');}finally{setGetting(false);}}
   return <div className="book-discovery">
@@ -141,14 +146,15 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
         <div className="discovery-model-row">
           <label className="discovery-model-select"><span>中文介绍模型</span>
             <select aria-label="中文介绍模型" value={introEngineId} disabled={introBusy||introModelsBusy||!introOptions.length} onChange={event=>changeIntroEngine(event.target.value)}>
-              {!introOptions.length&&<option value="">{introModelsBusy?'正在加载模型…':'暂无可用模型，请在设置中配置 API 或登录 ChatGPT'}</option>}
+              {introEngineId&&!introOptions.some(option=>option.id===introEngineId)&&<option value={introEngineId} disabled>原选模型不可用</option>}
+              {!introEngineId&&!introOptions.length&&<option value="">{introModelsBusy?'正在加载模型…':'暂无可用模型，请在设置中配置 API 或登录 ChatGPT'}</option>}
               {introOptions.map(option=><option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </label>
           <button type="button" className="discovery-model-refresh" onClick={()=>void refreshIntroOptions()} disabled={introBusy||introModelsBusy}>刷新模型</button>
         </div>
         {introModelsError&&<p role="status" className="discovery-error">加载中文介绍模型失败：{introModelsError}</p>}
-        {intro?<><h3>故事介绍（基于原著开头）</h3><p>{intro.introZh}</p><h3>阅读看点</h3><p>{intro.highlightsZh}</p><h3>值得思考</h3><p>{intro.questionZh}</p><h3>英文阅读提醒</h3><p>{intro.readingNoteZh}</p><small>来源：<a href={intro.sourceUrl} target="_blank" rel="noreferrer">Project Gutenberg 原著 TXT</a> · {intro.sourceScope} · {intro.model} · {intro.cached?'已缓存':'本次生成'}。AI 内容可能有误，请以原著为准。</small><div className="discovery-generate-actions"><button type="button" disabled={introBusy||!introEngineId} onClick={()=>void generateIntro(true)}>{introBusy?'正在重新生成…':'用当前模型重新生成'}</button>{introBusy&&<button type="button" onClick={cancelIntro}>取消生成</button>}</div>{introError&&<p role="alert" className="discovery-error">{introError}</p>}</>:<><p>可根据 Gutenberg 原著开头节选生成中文介绍；未读取到可靠原文时不会编造剧情。</p><div className="discovery-generate-actions"><button type="button" disabled={introBusy||!introEngineId} onClick={()=>void generateIntro()}>{introBusy?'正在读取原文并生成…':'生成中文介绍'}</button>{introBusy&&<button type="button" onClick={cancelIntro}>取消生成</button>}</div>{introError&&<p role="alert" className="discovery-error">{introError}</p>}</>}
+        {intro?<><h3>故事介绍（基于原著开头）</h3><p>{intro.introZh}</p><h3>阅读看点</h3><p>{intro.highlightsZh}</p><h3>值得思考</h3><p>{intro.questionZh}</p><h3>英文阅读提醒</h3><p>{intro.readingNoteZh}</p><small>来源：<a href={intro.sourceUrl} target="_blank" rel="noreferrer">Project Gutenberg 原著 TXT</a> · {intro.sourceScope} · {intro.model} · {intro.cached?'已缓存':'本次生成'}。AI 内容可能有误，请以原著为准。</small><div className="discovery-generate-actions"><button type="button" disabled={introBusy||introModelsBusy||!introModelAvailable} onClick={()=>void generateIntro(true)}>{introBusy?'正在重新生成…':'用当前模型重新生成'}</button>{introBusy&&<button type="button" onClick={cancelIntro}>取消生成</button>}</div>{introError&&<p role="alert" className="discovery-error">{introError}</p>}</>:<><p>可根据 Gutenberg 原著开头节选生成中文介绍；未读取到可靠原文时不会编造剧情。</p><div className="discovery-generate-actions"><button type="button" disabled={introBusy||introModelsBusy||!introModelAvailable} onClick={()=>void generateIntro()}>{introBusy?'正在读取原文并生成…':'生成中文介绍'}</button>{introBusy&&<button type="button" onClick={cancelIntro}>取消生成</button>}</div>{introError&&<p role="alert" className="discovery-error">{introError}</p>}</>}
       </div>}
       {detailError&&<p className="discovery-error" role="alert">{detailError} <button onClick={()=>selected&&void showDetail(selected)}>重试</button></p>}
       {detail&&<><p><b>Gutenberg ID：</b>{detail.id} · {detail.formats.join('、')||'未列出 EPUB'}</p><p><b>题材：</b>{(selectedCurated?[selectedCurated.category,...selectedCurated.tags]:[...detail.bookshelves,...detail.subjects]).filter((value,index,values)=>values.indexOf(value)===index).slice(0,6).join('、')||'暂无分类'}</p>{detail.downloadCount>0&&<p><b>下载量：</b>{detail.downloadCount.toLocaleString()}</p>}<p><a href={detail.sourceUrl} target="_blank" rel="noreferrer">Project Gutenberg 官方书目页面 ↗</a></p>

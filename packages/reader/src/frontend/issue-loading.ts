@@ -5,7 +5,19 @@ export async function loadIssueRecords(
   summaries: Pick<IssueSummary, "id" | "label">[],
   fetchIssue: (id: string) => Promise<IssueRecord>,
 ): Promise<{ records: IssueRecord[]; failures: IssueLoadFailure[] }> {
-  const results = await Promise.allSettled(summaries.map((summary) => fetchIssue(summary.id)));
+  const results: PromiseSettledResult<IssueRecord>[] = [];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < summaries.length) {
+      const index = cursor++;
+      try {
+        results[index] = { status: "fulfilled", value: await fetchIssue(summaries[index].id) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, summaries.length) }, worker));
   const records: IssueRecord[] = [];
   const failures: IssueLoadFailure[] = [];
   results.forEach((result, index) => {

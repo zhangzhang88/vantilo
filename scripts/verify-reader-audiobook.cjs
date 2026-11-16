@@ -79,7 +79,17 @@ async function main() {
   process.stdout.write(build.stdout);
   const spoken = [];
   const translationInputs = [];
+  const selectedApiRequests = [];
+  const profiles = [
+    { id: '92000000-0000-4000-8000-000000000001', name: '测试翻译', model: 'fixture-zh' },
+    { id: '92000000-0000-4000-8000-000000000002', name: '模拟服务', model: 'fixture-fast' },
+    { id: '92000000-0000-4000-8000-000000000003', name: '模拟服务', model: 'fixture-detailed' },
+    { id: '92000000-0000-4000-8000-000000000004', name: '本地测试模型', model: 'fixture-local' },
+  ];
   let retryFixture = true;
+  let issueBodyAttempts = 0;
+  const issueBodyTranslation = '这是整期任务写入的第二篇文章译文。';
+  const catalogRequests = [];
   const provider = createServer(async (request, response) => {
     if (request.method !== 'POST' || request.url !== '/v1/audio/speech') {
       response.writeHead(404).end();
@@ -101,10 +111,20 @@ async function main() {
   try {
     const token = randomBytes(32).toString('hex');
     service = await startPortableReader({ assetsDir, libraryRoot: process.env.VANTILO_TEST_READER_ROOT, apiPort: 0, webPort: 0,
-      autoSync: false, sessionToken: token, enableTranslation: true,
+      autoSync: false, sessionToken: token, enableTranslation: true, enableReaderPreviews: process.env.VANTILO_CATALOG_READER_PREVIEW === "1",
       customApi: {
-        get: async () => ({ configured: true, id: 'synthetic-audiobook-translator', name: '测试翻译', model: 'fixture-zh' }),
-        complete: async ({ input }) => {
+        get: async () => ({ configured: true, ...profiles[0], activeId: profiles[0].id, profiles }),
+        complete: async ({ input, selectedProfileId, signal }) => {
+          if (input.startsWith('[{"id":')) {
+            catalogRequests.push(selectedProfileId);
+            const prefix = catalogRequests.length === 1 ? '测试目录 ' : '重新生成的目录 ';
+            return JSON.stringify(JSON.parse(input).map(row => ({ id: row.id, titleZh: prefix + row.title })));
+          }
+          if (selectedProfileId === profiles[2].id) {
+            selectedApiRequests.push(input);
+            return '这段译文来自另一个已保存的测试模型。';
+          }
+          assert.equal(selectedProfileId, profiles[0].id);
           translationInputs.push(input);
           if (input === englishBody) {
             if (retryFixture) { retryFixture = false; throw new Error("合成翻译短暂失败"); }
@@ -116,6 +136,16 @@ async function main() {
           if (input === "Fixture article") return "期刊测试文章";
           if (input === magazineOpening) return magazineOpeningTranslation;
           if (input === magazineBody) return magazineTranslation;
+          if (input === nextMagazineTitle) return '第二篇合成文章';
+          if (input === nextMagazineBody) {
+            issueBodyAttempts++;
+            if (issueBodyAttempts === 1) {
+              signal.throwIfAborted();
+              return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+            }
+            if (issueBodyAttempts === 2) throw new Error('整期任务模拟失败');
+            return issueBodyTranslation;
+          }
           throw new Error("合成翻译服务收到了意外的正文");
         },
       },
@@ -136,7 +166,7 @@ async function main() {
     const profileRequests = [];
     browserSession.webRequest.onBeforeRequest((details, done) => {
       if (new URL(details.url).pathname === '/api/translation-cache-identity') profileRequests.push(details.url);
-      if (details.method === 'POST' && /\/api\/(?:translate|vantilo-(?:translate|catalog))/.test(details.url)) translationCalls.push(details.url);
+      if (details.method === 'POST' && /\/api\/(?:translate|vantilo-(?:translate|translation|catalog))/.test(details.url)) translationCalls.push(details.url);
       done({ cancel: !details.url.startsWith(service.webOrigin + '/') && !details.url.startsWith('file:') && !details.url.startsWith('data:') });
     });
     await browserSession.cookies.set({ url: service.webOrigin, name: '__Host-vantilo-reader', value: token, path: '/', secure: true, httpOnly: true, sameSite: 'no_restriction' });
@@ -196,7 +226,7 @@ async function main() {
       throw new Error(`等待条件超时：${expression}\n${await Promise.race([frame?.executeJavaScript('document.body.innerText.slice(-1800)'), delay(750, '无法读取页面')])}`);
     }
     async function click(label) {
-      const lookup = `[...document.querySelectorAll('button')].find(b => !b.disabled && b.textContent.trim() === ${JSON.stringify(label)})`;
+      const lookup = `[...document.querySelectorAll('button')].find(b => !b.disabled && (b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)}))`;
       const frame = await until(`Boolean(${lookup})`);
       await frame.executeJavaScript(`(${lookup}).click()`, true);
     }
@@ -472,9 +502,17 @@ async function main() {
     const magazineTranslationRequests = translationCalls.length;
     const magazineStorageKey = JSON.stringify('magazine-reader-chinese-listening-v1');
     const magazinePosition = `JSON.parse(localStorage.getItem(${magazineStorageKey}) || '[]')[0]`;
-    await magazineFullView.executeJavaScript(`(() => {
-      const key = Object.keys(localStorage).find(key => key.startsWith('magazine-reader-paragraph-translations-v1:vantilo-v2:'));
-      const target = JSON.parse(localStorage.getItem(key) || '[]').find(record => record.sourceText === ${JSON.stringify(magazineBody)});
+    await magazineFullView.executeJavaScript(`(async () => {
+      const database=await new Promise((resolve,reject)=>{
+        const request=indexedDB.open('vantilo-issue-translations',1);
+        request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+      });
+      const records=await new Promise((resolve,reject)=>{
+        const request=database.transaction('paragraphs').objectStore('paragraphs').getAll();
+        request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+      });
+      database.close();
+      const target=records.map(item=>item.record).find(record=>record.sourceText===${JSON.stringify(magazineBody)});
       localStorage.setItem(${magazineStorageKey}, JSON.stringify([{ documentId: target.document.documentId, paragraphIndex: target.paragraphIndex,
         sourceText: target.sourceText, chunkIndex: 0, chunkText: ${JSON.stringify(magazineTranslation)}, seconds: 3, rate: 1.25, completed: false }]));
     })()`);
@@ -591,6 +629,95 @@ async function main() {
     await until(`!${sourceHighlight}`);
     assert.equal(translationInputs.length, translationCount, '期刊听书复用全文翻译缓存');
     assert.equal(translationCalls.length, magazineTranslationRequests, '期刊听书不重复请求翻译，也不准备下一篇');
+    const selectEngine = 'document.querySelector(".vantilo-translation-engine select")';
+    const modelMenu = await until(`[...${selectEngine}.options].filter(option => option.value.startsWith('custom-api:')).length === 4`);
+    await modelMenu.executeJavaScript(`(() => {
+      document.querySelector('.vantilo-translation-menu').open = true;
+      const select = ${selectEngine};
+      const option = [...select.options].find(item => item.textContent === '自定义 API · 模拟服务 / fixture-detailed');
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`, true);
+    await until(`${selectEngine}?.selectedOptions[0]?.textContent.includes('fixture-detailed')`);
+    await modelMenu.executeJavaScript(`${fullButton}.click()`, true);
+    await until(`document.querySelector('.reading-body')?.innerText.includes('这段译文来自另一个已保存的测试模型。')`);
+    assert.ok(selectedApiRequests.includes(magazineOpening) || selectedApiRequests.includes(magazineBody));
+    assert.equal(translationInputs.length, translationCount, '选中的其他 API 不应回退到设置页的当前服务');
+    await click('返回本期目录');
+    await click('翻译整期');
+    const issueModel = 'document.querySelector(".issue-translation-options select")';
+    const chooseIssueModel = await until(`[...${issueModel}.options].filter(option => option.value.startsWith('custom-api:')).length === 4`);
+    assert.match(await chooseIssueModel.executeJavaScript(`${issueModel}.selectedOptions[0].textContent`), /fixture-detailed/);
+    await chooseIssueModel.executeJavaScript(`(() => {
+      const select = ${issueModel};
+      select.value = [...select.options].find(item => item.textContent.includes('fixture-zh')).value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`, true);
+    await until(`document.querySelector('.issue-translation-options')?.innerText.includes('待翻译 1 篇')`);
+    const beforeIssueInputs = translationInputs.length;
+    await click('开始翻译');
+    await until(`document.querySelector('.issue-translation-progress')?.innerText.includes(${JSON.stringify(nextMagazineTitle)})`);
+    for (let attempt = 0; issueBodyAttempts < 1 && attempt < 100; attempt++) await delay(50);
+    assert.equal(issueBodyAttempts, 1);
+    const activeContents = await until(`Boolean(${magazineArticle})`);
+    await activeContents.executeJavaScript(`(${magazineArticle}).click()`, true);
+    await click('返回本期目录');
+    await until(`document.querySelector('.issue-translation-progress')?.innerText.includes('整期翻译中')`);
+    await click('暂停整期翻译');
+    const pausedIssue = await until(`document.querySelector('.issue-translation-progress')?.innerText.includes('已暂停')`);
+    await pausedIssue.executeJavaScript('setTimeout(() => location.reload(), 0); true');
+    await until(`!document.querySelector('.issue-translation-progress') && [...document.querySelectorAll('button')].some(b => b.textContent.trim() === '继续翻译整期')`);
+    await click('继续翻译整期');
+    await until(`${issueModel}?.selectedOptions[0]?.textContent.includes('fixture-zh') && document.querySelector('.issue-translation-options')?.innerText.includes('待翻译 1 篇')`);
+    await click('开始翻译');
+    await until(`document.querySelector('.issue-translation-progress')?.innerText.includes('部分译文待补齐')`);
+    await click('重试未完成');
+    await click('重试缺失译文');
+    await until(`document.querySelector('.issue-translation-progress')?.innerText.includes('整期译文已就绪 · 2/2 篇')`);
+    assert.deepEqual(translationInputs.slice(beforeIssueInputs), [nextMagazineTitle, nextMagazineBody, nextMagazineBody, nextMagazineBody]);
+
+    const secondArticle = `${articleButtons}.find(button => button.textContent.includes(${JSON.stringify(nextMagazineTitle)}))`;
+    const secondContents = await until(`${secondArticle}?.querySelector('.toc-title-zh')?.textContent === '第二篇合成文章'`);
+    await secondContents.executeJavaScript(`(${secondArticle}).click()`, true);
+    const secondView = await until(`${fullButton} && !${fullButton}.disabled && ${selectEngine}?.selectedOptions[0]?.textContent.includes('fixture-zh')`);
+    const beforeReuse = translationInputs.length;
+    const beforeOtherModelReuse = selectedApiRequests.length;
+    const beforeReuseRequests = translationCalls.length;
+    await secondView.executeJavaScript(`${fullButton}.click()`, true);
+    await until(`document.querySelector('.reading-body')?.innerText.includes(${JSON.stringify(issueBodyTranslation)})`);
+    await click('听中文译文');
+    await untilHost(`${player}?.dataset.phase === 'playing'`);
+    assert.ok(spoken.includes(issueBodyTranslation));
+    assert.equal(translationInputs.length, beforeReuse, '全文翻译和听书共用整期缓存');
+    assert.equal(selectedApiRequests.length, beforeOtherModelReuse, '上次阅读使用的其他模型不应触发重复翻译');
+    assert.equal(translationCalls.length, beforeReuseRequests, '打开整期已译文章的全文译文和听书时没有发出翻译请求');
+    await clickHost('关闭播放器');
+    await click('返回本期目录');
+    await click('翻译整期…');
+    await until(`document.querySelector('.issue-translation-options')?.innerText.includes('该模型的本期译文已齐全')`);
+
+    if (process.env.VANTILO_CATALOG_READER_PREVIEW === '1') {
+      const catalogSelector = 'document.querySelector(".vantilo-catalog-picker select")';
+      const models = await until(`[...${catalogSelector}.options].filter(option => option.value.startsWith('custom-api:')).length === 4`);
+      await models.executeJavaScript(`(() => {
+        const select = ${catalogSelector};
+        select.value = [...select.options].find(item => item.textContent.includes('fixture-fast')).value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`, true);
+      await until(`${catalogSelector}.selectedOptions[0].textContent.includes('fixture-fast') && !${catalogSelector}.disabled`);
+      const generate = '[...document.querySelectorAll(".vantilo-catalog-control button")].find(b => /生成中文目录|重新生成/.test(b.textContent) && !b.disabled)';
+      await models.executeJavaScript(`(${generate}).click()`, true);
+      await until(`document.querySelector('.vantilo-catalog-control')?.innerText.includes('已有中文目录 · fixture-fast')
+        && ${secondArticle}?.querySelector('.toc-title-zh')?.textContent === '测试目录 Second fixture article'`);
+      await click('用所选模型重新生成');
+      const catalogView = await until(`${secondArticle}?.querySelector('.toc-title-zh')?.textContent === '重新生成的目录 Second fixture article'`);
+      await catalogView.executeJavaScript("document.documentElement.dataset.beforeCatalogReload = '1'; setTimeout(() => location.reload(), 0); true");
+      await until(`!document.documentElement.dataset.beforeCatalogReload && ${secondArticle}?.querySelector('.toc-title-zh')?.textContent === '重新生成的目录 Second fixture article'`);
+      console.log('PASS: 目录显示生成及重新生成的中文标题，重载后仍可读取');
+      assert.deepEqual(catalogRequests, [profiles[1].id, profiles[1].id]);
+    }
+    console.log('PASS: 整期正文按所选模型翻译，跨页保持，暂停后重载续跑，重试失败段落，全文翻译和听书复用缓存');
+    console.log('PASS: 阅读下拉框显示四个已保存的自定义 API，选中其他模型后由对应服务翻译');
     console.log('PASS: 期刊单篇中文听书复用全文译文及旧进度，跨 Agent 续播，从播放或暂停状态回到译文，关闭后续听，篇末停止');
     console.log('PASS: 英文电子书和期刊可从原文的指定段落开始听；期刊可从译文任意段落重播或跳播');
     console.log('PASS: 播放器可回到对应原文或译文，原文高亮会随播放换段并滚入视口，关闭后清除高亮');

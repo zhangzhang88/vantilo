@@ -39,6 +39,7 @@ export interface ReaderIssue {
   coverTitle: string;
   coverSubtitle: string;
   sections: ReaderSection[];
+  loadingArticles?: boolean;
 }
 
 

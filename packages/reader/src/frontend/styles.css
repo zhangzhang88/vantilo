@@ -8033,3 +8033,59 @@ input.learning-slot { outline-offset: 4px; border-bottom-color: var(--accent); }
 .reading-paragraph-block.is-audiobook-source > .translation-panel {
   border-left-color: var(--theme-accent);
 }
+
+.issue-translation-controls {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  max-width: min(100%, 460px);
+  min-width: 0;
+}
+
+.issue-translation-controls .issue-translation-actions {
+  display: flex;
+}
+
+.issue-translation-options,
+.issue-translation-progress {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.issue-translation-options label {
+  display: grid;
+  gap: 6px;
+}
+
+.issue-translation-options select,
+.issue-translation-progress progress {
+  width: 100%;
+  min-width: 0;
+}
+
+.issue-translation-options button {
+  justify-self: start;
+}
+
+.issue-translation-progress progress {
+  height: 5px;
+  accent-color: var(--accent);
+}
+
+@media (max-width: 650px) {
+  .toc-card .section-title-row:has(.issue-translation-controls) {
+    flex-wrap: wrap;
+  }
+
+  .issue-translation-controls {
+    justify-items: start;
+  }
+}
