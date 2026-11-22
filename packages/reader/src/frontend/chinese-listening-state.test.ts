@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { CHINESE_LISTENING_KEY, loadChineseListeningRecords, resolveChineseListeningPosition, saveChineseListeningPosition, splitChineseSpeech, type ChineseListeningPosition } from "./chinese-listening-state";
+import { CHINESE_LISTENING_KEY, loadChineseListeningRecords, narratableParagraphIndexes, resolveChineseListeningPosition, resolveSpeechChunk, saveChineseListeningPosition, splitChineseSpeech, type ChineseListeningPosition } from "./chinese-listening-state";
 import { buildUserDataBackup, parseUserDataBackup, restoreUserDataBackup } from "./user-data-backup";
 const memory = () => { const items = new Map<string, string>(); return { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => { items.set(key, value); }, removeItem: (key: string) => { items.delete(key); } }; };
 const record: ChineseListeningPosition = { documentId: "reading:book:a:one", paragraphIndex: 1, sourceText: "Source two.", chunkIndex: 2, chunkText: "中文原段。", seconds: 6.5, rate: 1.25, completed: false };
 describe("Chinese listening state", () => {
+  it("removes chapter metadata and layout captions from the narration queue without changing the paragraph indices", () => {
+    const paragraphs = ["02", "·２００５年12月8日", "2005年12月9日发生了一件事。", "第一张图", "来源：示例",
+      "第一张表", "资料来源：测试资料", "2006年1月1日", "这是下一段正文。", "第 18 页", "Page 19"];
+    const tables = [{ id: "table", beforeParagraphIndex: 5, captionParagraphIndexes: [5], rows: [] }];
+    const visuals = [{ id: "photo", kind: "image" as const, beforeParagraphIndex: 3, captionParagraphIndexes: [3],
+      coveredParagraphIndexes: [4], captionText: "第一张图", originalFragment: "", images: [] }];
+    const playable = narratableParagraphIndexes({ paragraphs, tables, visuals });
+    expect(playable).toEqual([2, 7, 8]);
+    expect(playable.find(index => index >= 9)).toBeUndefined();
+    expect(narratableParagraphIndexes({ paragraphs: ["·2005年12月8日", "Page 19"] })).toEqual([]);
+  });
   it("round-trips location, segment and speed in backups without audio", () => {
     const storage = memory(); saveChineseListeningPosition(storage, record);
     const backup = parseUserDataBackup(JSON.stringify(buildUserDataBackup(storage)));
@@ -25,6 +36,24 @@ describe("Chinese listening state", () => {
     storage.setItem(CHINESE_LISTENING_KEY, JSON.stringify([{ ...record, seconds: -2 }]));
     expect(loadChineseListeningRecords(storage)).toEqual([]);
     expect(() => parseUserDataBackup(JSON.stringify({ ...buildUserDataBackup(memory()), data: { [CHINESE_LISTENING_KEY]: [{ ...record, rate: 9 }] } }))).toThrow();
+  });
+  it("packs short sentences and keeps closing punctuation at natural breaks", () => {
+    const text = "“听他说完。”我把手记合上了。随后才看见窗外下了雨。";
+    expect(splitChineseSpeech(text, 18)).toEqual(["“听他说完。”我把手记合上了。", "随后才看见窗外下了雨。"]);
+    expect(splitChineseSpeech("是啊，他点了点头，随后继续读完手里的信。", 11))
+      .toEqual(["是啊，他点了点头，", "随后继续读完手里的信。"]);
+    expect(splitChineseSpeech("“他确认了吗？”我们继续等消息。", 9)[0]).toBe("“他确认了吗？”");
+    expect(splitChineseSpeech("刚好是1,200台，明天才会继续发货。", 10)[0]).toBe("刚好是1,200台，");
+  });
+
+  it("recovers an old split point and only keeps the audio offset for identical text", () => {
+    const chunks = ["第一段结束。", "第二句还有后半，下一句结束。", "最后一句。"];
+    expect(resolveSpeechChunk(chunks, { chunkIndex: 2, chunkText: "还有后半，", seconds: 3 }))
+      .toEqual({ chunkIndex: 1, seconds: 0 });
+    expect(resolveSpeechChunk(chunks, { chunkIndex: 1, chunkText: "最后一句。", seconds: 3 }))
+      .toEqual({ chunkIndex: 2, seconds: 3 });
+    expect(resolveSpeechChunk(chunks, { chunkIndex: 1, chunkText: "旧译文", seconds: 3 }))
+      .toEqual({ chunkIndex: 0, seconds: 0 });
   });
   it("splits punctuation and long unpunctuated Chinese without dropping content", () => {
     const text = "这是完整的第一句话。" + "很长的中文😀".repeat(100) + "！\n这是最后一句。";

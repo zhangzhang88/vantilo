@@ -50,7 +50,7 @@ export function adaptTranslationPreview(source,filename) {
     '<ChineseReader key={`${article.identity.documentId}:${vantiloEngine}`} translationEngineId={vantiloEngine} article={article}');
   const sentenceStateIndex=source.indexOf(sentenceStateAnchor);
   if(sentenceStateIndex<0)throw new Error('Sentence state seam changed');
-  source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>(article.identity.kind==='article' ? preferredTranslationEngine ?? bilingualEngine : undefined) ?? loadListeningTranslationEngine(getReaderStorage()) ?? '');
+  source=source.slice(0,sentenceStateIndex)+`  const [vantiloEngine, setVantiloEngine] = useState(()=>(preferredTranslationEngine ?? (article.identity.kind==='article' ? bilingualEngine : undefined)) ?? loadListeningTranslationEngine(getReaderStorage()) ?? '');
   const vantiloEngineRef=useRef(vantiloEngine);vantiloEngineRef.current=vantiloEngine;
   const [vantiloEngines,setVantiloEngines] = useState<{id:string;label:string}[]>([]);
   const [vantiloEngineError,setVantiloEngineError] = useState('');
@@ -200,7 +200,7 @@ export function adaptTranslationPreview(source,filename) {
   part=part.replace('      setParagraphTranslationRecords(records => upsertParagraphTranslation(records, record));',
     '      if(epoch!==vantiloEpoch.current)return false;\n      setParagraphTranslationRecords(records => upsertParagraphTranslation(records, record));');
   part=part.replace('    try {\n      const result = await translateParagraph({\n        text,\n        contextBefore,\n        contextAfter,\n      }, undefined, config);',`    vantiloBusy.current=true;vantiloRequests.current.add(ctl);
-    const timer=window.setTimeout(()=>ctl.abort(),vantiloEngine.startsWith('qwen:')?600000:115000);
+    const timer=window.setTimeout(()=>ctl.abort(),vantiloEngine.startsWith('qwen:')?600000:210000);
     const progressPoll=vantiloEngine.startsWith('qwen:')?window.setInterval(()=>{
       fetch('/api/vantilo-translation/progress',{signal:ctl.signal}).then(r=>r.ok?r.json():null).then(value=>{
         if(value&&epoch===vantiloEpoch.current&&value.engineId===requestEngineId)setVantiloChunkProgress(value);

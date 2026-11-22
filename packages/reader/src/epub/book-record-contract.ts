@@ -51,7 +51,7 @@ function blocksForUnit(unit: BookReadableUnitSpike): ReadingDocumentBlock[] {
   let paragraphIndex = 0;
   return unit.blocks.map((block) => {
     if (block.kind === "heading") return { ...block };
-    const paragraph = { kind: "paragraph" as const, paragraphIndex, text: block.text };
+    const paragraph = { ...block, paragraphIndex };
     paragraphIndex += 1;
     return paragraph;
   });

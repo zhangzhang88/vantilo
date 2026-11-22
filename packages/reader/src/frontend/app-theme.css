@@ -1,74 +1,101 @@
-/* Shared visual language. Reading typography and familiarity colors stay local. */
+/* Redesigned Apple Books / macOS minimalist theme system for Vantilo Reader.
+ * Preserves all reading modes, familiarity colors, and user typography controls. */
 :root {
   color-scheme: light;
-  --theme-bg: #f4f2ec;
-  --theme-surface: #fffdf8;
+  --theme-bg: #f5f5f7;
+  --theme-surface: #ffffff;
   --theme-raised: #ffffff;
-  --theme-soft: #ecefe9;
-  --theme-selected: #e1efeb;
-  --theme-ink: #272e2b;
-  --theme-secondary: #47554e;
-  --theme-muted: #64716b;
-  --theme-line: #d5ddd5;
-  --theme-line-soft: #e5e9e2;
-  --theme-accent: oklch(0.526 0.076 205.5);
+  --theme-soft: #eef0f4;
+  --theme-selected: rgba(0, 113, 227, 0.1);
+  --theme-ink: #1d1d1f;
+  --theme-secondary: #48484c;
+  --theme-muted: #76767c;
+  --theme-line: rgba(0, 0, 0, 0.1);
+  --theme-line-soft: rgba(0, 0, 0, 0.06);
+  --theme-accent: #0071e3;
   --theme-on-accent: #ffffff;
-  --theme-danger: #ac3d38;
-  --theme-danger-soft: #fcecea;
-  --theme-shadow: 0 8px 28px #263c3010;
-  --control-radius: 8px;
-  --card-radius: 12px;
+  --theme-danger: #d93025;
+  --theme-danger-soft: rgba(217, 48, 37, 0.09);
+  --theme-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --theme-shadow: 0 10px 30px rgba(0, 0, 0, 0.07), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --theme-shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.14), 0 4px 14px rgba(0, 0, 0, 0.06);
+  --control-radius: 9px;
+  --card-radius: 14px;
   --accent: var(--theme-accent);
   --accent-soft: var(--theme-selected);
 }
 
 html[data-color-mode="sepia"] {
-  --theme-bg: #efe6d5;
-  --theme-surface: #fbf4e6;
-  --theme-raised: #fff9ef;
-  --theme-soft: #e9dfcd;
-  --theme-selected: #dce6d9;
-  --theme-ink: #35352c;
-  --theme-secondary: #555b4d;
-  --theme-muted: #656b5d;
-  --theme-line: #cfc8b4;
-  --theme-line-soft: #e0d8c5;
+  --theme-bg: #f3ede0;
+  --theme-surface: #fbf8f0;
+  --theme-raised: #fffdf7;
+  --theme-soft: #ebe3d3;
+  --theme-selected: rgba(154, 91, 37, 0.12);
+  --theme-ink: #2c261e;
+  --theme-secondary: #53483b;
+  --theme-muted: #7c6f5e;
+  --theme-line: rgba(92, 72, 46, 0.16);
+  --theme-line-soft: rgba(92, 72, 46, 0.09);
+  --theme-accent: #9a5b25;
+  --theme-on-accent: #ffffff;
+  --theme-danger: #b83b2a;
+  --theme-danger-soft: rgba(184, 59, 42, 0.1);
+  --theme-shadow-sm: 0 1px 3px rgba(68, 50, 26, 0.06);
+  --theme-shadow: 0 10px 30px rgba(68, 50, 26, 0.09);
+  --theme-shadow-lg: 0 20px 50px rgba(68, 50, 26, 0.16);
 }
 
 html[data-color-mode="green"] {
-  --theme-bg: #e8f0e5;
-  --theme-surface: #f4f8ef;
-  --theme-raised: #fafff7;
-  --theme-soft: #dce8d8;
-  --theme-selected: #cfe1d5;
-  --theme-ink: #2b382d;
-  --theme-secondary: #475a4c;
-  --theme-muted: #596d5d;
-  --theme-line: #c3d3bf;
-  --theme-line-soft: #d6e0cf;
+  --theme-bg: #eaf1ec;
+  --theme-surface: #f6faf7;
+  --theme-raised: #ffffff;
+  --theme-soft: #dfebe3;
+  --theme-selected: rgba(31, 122, 92, 0.12);
+  --theme-ink: #1e2d24;
+  --theme-secondary: #3f5548;
+  --theme-muted: #627a6c;
+  --theme-line: rgba(36, 74, 53, 0.14);
+  --theme-line-soft: rgba(36, 74, 53, 0.08);
+  --theme-accent: #1f7a5c;
+  --theme-on-accent: #ffffff;
+  --theme-danger: #c0392b;
+  --theme-danger-soft: rgba(192, 57, 43, 0.1);
+  --theme-shadow-sm: 0 1px 3px rgba(24, 54, 38, 0.06);
+  --theme-shadow: 0 10px 30px rgba(24, 54, 38, 0.08);
+  --theme-shadow-lg: 0 20px 50px rgba(24, 54, 38, 0.15);
 }
 
 html[data-color-mode="dark"] {
   color-scheme: dark;
-  --theme-bg: #171717;
-  --theme-surface: #212121;
-  --theme-raised: #282828;
-  --theme-soft: #303030;
-  --theme-selected: #353535;
-  --theme-ink: #ececec;
-  --theme-secondary: #d0d0d0;
-  --theme-muted: #aaaaaa;
-  --theme-line: #424242;
-  --theme-line-soft: #343434;
-  --theme-accent: #8bc6c8;
-  --theme-on-accent: #142b2c;
-  --theme-danger: #f0a29b;
-  --theme-danger-soft: #422c2b;
-  --theme-shadow: 0 8px 28px #0003;
+  --theme-bg: #111113;
+  --theme-surface: #19191d;
+  --theme-raised: #222227;
+  --theme-soft: #26262c;
+  --theme-selected: rgba(10, 132, 255, 0.16);
+  --theme-ink: #f5f5f7;
+  --theme-secondary: #c4c4cc;
+  --theme-muted: #868690;
+  --theme-line: rgba(255, 255, 255, 0.1);
+  --theme-line-soft: rgba(255, 255, 255, 0.06);
+  --theme-accent: #4c9aff;
+  --theme-on-accent: #ffffff;
+  --theme-danger: #f87171;
+  --theme-danger-soft: rgba(239, 68, 68, 0.14);
+  --theme-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --theme-shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
+  --theme-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.62);
 }
 
-html, body { background: var(--theme-bg); color: var(--theme-ink); }
-.app-shell, .app-shell.theme-sepia, .app-shell.theme-night {
+html,
+body {
+  background: var(--theme-bg);
+  color: var(--theme-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-shell,
+.app-shell.theme-sepia,
+.app-shell.theme-night {
   --app-bg: var(--theme-bg);
   --panel: var(--theme-bg);
   --paper: var(--theme-surface);
@@ -95,61 +122,264 @@ html, body { background: var(--theme-bg); color: var(--theme-ink); }
   --ui-sidebar-muted: var(--theme-muted);
   --ui-sidebar-hover: var(--theme-selected);
   --ui-danger: var(--theme-danger);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
 }
+
 .app-shell .side-nav-item { color: var(--theme-secondary); }
 .app-shell .side-nav-item:hover { color: var(--theme-ink); }
-.app-shell .side-nav-item.is-active { color: var(--theme-accent); background: var(--theme-selected); border-color: var(--theme-line); }
-.app-shell .brand-mark { color: var(--theme-on-accent); background: var(--theme-accent); box-shadow: none; }
-.app-shell .nav-count { color: var(--theme-secondary); background: var(--theme-surface); }
-.app-shell .continue-card { background: var(--theme-surface); color: var(--theme-ink); border: 1px solid var(--theme-line); box-shadow: var(--theme-shadow); }
-.app-shell .continue-copy h2, .app-shell .continue-title-zh { color: var(--theme-ink); }
-.app-shell .continue-copy > p, .app-shell .continue-meta, .app-shell .continue-progress { color: var(--theme-muted); }
-.app-shell .continue-copy .eyebrow, .app-shell .eyebrow, .app-shell .toc-section-name, .app-shell .settings-card-heading > div > span { color: var(--theme-accent); }
-.app-shell .page-heading-row h1, .app-shell .settings-page > h1 { font-size: clamp(26px,3vw,32px); line-height: 1.3; }
-.app-shell .settings-card-heading h2, .app-shell .section-title-row h2 { font-size: 21px; line-height: 1.4; }
-.app-shell .settings-card-heading small, .app-shell .settings-help, .app-shell .settings-row > div > span { color: var(--theme-muted); font-size: 13px; line-height: 1.6; }
-.app-shell :is(.settings-card,.toc-card,.issue-hero,.book-detail-hero,.library-book,.global-vocabulary-card,.overview-note,.codex-prep-panel) { border-radius: var(--card-radius); box-shadow: none; }
-.app-shell .text-button { margin: 0; }
-.app-shell :is(.primary-button,.toolbar-button,.theme-option,.segmented-control button,.stepper button) { min-height: 38px; border-radius: var(--control-radius); font-weight: 550; }
-.app-shell .primary-button, .app-shell .ai-settings-button.is-primary { min-height: 40px; background: var(--theme-accent); color: var(--theme-on-accent); box-shadow: none; }
-.app-shell .primary-button:hover:not(:disabled) { background: color-mix(in oklab,var(--theme-accent) 88%,var(--theme-ink)); transform: none; }
-.app-shell .primary-button:disabled { opacity: .45; }
-.app-shell :is(.icon-button,.toolbar-button) svg { flex-shrink: 0; }
-.app-shell :is(.settings-segmented-control button.is-active,.theme-option.is-active) { border-color: var(--theme-accent); background: var(--theme-selected); color: var(--theme-accent); box-shadow: none; }
-.app-shell :is(.primary-button,.text-button,.icon-button,.toolbar-button,.theme-option,.segmented-control button,input,textarea,select):focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 3px; }
-.app-shell :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),textarea,select) { border-color: var(--theme-line); border-radius: var(--control-radius); background: var(--theme-raised); color: var(--theme-ink); font-family: inherit; }
-.app-shell input[type="range"], .app-shell input[type="checkbox"] { accent-color: var(--theme-accent); }
-.app-shell [aria-label="全局主题"] { display: flex; flex-wrap: wrap; gap: 8px; max-width: 680px; padding: 0; border: 0; background: transparent; }
-.app-shell .settings-switch.is-on { background: var(--theme-accent); border-color: var(--theme-accent); }
-.app-shell [data-theme-swatch] { display: inline-flex; align-items: center; justify-content: center; flex: 1 1 112px; gap: 8px; padding: 10px 14px; border: 1px solid var(--theme-line); background: var(--theme-surface); color: var(--theme-secondary); }
-.theme-swatch { width: 16px; height: 16px; flex: 0 0 16px; border: 1px solid #7a8a7b; border-radius: 50%; background: #fffdf8; }
-[data-theme-swatch="sepia"] .theme-swatch { background: #efe6d5; }
-[data-theme-swatch="green"] .theme-swatch { background: #dce8d8; }
-[data-theme-swatch="dark"] .theme-swatch { background: #212121; }
-[data-theme-swatch="system"] .theme-swatch { background: linear-gradient(90deg,#fffdf8 50%,#212121 50%); }
-.app-shell :is(input,textarea)::placeholder { color: var(--theme-muted); opacity: 1; }
-.app-shell .progress-track span { background: var(--theme-accent); }
-.app-shell .reading-section, .app-shell .reading-body > .reading-paragraph-block:first-of-type:not(.is-chapter-number) > p::first-letter { color: var(--theme-accent); }
-.app-shell :is(button.is-danger,.text-button.is-danger,.book-lesson-delete,.note-action-button.is-danger) { color: var(--theme-danger); }
-.app-shell :is(.data-danger-zone .primary-button,.primary-button.is-danger) { background: var(--theme-danger); color: var(--theme-bg); }
+.app-shell .side-nav-item.is-active {
+  color: var(--theme-accent);
+  background: var(--theme-selected);
+  border-color: var(--theme-line);
+}
+.app-shell .brand-mark {
+  color: var(--theme-on-accent);
+  background: var(--theme-accent);
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--theme-accent) 32%, transparent);
+}
+.app-shell .nav-count {
+  color: var(--theme-secondary);
+  background: var(--theme-surface);
+}
 
-/* Rico typography is preserved; its surfaces and highlights use the common palette. */
-.app-shell .codex-prep-panel :is(.codex-prep-options-content,.codex-prep-draft,.codex-prep-english) { border-color: var(--theme-line); background: var(--theme-surface); color: var(--theme-ink); }
+.app-shell .continue-card {
+  background: linear-gradient(180deg, var(--theme-raised), var(--theme-surface));
+  color: var(--theme-ink);
+  border: 1px solid var(--theme-line);
+  box-shadow: var(--theme-shadow);
+}
+.app-shell .continue-copy h2,
+.app-shell .continue-title-zh {
+  color: var(--theme-ink);
+  letter-spacing: -0.02em;
+}
+.app-shell .continue-copy > p,
+.app-shell .continue-meta,
+.app-shell .continue-progress {
+  color: var(--theme-muted);
+}
+.app-shell .continue-copy .eyebrow,
+.app-shell .eyebrow,
+.app-shell .toc-section-name,
+.app-shell .settings-card-heading > div > span {
+  color: var(--theme-accent);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+
+.app-shell .page-heading-row h1,
+.app-shell .settings-page > h1 {
+  font-size: clamp(26px, 3vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.028em;
+  line-height: 1.25;
+}
+.app-shell .settings-card-heading h2,
+.app-shell .section-title-row h2 {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+.app-shell .settings-card-heading small,
+.app-shell .settings-help,
+.app-shell .settings-row > div > span {
+  color: var(--theme-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.app-shell :is(.settings-card, .toc-card, .issue-hero, .book-detail-hero, .library-book, .global-vocabulary-card, .overview-note, .codex-prep-panel) {
+  border-radius: var(--card-radius);
+}
+
+.app-shell .text-button {
+  margin: 0;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.app-shell :is(.primary-button, .toolbar-button, .theme-option, .segmented-control button, .stepper button) {
+  min-height: 36px;
+  border-radius: var(--control-radius);
+  font-weight: 550;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 120ms ease;
+}
+
+.app-shell .primary-button,
+.app-shell .ai-settings-button.is-primary {
+  min-height: 38px;
+  background: var(--theme-accent);
+  color: var(--theme-on-accent);
+  border-color: transparent;
+  box-shadow: 0 2px 10px color-mix(in oklab, var(--theme-accent) 28%, transparent);
+}
+.app-shell .primary-button:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--theme-accent) 88%, #ffffff);
+  transform: translateY(-0.5px);
+}
+.app-shell .primary-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+.app-shell .primary-button:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.app-shell :is(.icon-button, .toolbar-button) svg { flex-shrink: 0; }
+
+.app-shell :is(.settings-segmented-control button.is-active, .theme-option.is-active) {
+  border-color: var(--theme-accent);
+  background: var(--theme-selected);
+  color: var(--theme-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--theme-accent) 35%, transparent);
+}
+
+.app-shell :is(.primary-button, .text-button, .icon-button, .toolbar-button, .theme-option, .segmented-control button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+
+.app-shell :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  border-color: var(--theme-line);
+  border-radius: var(--control-radius);
+  background: var(--theme-raised);
+  color: var(--theme-ink);
+  font-family: inherit;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.app-shell :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select):focus {
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 3px var(--theme-selected);
+}
+
+.app-shell input[type="range"],
+.app-shell input[type="checkbox"] {
+  accent-color: var(--theme-accent);
+}
+
+/* Theme Swatch Selector */
+.app-shell [aria-label="全局主题"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 680px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.app-shell .settings-switch.is-on {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+}
+.app-shell [data-theme-swatch] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 108px;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--theme-line);
+  border-radius: 11px;
+  background: var(--theme-surface);
+  color: var(--theme-secondary);
+  font-size: 13px;
+  font-weight: 550;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 120ms ease;
+}
+.app-shell [data-theme-swatch]:hover {
+  border-color: var(--theme-accent);
+  color: var(--theme-ink);
+}
+.theme-swatch {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border: 1px solid rgba(128, 128, 136, 0.45);
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+[data-theme-swatch="sepia"] .theme-swatch { background: #f3ede0; }
+[data-theme-swatch="green"] .theme-swatch { background: #dfebe3; }
+[data-theme-swatch="dark"] .theme-swatch { background: #19191d; }
+[data-theme-swatch="system"] .theme-swatch { background: linear-gradient(90deg, #ffffff 50%, #19191d 50%); }
+
+.app-shell :is(input, textarea)::placeholder {
+  color: var(--theme-muted);
+  opacity: 1;
+}
+.app-shell .progress-track {
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--theme-soft);
+}
+.app-shell .progress-track span {
+  background: var(--theme-accent);
+  border-radius: inherit;
+}
+.app-shell .reading-section,
+.app-shell .reading-body > .reading-paragraph-block:first-of-type:not(.is-chapter-number) > p::first-letter {
+  color: var(--theme-accent);
+}
+.app-shell :is(button.is-danger, .text-button.is-danger, .book-lesson-delete, .note-action-button.is-danger) {
+  color: var(--theme-danger);
+}
+.app-shell :is(.data-danger-zone .primary-button, .primary-button.is-danger) {
+  background: var(--theme-danger);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+/* Codex assistant & popovers */
+.app-shell .codex-prep-panel :is(.codex-prep-options-content, .codex-prep-draft, .codex-prep-english) {
+  border-color: var(--theme-line);
+  background: var(--theme-surface);
+  color: var(--theme-ink);
+}
 .app-shell .codex-prep-panel .chat-markdown p { color: var(--theme-ink); }
 .app-shell .codex-prep-panel .chat-markdown h3 { color: var(--theme-accent); }
 .app-shell .codex-prep-chat .codex-prep-turn.user { background: transparent; }
-.app-shell .codex-prep-label :is(select,textarea), .app-shell .codex-prep-composer-input textarea { background: var(--theme-raised); color: var(--theme-ink); }
-.app-shell .codex-prep-error { background: var(--theme-danger-soft); color: var(--theme-danger); }
-.app-shell[data-theme] :is(.word-lookup-card,.word-context-card,.selection-assist-popover) { background: var(--theme-surface); border-color: var(--theme-line); color: var(--theme-ink); }
+.app-shell .codex-prep-label :is(select, textarea),
+.app-shell .codex-prep-composer-input textarea {
+  background: var(--theme-raised);
+  color: var(--theme-ink);
+}
+.app-shell .codex-prep-error {
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+.app-shell[data-theme] :is(.word-lookup-card, .word-context-card, .selection-assist-popover) {
+  background: color-mix(in oklab, var(--theme-surface) 94%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-color: var(--theme-line);
+  color: var(--theme-ink);
+}
 
 .app-shell .reader-canvas { background: var(--theme-bg); }
-.app-shell .reader-canvas .reading-page { background: var(--theme-surface); color: var(--theme-ink); }
-.reader-page-shell.is-sentence-mode { --sentence-ink: var(--theme-ink); --sentence-muted: var(--theme-muted); --sentence-accent: var(--theme-accent); }
-.reader-page-shell.is-sentence-mode[data-theme] { --sentence-bg: var(--theme-bg); --sentence-surface: var(--theme-surface); --sentence-line: var(--theme-line); --sentence-soft: var(--theme-soft); --sentence-ink: var(--theme-ink); --sentence-muted: var(--theme-muted); --sentence-accent: var(--theme-accent); }
+.app-shell .reader-canvas .reading-page {
+  background: var(--theme-surface);
+  color: var(--theme-ink);
+}
+.reader-page-shell.is-sentence-mode {
+  --sentence-ink: var(--theme-ink);
+  --sentence-muted: var(--theme-muted);
+  --sentence-accent: var(--theme-accent);
+}
+.reader-page-shell.is-sentence-mode[data-theme] {
+  --sentence-bg: var(--theme-bg);
+  --sentence-surface: var(--theme-surface);
+  --sentence-line: var(--theme-line);
+  --sentence-soft: var(--theme-soft);
+  --sentence-ink: var(--theme-ink);
+  --sentence-muted: var(--theme-muted);
+  --sentence-accent: var(--theme-accent);
+}
 
-/* Portals receive the same palette, including when a local appearance override is chosen. */
-.worm-game, .worm-game[data-theme="dark"] {
+/* Practice / typing game portals */
+.worm-game,
+.worm-game[data-theme="dark"] {
   --worm-bg: var(--theme-bg);
   --worm-surface: var(--theme-surface);
   --worm-support: var(--theme-soft);
@@ -162,19 +392,61 @@ html, body { background: var(--theme-bg); color: var(--theme-ink); }
   --worm-sentence-accent: var(--theme-accent);
   --worm-danger: var(--theme-danger);
 }
-.worm-game { background: var(--theme-bg); color: var(--theme-ink); }
-.worm-settings-dialog { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); width: min(100%,600px); }
+.worm-game { background: var(--theme-bg); color: var(--theme-ink); font-family: var(--vantilo-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif); }
+.worm-settings-dialog {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 600px);
+}
 .worm-global-theme-note { color: var(--theme-muted); font-size: 13px; line-height: 1.6; }
-.worm-game button { border-radius: var(--control-radius); color: var(--theme-secondary); }
-.worm-game button:hover:not(:disabled) { background: var(--theme-soft); border-color: var(--theme-line); }
-.worm-game .vocabulary-game-card, .worm-game .vocabulary-game-prompt { background: var(--theme-surface); border-color: var(--theme-line); }
-.worm-game .vocabulary-game-translation { background: var(--theme-soft); border-color: var(--theme-line); }
-.worm-game .vocabulary-game-translation :is(strong,p) { color: var(--theme-ink); }
-.worm-game .learning-completion-actions .learning-completion-primary { background: var(--theme-accent); color: var(--theme-on-accent); }
+.worm-game button { border-radius: var(--control-radius); color: var(--theme-secondary); transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
+.worm-game button:hover:not(:disabled) {
+  background: var(--theme-soft);
+  border-color: var(--theme-line);
+  color: var(--theme-ink);
+}
+.worm-game button:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
+.worm-game-meta strong { color: var(--theme-ink); }
+.worm-game-time { color: var(--theme-muted); font-variant-numeric: tabular-nums; }
+.worm-game-tools button { border-color: var(--theme-line-soft); }
+.worm-game-tools .is-active { background: var(--theme-selected); border-color: color-mix(in oklab, var(--theme-accent) 34%, transparent); color: var(--theme-accent); }
+.worm-game-progress { height: 3px; border-radius: 999px; background: var(--theme-soft); overflow: hidden; }
+.worm-game-progress > span { background: var(--theme-accent); border-radius: inherit; }
+.worm-game-word input { border-bottom-color: var(--theme-line); }
+.worm-game-word input.is-current,
+.worm-game-word input:focus { border-color: var(--theme-accent); }
+.worm-game kbd { border-color: var(--theme-line); background: var(--theme-surface); color: var(--theme-secondary); box-shadow: 0 1px 0 var(--theme-line); }
+.worm-game .vocabulary-game-card,
+.worm-game .vocabulary-game-prompt {
+  background: var(--theme-surface);
+  border-color: var(--theme-line-soft);
+  border-radius: 16px;
+  box-shadow: var(--theme-shadow);
+}
+.worm-game .vocabulary-game-translation {
+  background: var(--theme-soft);
+  border-color: var(--theme-line-soft);
+  border-radius: 12px;
+}
+.worm-game .vocabulary-game-translation :is(strong, p) { color: var(--theme-ink); }
+.worm-game .learning-completion-actions .learning-completion-primary {
+  background: var(--theme-accent);
+  color: var(--theme-on-accent);
+}
 
 @media (max-width: 640px) {
-  .app-shell :is(.primary-button,.toolbar-button,.icon-button,.theme-option,.settings-segmented-control button,.settings-stepper button) { min-height: 44px; }
+  .app-shell :is(.primary-button, .toolbar-button, .icon-button, .theme-option, .settings-segmented-control button, .settings-stepper button) {
+    min-height: 44px;
+  }
 }
+
 @media (prefers-reduced-motion: reduce) {
-  .app-shell, .app-shell *, .worm-game, .worm-game * { scroll-behavior: auto !important; transition: none !important; }
+  .app-shell,
+  .app-shell *,
+  .worm-game,
+  .worm-game * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }

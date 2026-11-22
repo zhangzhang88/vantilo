@@ -1,128 +1,540 @@
-/* macOS-native visual pilot for Vantilo's Electron shell.
- * Deliberately scoped to the shell: no Reader internals, business logic,
- * OS appearance overrides, layout structure, or persistence keys change. */
+/* Native macOS minimalist design system for Vantilo's Electron shell.
+ * Clean neutral graphite layers, hairline borders, subtle translucency,
+ * and restrained Apple system-blue accents. */
 .vantilo-macos-shell {
-  --mac-shell-bg: #202023;
-  --mac-chrome: #29292c;
-  --mac-sidebar: #262629;
-  --mac-content: #1d1d1f;
-  --mac-line: rgba(235,235,245,.12);
-  --mac-text: #f2f2f7;
-  --mac-secondary: #a7a7ad;
-  --mac-selected: rgba(160,160,175,.19);
-  --mac-focus: #7ba6d9;
+  --mac-shell-bg: #141416;
+  --mac-chrome: rgba(26, 26, 29, 0.92);
+  --mac-sidebar: #1a1a1d;
+  --mac-content: #121214;
+  --mac-surface: #1d1d21;
+  --mac-surface-raised: #242429;
+  --mac-surface-hover: rgba(255, 255, 255, 0.065);
+  --mac-line: rgba(255, 255, 255, 0.085);
+  --mac-line-strong: rgba(255, 255, 255, 0.15);
+  --mac-text: #f5f5f7;
+  --mac-secondary: #a1a1a8;
+  --mac-muted: #76767f;
+  --mac-selected: rgba(255, 255, 255, 0.095);
+  --mac-accent: #4c9aff;
+  --mac-accent-solid: #0a84ff;
+  --mac-accent-soft: rgba(10, 132, 255, 0.15);
+  --mac-accent-border: rgba(76, 154, 255, 0.36);
+  --mac-focus: #4c9aff;
+  --mac-success: #34d399;
+  --mac-warning-bg: rgba(245, 158, 11, 0.1);
+  --mac-warning-border: rgba(245, 158, 11, 0.28);
+  --mac-warning-text: #f6d38b;
+  --mac-danger-bg: rgba(239, 68, 68, 0.12);
+  --mac-danger-border: rgba(239, 68, 68, 0.32);
+  --mac-danger-text: #fca5a5;
+  --mac-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --mac-shadow-md: 0 12px 36px rgba(0, 0, 0, 0.42);
+  --mac-shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.58);
   background: var(--mac-shell-bg);
   color: var(--mac-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-}
-.vantilo-macos-shell > .app-titlebar {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:16px;
-  padding:0 20px 0 82px;
-  background:var(--mac-chrome);
-  border-bottom:1px solid var(--mac-line);
-}
-.vantilo-macos-shell .app-window-title {
-  flex:none;
-  color:var(--mac-text);
-  font-size:13px;
-  font-weight:600;
-  letter-spacing:-.01em;
-  line-height:1;
-  opacity:.9;
-  user-select:none;
-}
-.vantilo-macos-shell .app-titlebar .account-controls,
-.vantilo-macos-shell .app-titlebar button {
-  -webkit-app-region:no-drag;
-}
-.vantilo-macos-shell > .app-rail {
-  background:var(--mac-sidebar);
-  border-right:1px solid var(--mac-line);
-}
-.vantilo-macos-shell .app-rail-cell {
-  height:44px;
-}
-.vantilo-macos-shell .app-rail-cell::before { display:none; }
-.vantilo-macos-shell .app-rail-cell .react-aria-Button {
-  width:34px;
-  height:34px;
-  border-radius:9px;
-  color:var(--mac-secondary);
-  transition: background-color .13s ease,color .13s ease;
-}
-.vantilo-macos-shell .app-rail-cell:not(.is-active) .react-aria-Button:hover {
-  background:rgba(255,255,255,.085);
-  color:var(--mac-text);
-}
-.vantilo-macos-shell .app-rail-cell.is-active .react-aria-Button {
-  background:var(--mac-selected);
-  color:var(--mac-text);
-}
-.vantilo-macos-shell .app-rail-cell .react-aria-Button:focus-visible,
-.vantilo-macos-shell button:focus-visible {
-  outline:2px solid var(--mac-focus);
-  outline-offset:2px;
-}
-.vantilo-macos-shell > .workspace-sheet {
-  margin:0;
-  border:0;
-  border-radius:0;
-  box-shadow:none;
-  background:var(--mac-content);
-}
-.vantilo-macos-shell > .workspace-sheet > .sidebar {
-  background:var(--mac-sidebar);
-  border-right:1px solid var(--mac-line);
-}
-.vantilo-macos-shell > .workspace-sheet > .center {
-  background:var(--mac-content);
-}
-.vantilo-macos-shell .session-row {
-  border-color:transparent;
-  border-radius:8px;
-}
-.vantilo-macos-shell .session-row:hover {
-  background:rgba(255,255,255,.065);
-}
-.vantilo-macos-shell .session-row.selected {
-  background:var(--mac-selected);
-  border-color:transparent;
-}
-.vantilo-macos-shell .conversation-title-bar {
-  background:var(--mac-content);
-  border-bottom:1px solid var(--mac-line);
-  color:var(--mac-text);
-}
-.vantilo-macos-shell .sidebar-heading {
-  font-size:15px;
-  font-weight:650;
-  letter-spacing:-.015em;
-}
-.vantilo-macos-shell .sidebar-section-heading { color:var(--mac-secondary); font-size:11px; }
-.vantilo-macos-shell .sidebar-resize-handle::after { background:var(--mac-line); }
-.vantilo-macos-shell .sidebar-resize-handle:hover::after { background:var(--mac-secondary); }
-.vantilo-macos-shell .magazine-reader-module { background:var(--mac-content); }
-.vantilo-macos-shell .magazine-reader-host-bar {
-  background:var(--mac-chrome);
-  border-bottom:1px solid var(--mac-line);
-}
-.vantilo-macos-shell .magazine-reader-host-bar button {
-  background:rgba(255,255,255,.075);
-  border-color:var(--mac-line);
-  border-radius:8px;
-  font-size:12px;
-}
-.vantilo-macos-shell .magazine-reader-host-bar button:hover {
-  background:rgba(255,255,255,.14);
-}
-@media (prefers-reduced-motion: reduce) {
-  .vantilo-macos-shell .app-rail-cell .react-aria-Button { transition:none; }
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-.vantilo-macos-shell:has(> .vantilo-audiobook-slot:not(:empty)) { grid-template-rows: 52px minmax(0, 1fr) auto; }
-.vantilo-audiobook-slot { grid-row: 3; grid-column: 2; min-width: 0; z-index: 15; }
-.vantilo-audiobook-slot:not(:empty) { padding: 2px 12px 5px; }
-.vantilo-audiobook-slot:empty { display: none; }
+/* Titlebar */
+.vantilo-macos-shell {
+  grid-template-rows: 44px minmax(0, 1fr);
+}
+
+.vantilo-macos-shell > .app-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px 0 80px;
+  background: var(--mac-chrome);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-bottom: 1px solid var(--mac-line);
+}
+
+.vantilo-macos-shell .app-titlebar-leading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vantilo-macos-shell .app-titlebar-leading button {
+  color: var(--mac-secondary);
+}
+
+.vantilo-macos-shell .app-window-title {
+  flex: none;
+  color: var(--mac-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1;
+  opacity: 0.92;
+  user-select: none;
+}
+
+.vantilo-macos-shell .app-titlebar .account-controls,
+.vantilo-macos-shell .app-titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+.vantilo-macos-shell .account-controls {
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 3px 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--mac-line);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 11.5px;
+  color: var(--mac-secondary);
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.vantilo-macos-shell .account-controls:hover {
+  border-color: var(--mac-line-strong);
+}
+
+.vantilo-macos-shell .account-status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mac-muted);
+}
+
+.vantilo-macos-shell .account-controls.is-connected .account-status-dot {
+  background: var(--mac-success);
+  box-shadow: 0 0 0 2.5px rgba(52, 211, 153, 0.18);
+}
+
+.vantilo-macos-shell .account-controls .account-status-text {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vantilo-macos-shell .account-controls button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--mac-line-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--mac-text);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.vantilo-macos-shell .account-controls button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.vantilo-macos-shell .account-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Left Navigation Rail */
+.vantilo-macos-shell > .app-rail {
+  padding: 10px 0 12px;
+  background: var(--mac-sidebar);
+  border-right: 1px solid var(--mac-line);
+}
+
+.vantilo-macos-shell .app-rail-group {
+  gap: 4px;
+}
+
+.vantilo-macos-shell .app-rail-cell {
+  height: 40px;
+}
+
+.vantilo-macos-shell .app-rail-cell::before {
+  display: none;
+}
+
+.vantilo-macos-shell .app-rail-cell .react-aria-Button {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--mac-secondary);
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.vantilo-macos-shell .app-rail-cell:not(.is-active) .react-aria-Button:hover {
+  background: var(--mac-surface-hover);
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .app-rail-cell.is-active .react-aria-Button {
+  background: var(--mac-accent-soft);
+  color: var(--mac-accent);
+  box-shadow: inset 0 0 0 1px var(--mac-accent-border);
+}
+
+.vantilo-macos-shell .app-rail-cell .react-aria-Button:focus-visible,
+.vantilo-macos-shell button:focus-visible {
+  outline: 2px solid var(--mac-focus);
+  outline-offset: 2px;
+}
+
+/* Workspace Sheet & Panes */
+.vantilo-macos-shell > .workspace-sheet {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--mac-content);
+}
+
+.vantilo-macos-shell > .workspace-sheet > .sidebar {
+  padding: 18px 12px 12px;
+  background: var(--mac-sidebar);
+  border-right: 1px solid var(--mac-line);
+}
+
+.vantilo-macos-shell > .workspace-sheet > .center {
+  background: var(--mac-content);
+}
+
+.vantilo-macos-shell .conversation-title-bar {
+  height: 50px;
+  padding: 0 24px;
+  background: rgba(18, 18, 20, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--mac-line);
+  color: var(--mac-text);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vantilo-macos-shell .sidebar-heading {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .sidebar-section-heading {
+  color: var(--mac-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.vantilo-macos-shell .sidebar-resize-handle::after {
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.vantilo-macos-shell .sidebar-resize-handle:hover::after,
+.vantilo-macos-shell .sidebar-resize-handle:focus-visible::after {
+  background: var(--mac-accent);
+}
+
+/* Empty Hero & Reader Entry Card */
+.vantilo-macos-shell .hero {
+  max-width: 460px;
+  margin: auto 0 36px;
+}
+
+.vantilo-macos-shell .spark {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 16px;
+  border-radius: 13px;
+  border: 1px solid var(--mac-accent-border);
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.2), rgba(10, 132, 255, 0.06));
+  color: var(--mac-accent);
+  font-size: 20px;
+  box-shadow: 0 6px 20px rgba(10, 132, 255, 0.14);
+}
+
+.vantilo-macos-shell .hero h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .hero p {
+  margin: 0;
+  color: var(--mac-secondary);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.vantilo-macos-shell .home-module-actions {
+  margin-top: 24px;
+}
+
+.vantilo-macos-shell .home-module-button {
+  min-width: min(320px, calc(100vw - 130px));
+  padding: 13px 16px;
+  border: 1px solid var(--mac-line-strong);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--mac-surface-raised), var(--mac-surface));
+  color: var(--mac-text);
+  box-shadow: var(--mac-shadow-sm);
+  transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.vantilo-macos-shell .home-module-button:hover:not(:disabled) {
+  border-color: var(--mac-accent-border);
+  background: linear-gradient(180deg, #292930, #202026);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+}
+
+.vantilo-macos-shell .home-module-button .home-module-mark {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--mac-accent-border);
+  border-radius: 10px;
+  background: var(--mac-accent-soft);
+  color: var(--mac-accent);
+  font-size: 16px;
+}
+
+.vantilo-macos-shell .home-module-button strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .home-module-button small {
+  color: var(--mac-secondary);
+  font-size: 11.5px;
+}
+
+.vantilo-macos-shell .home-module-button .home-module-arrow {
+  color: var(--mac-muted);
+  font-size: 16px;
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
+.vantilo-macos-shell .home-module-button:hover:not(:disabled) .home-module-arrow {
+  color: var(--mac-accent);
+  transform: translateX(3px);
+}
+
+/* Notices, Error Banners & Tool Approvals */
+.vantilo-macos-shell .storage-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: min(760px, 100%);
+  padding: 10px 14px;
+  margin: 0 0 10px;
+  border: 1px solid var(--mac-warning-border);
+  border-radius: 11px;
+  background: var(--mac-warning-bg);
+  color: var(--mac-warning-text);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.vantilo-macos-shell .storage-notice button {
+  padding: 5px 11px;
+  border: 1px solid var(--mac-warning-border);
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.16);
+  color: var(--mac-warning-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.vantilo-macos-shell .storage-notice button:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.24);
+}
+
+.vantilo-macos-shell .error-banner {
+  width: min(760px, 100%);
+  padding: 10px 14px;
+  margin: 0 0 10px;
+  border: 1px solid var(--mac-danger-border);
+  border-radius: 11px;
+  background: var(--mac-danger-bg);
+  color: var(--mac-danger-text);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.vantilo-macos-shell .tool-activity {
+  width: min(760px, 100%);
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--mac-line);
+  border-radius: 11px;
+  background: var(--mac-surface);
+  color: var(--mac-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.vantilo-macos-shell .approval-card {
+  background: var(--mac-surface);
+  border: 1px solid var(--mac-warning-border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: var(--mac-shadow-md);
+}
+
+.vantilo-macos-shell .approval-eyebrow {
+  color: var(--mac-warning-text);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+
+.vantilo-macos-shell .approval-card h3 {
+  color: var(--mac-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.vantilo-macos-shell .approval-actions button {
+  border-radius: 8px;
+  font-size: 12.5px;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.vantilo-macos-shell .approval-actions .approve-once {
+  background: var(--mac-accent-solid);
+  border-color: var(--mac-accent-solid);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.vantilo-macos-shell .approval-actions .approve-once:hover {
+  background: #2291ff;
+}
+
+.vantilo-macos-shell .approval-actions .reject-once {
+  background: var(--mac-danger-bg);
+  border-color: var(--mac-danger-border);
+  color: var(--mac-danger-text);
+}
+
+/* Composer Container */
+.vantilo-macos-shell .composer-reference {
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--mac-line-strong);
+  border-radius: 8px;
+  background: var(--mac-surface);
+  color: var(--mac-text);
+  font-size: 11.5px;
+}
+
+/* Rename Dialog */
+.vantilo-macos-shell .session-rename-backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+.vantilo-macos-shell .session-rename-dialog {
+  padding: 22px;
+  border: 1px solid var(--mac-line-strong);
+  border-radius: 14px;
+  background: var(--mac-surface-raised);
+  box-shadow: var(--mac-shadow-lg);
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .session-rename-dialog input {
+  border-color: var(--mac-line-strong);
+  border-radius: 8px;
+  background: var(--mac-content);
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .session-rename-dialog input:focus {
+  border-color: var(--mac-accent);
+  box-shadow: 0 0 0 3px var(--mac-accent-soft);
+}
+
+.vantilo-macos-shell .session-rename-actions button {
+  border-color: var(--mac-line-strong);
+  border-radius: 8px;
+  background: var(--mac-surface);
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .session-rename-actions button[type="submit"] {
+  border-color: var(--mac-accent-solid);
+  background: var(--mac-accent-solid);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Magazine Reader Host Module */
+.vantilo-macos-shell .magazine-reader-module {
+  background: var(--mac-content);
+}
+
+.vantilo-macos-shell .magazine-reader-spinner {
+  border: 2px solid var(--mac-line-strong);
+  border-top-color: var(--mac-accent);
+}
+
+.vantilo-macos-shell .magazine-reader-host-bar {
+  background: var(--mac-chrome);
+  border-bottom: 1px solid var(--mac-line);
+}
+
+.vantilo-macos-shell .magazine-reader-host-bar button,
+.vantilo-macos-shell .magazine-reader-state-actions button {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--mac-line-strong);
+  border-radius: 8px;
+  color: var(--mac-text);
+  font-size: 12px;
+}
+
+.vantilo-macos-shell .magazine-reader-host-bar button:hover,
+.vantilo-macos-shell .magazine-reader-state-actions button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Audiobook Floating Slot */
+.vantilo-macos-shell:has(> .vantilo-audiobook-slot:not(:empty)) {
+  grid-template-rows: 44px minmax(0, 1fr) auto;
+}
+
+.vantilo-audiobook-slot {
+  grid-row: 3;
+  grid-column: 2;
+  min-width: 0;
+  z-index: 15;
+}
+
+.vantilo-audiobook-slot:not(:empty) {
+  padding: 2px 12px 4px;
+}
+
+.vantilo-audiobook-slot:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vantilo-macos-shell .app-rail-cell .react-aria-Button,
+  .vantilo-macos-shell .home-module-button,
+  .vantilo-macos-shell .home-module-button .home-module-arrow {
+    transition: none;
+    transform: none;
+  }
+}

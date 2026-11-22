@@ -21,3 +21,12 @@ it.each([
 it("bounds numeric conversion work for long input", () => {
   expect(chineseSpeechText("3".repeat(1200) + "%")).toBe("百分之" + "三".repeat(1200));
 });
+
+it.each([
+  ["1919—1922年提出假设。1924—1925年发表一文。", "一九一九年至一九二二年提出假设。一九二四年至一九二五年发表一文。"],
+  ["从２０１６ 年 – ２０１８ 年增长38%。", "从二零一六年至二零一八年增长百分之三十八。"],
+  ["2000～2004年，2010年至2015年。", "二零零零年至二零零四年，二零一零年至二零一五年。"],
+  ["50～60年，2026-11-16，编号X1919-1922，1919年。", "50～60年，2026-11-16，编号X1919-1922，1919年。"],
+])("normalizes explicit four-digit Chinese year ranges: %s", (text, expected) => {
+  expect(chineseSpeechText(text)).toBe(expected);
+});

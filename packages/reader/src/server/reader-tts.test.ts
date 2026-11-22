@@ -32,6 +32,8 @@ it("normalizes Chinese numbers, respects explicit language, and streams PCM with
       { payload: { text: "38%", language: "zh-CN" }, text: "百分之三十八", language: "zh" },
       { payload: { text: "38.5％", language: "zh-CN" }, text: "百分之三十八点五", language: "zh" },
       { payload: { text: "这是38%的研究结果。" }, text: "这是百分之三十八的研究结果。", language: "zh" },
+      { payload: { text: "1919—1922年提出长波假设。", language: "zh-CN" }, text: "一九一九年至一九二二年提出长波假设。", language: "zh" },
+      { payload: { text: "The table lists 1919–1922年.", language: "en-US" }, text: "The table lists 1919–1922年.", language: "en" },
       { payload: { text: "38%", language: "en-US" }, text: "38%", language: "en" },
       { payload: { text: "Results rose to 38%." }, text: "Results rose to 38%.", language: "en" },
       { payload: { text: "38%" }, text: "38%", language: "en" },

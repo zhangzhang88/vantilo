@@ -118,10 +118,10 @@ class PortableReaderSupervisor {
             void get().then(metadata => { if (this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:true,metadata}); }, () => { if(this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:false}); });
             return;
           }
-          const valid = typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id) && typeof message.instructions === 'string' && message.instructions.length > 0 && message.instructions.length <= 8000 && typeof message.input === 'string' && message.input.length > 0 && message.input.length <= 18000 && message.instructions.length + message.input.length <= 19000 && (message.taskKind === undefined || message.taskKind === 'learning-material');
+          const valid = typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id) && typeof message.instructions === 'string' && message.instructions.length > 0 && message.instructions.length <= 8000 && typeof message.input === 'string' && message.input.length > 0 && message.input.length <= 18000 && message.instructions.length + message.input.length <= 19000 && (message.taskKind === undefined || ['learning-material', 'translation-batch'].includes(message.taskKind));
           if (!valid || (message.modelId != null && (typeof message.modelId !== 'string' || message.modelId.length > 256)) || (message.reasoningEffort != null && (typeof message.reasoningEffort !== 'string' || message.reasoningEffort.length > 64)) || !this.runAi) return;
-          void this.runAi({ requestId:id, instructions: message.instructions, input: message.input, ...(message.modelId !== undefined ? {modelId:message.modelId} : {}), ...(message.reasoningEffort !== undefined ? {reasoningEffort:message.reasoningEffort} : {}), ...(message.taskKind === 'learning-material' ? {taskKind:'learning-material'} : {}) }).then(result => {
-            if (this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:true,output:result.output});
+          void this.runAi({ requestId:id, instructions: message.instructions, input: message.input, ...(message.modelId !== undefined ? {modelId:message.modelId} : {}), ...(message.reasoningEffort !== undefined ? {reasoningEffort:message.reasoningEffort} : {}), ...(message.taskKind ? {taskKind:message.taskKind} : {}) }).then(result => {
+            if (this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:true,output:result.output,...(result.timings ? { metadata: result } : {})});
           }, error => { if (this.child === child && !this.stopping) child.postMessage({type:'ai-result',requestId:id,ok:false,errorCode:require('./reader-errors.cjs').readerErrorCode(error)}); });
         }
         if (message?.type === 'sync'  && validSync(message.state)) this.sync = { ...message.state };
@@ -133,7 +133,12 @@ class PortableReaderSupervisor {
             clearTimeout(timer); this.rejectStartup = null; this.status = 'ready'; resolve({ ready: true });
           },()=>{if(this.child===child && !this.stopping)fail('无法为阅读空间建立安全会话，请重试。');});
         }
-        if (message?.type === 'error') fail('阅读服务启动失败，请检查端口 5174/5175 后重试');
+        if (message?.type === 'error') {
+          const portInUse = message.code === 'EADDRINUSE' && [5174, 5175].includes(message.port);
+          fail(portInUse
+            ? `阅读服务无法启动，本机端口 ${message.port} 已被占用。释放该端口后重试。`
+            : '内置阅读服务启动失败，请重试。');
+        }
       });
       child.on('error', () => fail('阅读服务进程出错，请重试'));
       child.on('exit', () => {

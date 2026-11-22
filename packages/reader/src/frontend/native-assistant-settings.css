@@ -1,220 +1,503 @@
-/* Third native-macOS visual pilot: Reader settings and Codex assistant only.
- * Appearance tokens come from app-theme.css. No layout ownership, stored
- * preferences, provider/AI APIs, focus behavior, or content are changed. */
+/* Apple macOS System Settings & AI Reading Studio Inspector redesign.
+ * Uses shared app-theme.css variables across all Reader themes. */
 .app-shell .settings-page {
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif;
-}
-.app-shell .settings-page .page-heading-row { margin-bottom:24px; }
-.app-shell .settings-page .page-heading-row h1 { font-size:29px; font-weight:700; letter-spacing:-.025em; }
-.app-shell .settings-page .page-heading-row p { color:var(--theme-muted); font-size:13px; line-height:1.65; }
-.app-shell .settings-grid { gap:14px; }
-.app-shell .settings-grid > :is(.settings-card,.tts-api-settings) {
-  margin-top:0;
-  border:1px solid var(--theme-line);
-  border-radius:12px;
-  background:var(--theme-surface);
-  box-shadow:none;
-  padding:20px 22px;
-}
-.app-shell .settings-page .settings-card-heading {
-  margin-bottom:16px;
-  gap:14px;
-}
-.app-shell .settings-page .settings-card-heading h2 {
-  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
-  font-size:17px;
-  line-height:1.35;
-  font-weight:650;
-  letter-spacing:-.015em;
-  color:var(--theme-ink);
-}
-.app-shell .settings-page .settings-card-heading > div > span {
-  color:var(--theme-muted);
-  font-size:10px;
-  font-weight:600;
-  letter-spacing:.025em;
-}
-.app-shell .settings-page .settings-card-heading small {
-  color:var(--theme-muted);
-  font-size:12px;
-  line-height:1.5;
-  font-weight:400;
-}
-.app-shell .settings-page .settings-list { border-color:var(--theme-line-soft); }
-.app-shell .settings-page .settings-row {
-  min-height:66px;
-  gap:14px;
-  border-color:var(--theme-line-soft);
-}
-.app-shell .settings-page :is(.settings-row strong,.settings-label) {
-  color:var(--theme-ink);
-  font-size:13px;
-  font-weight:600;
-}
-.app-shell .settings-page :is(.settings-row > div > span,.settings-help) {
-  color:var(--theme-muted);
-  font-size:12px;
-  line-height:1.6;
-}
-.app-shell .settings-page .settings-subgroup {
-  margin-top:15px;
-  padding-top:15px;
-  border-color:var(--theme-line-soft);
-}
-.app-shell .settings-page .settings-card-heading + .settings-subgroup {
-  margin-top:0;
-}
-.app-shell .settings-page .settings-switch {
-  flex:none;
-  background:var(--theme-soft);
-  border-color:var(--theme-line);
-}
-.app-shell .settings-page .settings-switch.is-on {
-  background:var(--theme-accent);
-  border-color:var(--theme-accent);
-}
-.app-shell .settings-page .settings-switch:focus-visible,
-.app-shell .codex-prep-panel :is(button,input,select,textarea,summary):focus-visible {
-  outline:2px solid var(--theme-accent);
-  outline-offset:2px;
-}
-.app-shell .settings-page .ai-field > span {
-  color:var(--theme-secondary);
-  font-size:12px;
-  font-weight:600;
-}
-.app-shell .settings-page .ai-field :is(input,select),
-.app-shell .settings-page .tts-api-settings :is(input,select) {
-  min-height:36px;
-  padding-inline:10px;
-  font-size:13px;
-  border-radius:8px;
-}
-.app-shell .settings-page .ai-field :is(input,select):focus-visible {
-  outline:2px solid var(--theme-accent);
-  outline-offset:2px;
-  box-shadow:none;
-}
-.app-shell .settings-page :is(.ai-field > small,.ai-model-hint) {
-  font-size:11px;
-  color:var(--theme-muted);
-  line-height:1.55;
-}
-.app-shell .settings-page .ai-settings-button {
-  min-height:34px;
-  border-radius:8px;
-  padding-inline:12px;
-  font-size:12px;
-  font-weight:550;
-  box-shadow:none;
-}
-.app-shell .settings-page .ai-settings-button:hover:not(:disabled) { transform:none; }
-.app-shell .settings-page .ai-settings-button.is-primary {
-  background:var(--theme-accent);
-  border-color:var(--theme-accent);
-  color:var(--theme-on-accent);
-}
-.app-shell .settings-page .ai-settings-button.is-primary:hover:not(:disabled) {
-  background:color-mix(in srgb,var(--theme-accent) 88%,var(--theme-ink));
-  border-color:var(--theme-accent);
-}
-.app-shell .settings-page .ai-settings-button.is-danger {
-  color:var(--theme-danger);
-  border-color:var(--theme-line);
-}
-.app-shell .settings-page .ai-settings-actions { border-color:var(--theme-line-soft); }
-.app-shell .settings-page .tts-api-settings h3 {
-  font:650 17px/1.35 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
-  color:var(--theme-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
 }
 
-/* Codex: keep its dock and model controls intact; make the visual hierarchy
- * match the same system surfaces, dividers and neutral controls. */
+.app-shell .settings-page .page-heading-row {
+  margin-bottom: 24px;
+}
+
+.app-shell .settings-page .page-heading-row h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.028em;
+}
+
+.app-shell .settings-page .page-heading-row p {
+  color: var(--theme-muted);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.app-shell .settings-grid {
+  gap: 16px;
+}
+
+.app-shell .settings-grid > :is(.settings-card, .tts-api-settings) {
+  margin-top: 0;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 15px;
+  background: var(--theme-surface);
+  box-shadow: var(--theme-shadow-sm);
+  padding: 22px 24px;
+}
+
+.app-shell .settings-page .settings-card-heading {
+  margin-bottom: 16px;
+  gap: 14px;
+}
+
+.app-shell .settings-page .settings-card-heading h2 {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  font-size: 17px;
+  line-height: 1.35;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--theme-ink);
+}
+
+.app-shell .settings-page .settings-card-heading > div > span {
+  color: var(--theme-accent);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+}
+
+.app-shell .settings-page .settings-card-heading small {
+  color: var(--theme-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.app-shell .settings-page .settings-list {
+  border-color: var(--theme-line-soft);
+}
+
+.app-shell .settings-page .settings-row {
+  min-height: 64px;
+  gap: 14px;
+  border-color: var(--theme-line-soft);
+}
+
+.app-shell .settings-page :is(.settings-row strong, .settings-label) {
+  color: var(--theme-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.app-shell .settings-page :is(.settings-row > div > span, .settings-help) {
+  color: var(--theme-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.app-shell .settings-page .settings-subgroup {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-color: var(--theme-line-soft);
+}
+
+.app-shell .settings-page .settings-card-heading + .settings-subgroup {
+  margin-top: 0;
+}
+
+.app-shell .settings-page .settings-switch {
+  flex: none;
+  background: var(--theme-soft);
+  border-color: var(--theme-line);
+}
+
+.app-shell .settings-page .settings-switch.is-on {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+}
+
+.app-shell .settings-page .settings-switch:focus-visible,
+.app-shell .codex-prep-panel :is(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+
+.app-shell .settings-page .ai-field > span {
+  color: var(--theme-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.app-shell .settings-page .ai-field :is(input, select),
+.app-shell .settings-page .tts-api-settings :is(input, select) {
+  min-height: 38px;
+  padding-inline: 11px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
+.app-shell .settings-page .ai-field :is(input, select):focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+
+.app-shell .settings-page :is(.ai-field > small, .ai-model-hint) {
+  font-size: 11.5px;
+  color: var(--theme-muted);
+  line-height: 1.55;
+}
+
+.app-shell .settings-page .ai-settings-button {
+  min-height: 36px;
+  border-radius: 9px;
+  padding-inline: 13px;
+  font-size: 12.5px;
+  font-weight: 550;
+  box-shadow: none;
+}
+
+.app-shell .settings-page .ai-settings-button:hover:not(:disabled) {
+  transform: none;
+}
+
+.app-shell .settings-page .ai-settings-button.is-primary {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: var(--theme-on-accent);
+}
+
+.app-shell .settings-page .ai-settings-button.is-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--theme-accent) 88%, #ffffff);
+  border-color: var(--theme-accent);
+}
+
+.app-shell .settings-page .ai-settings-button.is-danger {
+  color: var(--theme-danger);
+  border-color: var(--theme-line);
+}
+
+.app-shell .settings-page .ai-settings-actions {
+  border-color: var(--theme-line-soft);
+}
+
+.app-shell .settings-page .tts-api-settings h3 {
+  font: 650 17px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  color: var(--theme-ink);
+}
+
+/* Appearance & Reading: macOS-style mini page preview theme picker & segmented controls */
+.app-shell .settings-page [aria-label="全局主题"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 12px;
+  max-width: 680px;
+  padding: 2px 0 4px;
+  border: 0;
+  background: transparent;
+}
+
+.app-shell .settings-page [data-theme-swatch] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 4px 2px 2px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--theme-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 150ms ease, transform 150ms ease;
+}
+
+.app-shell .settings-page [data-theme-swatch]:hover {
+  color: var(--theme-ink);
+  background: transparent;
+  border-color: transparent;
+}
+
+.app-shell .settings-page [data-theme-swatch].is-active {
+  color: var(--theme-accent);
+  font-weight: 650;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.app-shell .settings-page [data-theme-swatch] .theme-swatch {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  flex: none;
+  aspect-ratio: 16 / 10;
+  border-radius: 11px;
+  border: 1px solid var(--theme-line);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.app-shell .settings-page [data-theme-swatch]:hover .theme-swatch {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.app-shell .settings-page [data-theme-swatch].is-active .theme-swatch {
+  border-color: var(--theme-accent);
+  box-shadow:
+    0 0 0 2px var(--theme-surface),
+    0 0 0 4px var(--theme-accent),
+    0 8px 20px color-mix(in oklab, var(--theme-accent) 24%, transparent);
+}
+
+/* Miniature reading page lines inside each theme preview card */
+.app-shell .settings-page [data-theme-swatch] .theme-swatch::before,
+.app-shell .settings-page [data-theme-swatch] .theme-swatch::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Subtle top toolbar bar inside thumbnail */
+.app-shell .settings-page [data-theme-swatch] .theme-swatch::before {
+  inset: 0 0 auto 0;
+  height: 26%;
+  border-bottom: 1px solid rgba(128, 128, 138, 0.16);
+  background: rgba(128, 128, 138, 0.08);
+}
+
+/* Accent headline + two body text lines inside thumbnail */
+.app-shell .settings-page [data-theme-swatch] .theme-swatch::after {
+  left: 14%;
+  right: 14%;
+  top: 42%;
+  bottom: 16%;
+  border-radius: 2px;
+  background:
+    linear-gradient(90deg, var(--swatch-accent, #0071e3) 0 42%, transparent 42%) 0 0 / 100% 22% no-repeat,
+    linear-gradient(90deg, var(--swatch-line, rgba(29, 29, 31, 0.34)) 0 100%, transparent 100%) 0 54% / 100% 16% no-repeat,
+    linear-gradient(90deg, var(--swatch-line-soft, rgba(29, 29, 31, 0.2)) 0 74%, transparent 74%) 0 100% / 100% 16% no-repeat;
+}
+
+.app-shell .settings-page [data-theme-swatch="light"] .theme-swatch {
+  background: linear-gradient(180deg, #ffffff, #f5f5f7);
+  border-color: rgba(0, 0, 0, 0.14);
+  --swatch-accent: #0071e3;
+  --swatch-line: rgba(29, 29, 31, 0.38);
+  --swatch-line-soft: rgba(29, 29, 31, 0.2);
+}
+
+.app-shell .settings-page [data-theme-swatch="sepia"] .theme-swatch {
+  background: linear-gradient(180deg, #fbf8f0, #f0e8d7);
+  border-color: rgba(112, 86, 52, 0.24);
+  --swatch-accent: #9a5b25;
+  --swatch-line: rgba(68, 50, 26, 0.42);
+  --swatch-line-soft: rgba(68, 50, 26, 0.22);
+}
+
+.app-shell .settings-page [data-theme-swatch="green"] .theme-swatch {
+  background: linear-gradient(180deg, #f6faf7, #e4efe7);
+  border-color: rgba(36, 74, 53, 0.22);
+  --swatch-accent: #1f7a5c;
+  --swatch-line: rgba(30, 45, 36, 0.4);
+  --swatch-line-soft: rgba(30, 45, 36, 0.22);
+}
+
+.app-shell .settings-page [data-theme-swatch="blue"] .theme-swatch {
+  background: linear-gradient(180deg, #273e74, #1c2e59);
+  border-color: rgba(158, 211, 237, 0.28);
+  --swatch-accent: #9ed3ed;
+  --swatch-line: rgba(240, 245, 255, 0.52);
+  --swatch-line-soft: rgba(240, 245, 255, 0.28);
+}
+
+.app-shell .settings-page [data-theme-swatch="dark"] .theme-swatch {
+  background: linear-gradient(180deg, #222227, #141417);
+  border-color: rgba(255, 255, 255, 0.16);
+  --swatch-accent: #4c9aff;
+  --swatch-line: rgba(245, 245, 247, 0.48);
+  --swatch-line-soft: rgba(245, 245, 247, 0.24);
+}
+
+.app-shell .settings-page [data-theme-swatch="system"] .theme-swatch {
+  background: linear-gradient(90deg, #ffffff 0 50%, #19191d 50% 100%);
+  border-color: rgba(128, 128, 140, 0.34);
+  --swatch-accent: #0a84ff;
+  --swatch-line: rgba(128, 128, 140, 0.55);
+  --swatch-line-soft: rgba(128, 128, 140, 0.34);
+}
+
+/* Segmented controls (正文字体 / 行距 / 正文宽度 / 默认发音) */
+.app-shell .settings-page .settings-segmented-control:not([aria-label="全局主题"]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: auto;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 10px;
+  background: var(--theme-soft);
+}
+
+.app-shell .settings-page .settings-segmented-control:not([aria-label="全局主题"]) button {
+  min-width: 74px;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--theme-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.app-shell .settings-page .settings-segmented-control:not([aria-label="全局主题"]) button:hover:not(.is-active) {
+  color: var(--theme-ink);
+}
+
+.app-shell .settings-page .settings-segmented-control:not([aria-label="全局主题"]) button.is-active {
+  border-color: var(--theme-line-soft);
+  background: var(--theme-raised);
+  color: var(--theme-ink);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+
+/* Font-size stepper (字号) */
+.app-shell .settings-page .settings-stepper {
+  display: inline-grid;
+  grid-template-columns: 44px 72px 44px;
+  align-items: center;
+  width: auto;
+  padding: 3px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 10px;
+  background: var(--theme-soft);
+}
+
+.app-shell .settings-page .settings-stepper button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--theme-raised);
+  color: var(--theme-ink);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.app-shell .settings-page .settings-stepper button:hover:not(:disabled) {
+  background: var(--theme-selected);
+  color: var(--theme-accent);
+}
+
+.app-shell .settings-page .settings-stepper strong {
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--theme-ink);
+}
+
+/* AI Reading Assistant / Codex Dock */
 .app-shell .codex-prep-panel,
 .app-shell.theme-night .codex-prep-panel {
-  background:var(--theme-surface);
-  border:1px solid var(--theme-line);
-  border-radius:12px;
-  color:var(--theme-ink);
-  box-shadow:none;
-  padding:18px;
-  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-line);
+  border-radius: 15px;
+  color: var(--theme-ink);
+  box-shadow: var(--theme-shadow);
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
 }
+
 .app-shell .codex-prep-heading h2 {
-  color:var(--theme-ink);
-  font-size:17px;
-  font-weight:650;
-  line-height:1.4;
-  letter-spacing:-.015em;
+  color: var(--theme-ink);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
 }
+
 .app-shell .codex-prep-heading p,
 .app-shell .codex-prep-panel .codex-prep-small {
-  color:var(--theme-muted);
-  font-size:12px;
-  line-height:1.6;
+  color: var(--theme-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
+
 .app-shell .codex-prep-access,
 .app-shell .codex-prep-auth,
 .app-shell .codex-prep-display-settings,
-.app-shell .codex-prep-saved { border-color:var(--theme-line-soft); }
+.app-shell .codex-prep-saved {
+  border-color: var(--theme-line-soft);
+}
+
 .app-shell .codex-prep-options > summary {
-  background:transparent;
-  color:var(--theme-muted);
-  border-radius:8px;
+  background: transparent;
+  color: var(--theme-muted);
+  border-radius: 8px;
 }
+
 .app-shell .codex-prep-options-content {
-  border:1px solid var(--theme-line);
-  background:var(--theme-bg);
-  border-radius:9px;
-  box-shadow:none;
+  border: 1px solid var(--theme-line-soft);
+  background: var(--theme-bg);
+  border-radius: 11px;
+  box-shadow: none;
 }
+
 .app-shell .codex-prep-quick-prompts > div .text-button {
-  min-height:30px;
-  padding:5px 9px;
-  background:var(--theme-bg);
-  border:1px solid var(--theme-line);
-  border-radius:8px;
-  color:var(--theme-secondary);
-  font-size:12px;
-  font-weight:500;
+  min-height: 30px;
+  padding: 5px 11px;
+  background: var(--theme-bg);
+  border: 1px solid var(--theme-line);
+  border-radius: 999px;
+  color: var(--theme-secondary);
+  font-size: 12px;
+  font-weight: 500;
 }
+
 .app-shell .codex-prep-quick-prompts > div .text-button:hover:not(:disabled) {
-  background:var(--theme-selected);
-  border-color:var(--theme-line);
-  color:var(--theme-ink);
+  background: var(--theme-selected);
+  border-color: color-mix(in oklab, var(--theme-accent) 36%, var(--theme-line));
+  color: var(--theme-accent);
 }
+
 .app-shell .codex-prep-turn.assistant .chat-markdown {
-  border:0;
-  border-radius:0;
-  background:transparent;
-  box-shadow:none;
-  padding:8px 2px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 8px 2px 12px;
 }
+
 .app-shell .codex-prep-chat .codex-prep-turn.user > .chat-markdown {
-  border-radius:11px;
-  background:var(--theme-selected);
+  border-radius: 14px 14px 4px 14px;
+  background: var(--theme-selected);
+  border: 1px solid color-mix(in oklab, var(--theme-accent) 22%, transparent);
 }
-.app-shell .codex-prep-label :is(select,textarea),
+
+.app-shell .codex-prep-label :is(select, textarea),
 .app-shell .codex-prep-composer-input textarea {
-  border:1px solid var(--theme-line);
-  border-radius:8px;
-  background:var(--theme-raised);
-  color:var(--theme-ink);
+  border: 1px solid var(--theme-line);
+  border-radius: 10px;
+  background: var(--theme-raised);
+  color: var(--theme-ink);
 }
+
 .app-shell .codex-prep-draft,
 .app-shell .codex-prep-lesson {
-  background:var(--theme-surface);
-  border-color:var(--theme-line-soft);
-  border-radius:10px;
-  box-shadow:none;
+  background: var(--theme-bg);
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px;
+  box-shadow: none;
 }
-.app-shell .codex-prep-saved button { border-color:var(--theme-line-soft); }
-@media (max-width:640px) {
-  .app-shell .settings-grid > :is(.settings-card,.tts-api-settings) { padding:16px; }
-  .app-shell .settings-page .settings-card-heading { flex-wrap:wrap; }
-  .app-shell .settings-page .settings-card-heading small { max-width:none; text-align:left; }
-  .app-shell .codex-prep-panel { padding:15px; }
+
+.app-shell .codex-prep-saved button {
+  border-color: var(--theme-line-soft);
 }
-@media (prefers-reduced-motion:reduce) {
-  .app-shell .settings-page .settings-switch { transition:none; }
+
+@media (max-width: 640px) {
+  .app-shell .settings-grid > :is(.settings-card, .tts-api-settings) { padding: 16px; }
+  .app-shell .settings-page .settings-card-heading { flex-wrap: wrap; }
+  .app-shell .settings-page .settings-card-heading small { max-width: none; text-align: left; }
+  .app-shell .codex-prep-panel { padding: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .settings-page .settings-switch { transition: none; }
 }

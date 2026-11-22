@@ -15,31 +15,42 @@ function openCache(): Promise<IDBDatabase> {
   });
 }
 
-async function readCache<T>(read: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function readRequest<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readCache<T>(read: (store: IDBObjectStore) => Promise<T>): Promise<T> {
   const database = await openCache();
   try {
-    return await new Promise<T>((resolve, reject) => {
-      const request = read(database.transaction("paragraphs").objectStore("paragraphs"));
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+    return await read(database.transaction("paragraphs").objectStore("paragraphs"));
   } finally {
     database.close();
   }
 }
 
 export async function loadIssueTranslations(engineId: string, issueId: string) {
-  const entries = await readCache<CachedTranslation[]>(store => store.index("byIssue").getAll([engineId, issueId]));
+  const entries = await readCache<CachedTranslation[]>(store => readRequest(store.index("byIssue").getAll([engineId, issueId])));
   return entries.map(entry => entry.record);
 }
 
+export async function loadBookTranslations(engineId: string, documentIds: string[]) {
+  const chapters = await readCache<CachedTranslation[][]>(store => {
+    const index = store.index("byDocument");
+    return Promise.all(documentIds.map(documentId => readRequest(index.getAll([engineId, documentId]))));
+  });
+  return chapters.flatMap(entries => entries.map(entry => entry.record));
+}
+
 export async function loadIssueDocumentTranslations(engineId: string, documentId: string) {
-  const entries = await readCache<CachedTranslation[]>(store => store.index("byDocument").getAll([engineId, documentId]));
+  const entries = await readCache<CachedTranslation[]>(store => readRequest(store.index("byDocument").getAll([engineId, documentId])));
   return entries.map(entry => entry.record);
 }
 
 export async function readIssueTranslation(engineId: string, key: string) {
-  const entry = await readCache<CachedTranslation | undefined>(store => store.get([engineId, key]));
+  const entry = await readCache<CachedTranslation | undefined>(store => readRequest(store.get([engineId, key])));
   return entry?.record;
 }
 

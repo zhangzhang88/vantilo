@@ -4,6 +4,24 @@ import {createRequire} from 'node:module';
 import {mkdtemp,rm} from 'node:fs/promises';
 import path from 'node:path';import os from 'node:os';
 const require=createRequire(import.meta.url);const {startPortableReader}=require('../electron/portable-reader-service.cjs');const {PortableReaderSupervisor}=require('../electron/portable-reader-supervisor.cjs');
+it.each([
+ [{ code: 'EADDRINUSE', port: 5174 }, '端口 5174 已被占用'],
+ [{ code: 'EADDRINUSE', port: 5175 }, '端口 5175 已被占用'],
+ [{ code: 'EACCES', port: 5175 }, '内置阅读服务启动失败'],
+ [{ code: 'EADDRINUSE', port: 9999 }, '内置阅读服务启动失败'],
+])('reports only recognized Reader bind failures as port conflicts (%j)', async (failure, expected) => {
+ const child = new EventEmitter();
+ child.postMessage = vi.fn();
+ child.kill = vi.fn();
+ const supervisor = new PortableReaderSupervisor({
+  utilityProcess: { fork: () => child }, installSessionCookie: vi.fn(), clearSessionCookie: vi.fn(),
+ });
+ const startup = supervisor.start();
+ child.emit('message', { type: 'error', ...failure });
+ await expect(startup).rejects.toThrow(expected);
+ expect(supervisor.getStatus()).toMatchObject({ status: 'error', error: expect.stringContaining(expected) });
+ expect(child.kill).toHaveBeenCalledOnce();
+});
 it('separates persistent magazine settings from software settings and validates request scope',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'reader-update-settings-'));let server;
  const sessionToken='e'.repeat(64),sessionCookie='__Host-vantilo-reader='+sessionToken;

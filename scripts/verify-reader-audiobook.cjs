@@ -21,6 +21,9 @@ const deadline = setTimeout(() => {
 
 const opening = '阿岚把 MacBook 放回了桌上。';
 const second = '夜色渐深，海边只剩下远处的灯火。';
+const chapterDate = '·2005年12月8日';
+const secondChapterOpening = '旅人沿着山道走了一段。';
+const endPageMarker = '第 18 页';
 const englishBody = 'The lantern was still burning when the travelers reached the ridge. They had walked there from the valley with only a few things in their bags, and they were ready to rest. The path that they had taken was steep and narrow. From the top they could see the river, which turned west behind the hills. This was the place that the woman from the village had described. She said that the light would still be there when they arrived, and she was right.';
 
 const englishFollowup = 'The next morning they walked down toward the river. There was mist among the reeds, but they could see the old bridge where the footpath crossed the water. A woman with a blue coat was already waiting on the other side. She had brought a map from the village, and they spread it across the boards together. There were three roads marked on it, but only one led to the southern hill. They chose that road and carried the lantern with them.';
@@ -53,16 +56,24 @@ async function makeEpub(title = '海边灯火测试书', languages = ['zh-Hant']
   const chapters = [
     ['cover', '版权页', '此处版权说明是测试用的合成文本。'],
     ['one', '第一章', opening],
-    ['two', '第二章', '旅人沿着山道走了一段。', second],
+    ['two', '第二章', chapterDate, secondChapterOpening, second, endPageMarker],
   ];
   if (englishOnly) chapters.splice(0, chapters.length, ['one', 'Chapter 1', englishBody], ['two', 'Chapter 2', englishFollowup]);
   zip.file('mimetype', 'application/epub+zip');
   zip.file('cover.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGMwLi8HIgYIBQAemgSFqJ88IAAAAABJRU5ErkJggg==', 'base64'));
   zip.file('META-INF/container.xml', '<container><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>');
-  zip.file('book.opf', `<package version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${title}</dc:title><dc:creator>测试作者</dc:creator>${languages.map(language => `<dc:language>${language}</dc:language>`).join('')}<dc:identifier>synthetic-audiobook-${title}</dc:identifier></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="cover-img" href="cover.png" media-type="image/png" properties="cover-image"/>${chapters.map(([id]) => `<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`).join('')}</manifest><spine>${chapters.map(([id]) => `<itemref idref="${id}"/>`).join('')}</spine></package>`);
+  const endnotesItem = englishOnly ? '<item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>' : '';
+  if (englishOnly) zip.file('notes.xhtml', '<html><body><ol><li id="note-26"><p>Original synthetic source for the ridge.</p><a role="doc-backlink" href="one.xhtml#ref-26">Go back</a></li></ol></body></html>');
+  zip.file('book.opf', `<package version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${title}</dc:title><dc:creator>测试作者</dc:creator>${languages.map(language => `<dc:language>${language}</dc:language>`).join('')}<dc:identifier>synthetic-audiobook-${title}</dc:identifier></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="cover-img" href="cover.png" media-type="image/png" properties="cover-image"/>${chapters.map(([id]) => `<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`).join('')}${endnotesItem}</manifest><spine>${chapters.map(([id]) => `<itemref idref="${id}"/>`).join('')}</spine></package>`);
   zip.file('nav.xhtml', `<html xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>${chapters.map(([id, title]) => `<li><a href="${id}.xhtml">${title}</a></li>`).join('')}</ol></nav></body></html>`);
-  for (const [id, title, ...paragraphs] of chapters) zip.file(`${id}.xhtml`,
-    `<html><head><title>${title}</title></head><body><h1>${title}</h1>${englishOnly && id === "one" ? "<h2>The Ridge</h2>" : ""}${paragraphs.map(paragraph => `<p>${paragraph}</p>`).join('')}</body></html>`);
+  for (const [id, title, ...paragraphs] of chapters) {
+    const isEnglishOpening = englishOnly && id === 'one';
+    const reference = isEnglishOpening
+      ? '<span class="endnote-reference"><a epub:type="noteref" id="ref-26" href="notes.xhtml#note-26">26</a></span>'
+      : '';
+    zip.file(`${id}.xhtml`,
+      `<html xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${title}</title></head><body><h1>${title}</h1>${isEnglishOpening ? "<h2>The Ridge</h2>" : ""}${paragraphs.map(paragraph => `<p>${paragraph}${reference}</p>`).join('')}</body></html>`);
+  }
   return zip.generateAsync({ type: 'base64' });
 }
 
@@ -88,6 +99,12 @@ async function main() {
   ];
   let retryFixture = true;
   let issueBodyAttempts = 0;
+  let bookBatchBodyAttempts = 0;
+  let bookBatchAborts = 0;
+  const codexBatchInputs = [];
+  const codexFallbackInputs = [];
+  let finishBookBatch;
+  let testBookBatch = false;
   const issueBodyTranslation = '这是整期任务写入的第二篇文章译文。';
   const catalogRequests = [];
   const provider = createServer(async (request, response) => {
@@ -112,6 +129,21 @@ async function main() {
     const token = randomBytes(32).toString('hex');
     service = await startPortableReader({ assetsDir, libraryRoot: process.env.VANTILO_TEST_READER_ROOT, apiPort: 0, webPort: 0,
       autoSync: false, sessionToken: token, enableTranslation: true, enableReaderPreviews: process.env.VANTILO_CATALOG_READER_PREVIEW === "1",
+      getAccountStatus: async () => ({ connected: true }),
+      listModels: async () => ({ models: [{ id: 'gpt-fixture-luna', displayName: 'Fixture Luna', defaultEffort: 'low' }] }),
+      runAi: async ({ input, taskKind, modelId }) => {
+        assert.equal(modelId, 'gpt-fixture-luna');
+        if (taskKind !== 'translation-batch') {
+          codexFallbackInputs.push(input);
+          return '山脊。';
+        }
+        const items = JSON.parse(input);
+        codexBatchInputs.push(items.map(item => item.text));
+        const translations = items.filter(item => item.text !== 'The Ridge').reverse().map(({ id, text }) => ({
+          id, translation: text === englishBody ? translatedFirst : text === englishFollowup ? translatedFollowup : '测试章节标题。',
+        }));
+        return { output: JSON.stringify({ translations }), timings: { queueMs: 20, preparationMs: 300, modelMs: 1350 } };
+      },
       customApi: {
         get: async () => ({ configured: true, ...profiles[0], activeId: profiles[0].id, profiles }),
         complete: async ({ input, selectedProfileId, signal }) => {
@@ -122,6 +154,19 @@ async function main() {
           }
           if (selectedProfileId === profiles[2].id) {
             selectedApiRequests.push(input);
+            if (testBookBatch && input === englishBody) {
+              bookBatchBodyAttempts++;
+              signal.throwIfAborted();
+              return new Promise((resolve, reject) => {
+                const abort = () => { bookBatchAborts++; reject(signal.reason); };
+                signal.addEventListener('abort', abort, { once: true });
+                finishBookBatch = () => {
+                  signal.removeEventListener('abort', abort);
+                  resolve(translatedFirst);
+                };
+              });
+            }
+            if (testBookBatch && input === englishFollowup) return translatedFollowup;
             return '这段译文来自另一个已保存的测试模型。';
           }
           assert.equal(selectedProfileId, profiles[0].id);
@@ -183,7 +228,7 @@ async function main() {
             const [reader, setReader] = React.useState(true);
             const [target, setTarget] = React.useState(null);
             return <main className="vantilo-macos-shell" style={{display:"grid",height:"100vh",gridTemplateRows:"52px minmax(0,1fr) auto",gridTemplateColumns:"56px minmax(0,1fr)"}}>
-              <nav style={{gridColumn:"1 / -1"}}><button onClick={() => setReader(false)}>Agent 工作台</button></nav>
+              <nav style={{gridColumn:"1 / -1"}}><button onClick={() => setReader(false)}>Agent 工作台</button><button onClick={() => setReader(true)}>返回阅读</button></nav>
               <div className="workspace-sheet" style={{gridRow:2,gridColumn:2,display:"grid",minHeight:0}}>
                 <MagazineReaderModule visible={reader} status="ready" error={null} onRetry={() => {}}
                   onBack={() => setReader(false)} audiobookTarget={target} onShowReader={() => setReader(true)} />
@@ -270,6 +315,7 @@ async function main() {
     const player = 'document.querySelector(".audiobook-dock")';
     await untilHost(`${player}?.querySelector("small").innerText.includes("第一章")`);
     await untilHost(`${player}?.querySelector("small").innerText.includes("第二章") && ${player}.dataset.phase === 'playing'`);
+    assert.ok(spoken.includes(secondChapterOpening) && !spoken.includes(chapterDate), '自动跨章应从正文开始');
     const resumeLookup = `JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('vantilo-book-audiobook-v1:'))) || '[]')[0]`;
     await untilHost(`${player}?.querySelector("img")?.naturalWidth > 0`);
     await untilHost(`(() => {
@@ -430,6 +476,14 @@ async function main() {
     const resumedBook = await until(`document.querySelector('.reading-body')?.textContent.includes(${JSON.stringify(englishFollowup)})`);
     await resumedBook.executeJavaScript(`document.querySelector('.article-footer-nav button:first-child').click()`, true);
     await until(`document.querySelector('.reading-body')?.textContent.includes(${JSON.stringify(englishBody)})`);
+    const referenceButton = 'document.querySelector(".reading-body sup button[aria-label=\'查看注释 26\']")';
+    const noteReader = await until(`Boolean(${referenceButton})`);
+    assert.equal(await noteReader.executeJavaScript(`${referenceButton}.closest('p').textContent`), englishBody,
+      '正文文本排除注释编号，但保留可点击的上标');
+    await click('查看注释 26');
+    await until(`document.querySelector('.book-source-reference-dialog[open] p')?.textContent === 'Original synthetic source for the ridge.'`);
+    await noteReader.executeJavaScript('document.querySelector(".book-source-reference-dialog form button").click()', true);
+    await until(`!document.querySelector('.book-source-reference-dialog[open]')`);
     const fullButton = 'document.querySelector(".reader-full-translation-button")';
     const fullView = await until(`${fullButton} && !${fullButton}.disabled`);
     const profileCount = profileRequests.length;
@@ -723,6 +777,149 @@ async function main() {
     console.log('PASS: 播放器可回到对应原文或译文，原文高亮会随播放换段并滚入视口，关闭后清除高亮');
     console.log('PASS: 纯中文译文随播放换段自动滚动，暂停后可浏览，点回到译文重新定位');
     console.log('PASS: 期刊与英文电子书恢复各篇章的中英对照并复用译文，主动收起后回到纯原文');
+
+    await click('电子书');
+    await click('全部');
+    const chineseCard = `[...document.querySelectorAll('.book-library-card')].find(card => card.querySelector('strong')?.textContent === '海边灯火测试书')`;
+    const shelf = await until(`Boolean(${chineseCard})`);
+    await shelf.executeJavaScript(`(${chineseCard}).click()`, true);
+    const datedBook = await until(`Boolean(${languageControl})`);
+    await datedBook.executeJavaScript(`(() => {
+      const select = ${languageControl};
+      select.value = 'zh';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`, true);
+    await click('原书目录');
+    const chapterRow = `[...document.querySelectorAll('.book-toc-row')].find(row => row.innerText.includes('第二章'))`;
+    const datedToc = await until(`Boolean(${chapterRow})`);
+    await datedToc.executeJavaScript(`(${chapterRow}).click()`, true);
+    const blocks = `[...document.querySelectorAll('.reading-body .reading-paragraph-block')]`;
+    const topListeningButton = `[...document.querySelectorAll('button.toolbar-button')].some(button =>
+      ['从这里听', '从当前段听', '听中文译文'].includes(button.textContent.trim()))`;
+    const datedReader = await until(`${blocks}[0]?.textContent.includes(${JSON.stringify(chapterDate)})`);
+    assert.equal(await datedReader.executeJavaScript(topListeningButton), false, '整篇模式不显示顶部听书入口');
+    await click('逐句');
+    const sentenceReader = await until(`Boolean(document.querySelector('.sentence-reading-body'))`);
+    assert.equal(await sentenceReader.executeJavaScript(topListeningButton), false, '逐句模式不显示顶部听书入口');
+    await click('整篇');
+
+    const selectedParagraph = `[...document.querySelectorAll('.reading-paragraph-block')].find(block => block.textContent.includes(${JSON.stringify(second)}))`;
+    const playSelected = `${selectedParagraph}?.querySelector('.paragraph-listen-button')`;
+    const selectedReader = await until(`Boolean(${playSelected})`);
+    for (const text of [chapterDate, endPageMarker]) {
+      assert.equal(await selectedReader.executeJavaScript(`(() => {
+        const block = ${blocks}.find(item => item.textContent.includes(${JSON.stringify(text)}));
+        return Boolean(block && !block.querySelector('.paragraph-listen-button'));
+      })()`), true);
+    }
+    const selectedRequestStart = spoken.length;
+    await selectedReader.executeJavaScript(`(${playSelected}).click()`, true);
+    await untilHost(`${player}?.dataset.phase === 'playing'`);
+    await until(`${selectedParagraph}?.classList.contains('is-audiobook-source')`);
+    assert.equal(spoken[selectedRequestStart], second, '中文原文从本段听应直接合成所选段落');
+    await clickHost('关闭播放器');
+    console.log('PASS: 中文电子书整篇与逐句模式隐藏顶部听书入口，正文可选段且首条 TTS 请求匹配');
+    await click('返回本书目录');
+    await click('← 返回电子书');
+    const batchBookShelf = await until(`Boolean(${englishCard})`);
+    await batchBookShelf.executeJavaScript(`(${englishCard}).click()`, true);
+    const secondBookChapter = `[...document.querySelectorAll('.book-toc-row')].find(row => row.textContent.includes('Chapter 2'))`;
+    const batchBookDetail = await until(`Boolean(${secondBookChapter})`);
+    await batchBookDetail.executeJavaScript(`(${secondBookChapter}).click()`, true);
+    await until(`document.querySelector('.reading-body')?.textContent.includes(${JSON.stringify(englishFollowup)})`);
+    await click('返回本书目录');
+    await click('翻译全书');
+    const batchSettings = await until(`[...${issueModel}.options].some(option => option.textContent.includes('fixture-detailed'))`);
+    await batchSettings.executeJavaScript(`(() => {
+      const select = ${issueModel};
+      select.value = [...select.options].find(item => item.textContent.includes('fixture-detailed')).value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`, true);
+    await until(`document.querySelector('.issue-translation-options')?.innerText.includes('待翻译 2 章')`);
+    testBookBatch = true;
+    const batchFirstRequest = selectedApiRequests.length;
+    await click('开始翻译');
+    await until(`document.querySelector('.issue-translation-progress')?.innerText.includes('1/2 章')`);
+    for (let attempt = 0; bookBatchBodyAttempts < 1 && attempt < 100; attempt++) await delay(50);
+    assert.equal(bookBatchBodyAttempts, 1);
+    const firstRunInputs = selectedApiRequests.slice(batchFirstRequest);
+    assert.ok(firstRunInputs.indexOf(englishFollowup) < firstRunInputs.indexOf(englishBody) && firstRunInputs.includes(englishFollowup),
+      '按最近阅读位置优先完成第二章，然后补译第一章');
+    await click('← 返回电子书');
+    const otherBook = await until(`Boolean(${chineseCard})`);
+    await otherBook.executeJavaScript(`(${chineseCard}).click()`, true);
+    const backgroundStatus = 'document.querySelector(".background-book-translation")';
+    await until(`document.querySelector('.book-detail-hero h1')?.textContent === '海边灯火测试书' &&
+      ${backgroundStatus}?.textContent.includes('1/2 章')`);
+    await click('期刊');
+    const browsePublication = await until(`Boolean(${publicationCard})`);
+    await browsePublication.executeJavaScript(`${publicationCard}.click()`, true);
+    const browseIssue = await until(`Boolean(${issueCard})`);
+    await browseIssue.executeJavaScript(`${issueCard}.click()`, true);
+    const browseArticle = await until(`Boolean(${magazineArticle})`);
+    await browseArticle.executeJavaScript(`(${magazineArticle}).click()`, true);
+    await until(`document.querySelector('.reading-body') && ${backgroundStatus}?.textContent.includes('后台翻译全书中')`);
+    assert.equal(bookBatchAborts, 0, '切换电子书及阅读期刊不应取消正在翻译的请求');
+    await click('查看《Lantern Fixture》');
+    await click('暂停全书翻译');
+    const pausedBook = await until(`document.querySelector('.issue-translation-progress')?.innerText.includes('已暂停')`);
+    await pausedBook.executeJavaScript('setTimeout(() => location.reload(), 0); true');
+    await until(`!document.querySelector('.issue-translation-progress') && [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '继续翻译全书')`);
+    await click('继续翻译全书');
+    await until(`${issueModel}?.selectedOptions[0]?.textContent.includes('fixture-detailed') &&
+      document.querySelector('.issue-translation-options')?.innerText.includes('待翻译 1 章')`);
+    assert.equal(bookBatchAborts, 1, '显式暂停取消正在处理的段落');
+    const resumeRequest = selectedApiRequests.length;
+    await click('开始翻译');
+    for (let attempt = 0; bookBatchBodyAttempts < 2 && attempt < 100; attempt++) await delay(50);
+    assert.equal(bookBatchBodyAttempts, 2);
+    await clickHost('Agent 工作台');
+    await untilHost(`document.querySelector('section[aria-label="Magazine Reader"]')?.hidden`);
+    finishBookBatch();
+    await until(`document.querySelector('.issue-translation-progress')?.textContent.includes('全书译文已就绪 · 2/2 章')`);
+    await untilHost(`document.querySelector('section[aria-label="Magazine Reader"]')?.hidden`);
+    assert.equal(bookBatchAborts, 1, '在 Agent 工作台期间完成任务，Reader 保持隐藏');
+    await clickHost('返回阅读');
+    assert.deepEqual(selectedApiRequests.slice(resumeRequest), [englishBody], '重新打开后只补未完成的段落');
+
+    const firstBookChapter = `[...document.querySelectorAll('.book-toc-row')].find(row => row.textContent.includes('Chapter 1'))`;
+    const completedBook = await until(`Boolean(${firstBookChapter})`);
+    await completedBook.executeJavaScript(`(${firstBookChapter}).click()`, true);
+    const bookReader = await until(`${fullButton} && !${fullButton}.disabled &&
+      ${selectEngine}?.selectedOptions[0]?.textContent.includes('fixture-detailed')`);
+    const requestsBeforeBookReuse = translationCalls.length;
+    await bookReader.executeJavaScript(`${fullButton}.click()`, true);
+    await until(`document.querySelector('.reading-body')?.innerText.includes(${JSON.stringify(translatedFirst)})`);
+    const beforeBatchPlayback = spoken.length;
+    await click('听中文译文');
+    await untilHost(`${player}?.innerText.includes("Chapter 2") && ${player}.dataset.phase === 'playing'`);
+    assert.ok(spoken.slice(beforeBatchPlayback).includes(translatedFollowup));
+    assert.equal(translationCalls.length, requestsBeforeBookReuse, '全文翻译及跨章听书均复用全书译文');
+    await clickHost('关闭播放器');
+    console.log('PASS: 全书翻译优先最近阅读位置，切换书刊不中断，在 Agent 工作台完成，暂停重载后续跑，全文翻译和跨章听书零重复翻译请求');
+    await click('返回本书目录');
+    await click('翻译全书…');
+    const lunaSettings = await until(`${issueModel}?.querySelector('option[value="codex:gpt-fixture-luna"]')`);
+    await lunaSettings.executeJavaScript(`(() => {
+      const select = ${issueModel};
+      select.value = 'codex:gpt-fixture-luna';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`, true);
+    await until(`document.querySelector('.issue-translation-options')?.textContent.includes('待翻译 2 章')`);
+    await click('开始翻译');
+    await until(`document.querySelector('.issue-translation-progress')?.textContent.includes('全书译文已就绪 · 2/2 章')`);
+    assert.equal(codexBatchInputs.length, 2);
+    assert.ok(codexBatchInputs.every(batch => batch.length >= 2 && batch.length <= 6));
+    assert.deepEqual(codexFallbackInputs, ['The Ridge'], '只重新请求批次中缺少的译文');
+    await until(`document.querySelector('.issue-translation-progress details')?.textContent.includes('会话准备 0.3 秒 · 模型响应 1.4 秒')`);
+    const batchReady = await until(`Boolean(${firstBookChapter})`);
+    await batchReady.executeJavaScript(`(${firstBookChapter}).click()`, true);
+    const lunaReader = await until(`${fullButton} && !${fullButton}.disabled && ${selectEngine}?.value === 'codex:gpt-fixture-luna'`);
+    await lunaReader.executeJavaScript(`${fullButton}.click()`, true);
+    await until(`document.querySelector('.reader-page-shell')?.textContent.includes(${JSON.stringify(translatedFirst)}) &&
+      document.querySelector('.reader-page-shell')?.textContent.includes('山脊。')`);
+    assert.deepEqual(codexFallbackInputs, ['The Ridge'], '已保存批量及补译结果均供全文翻译复用');
+    console.log('PASS: Codex 全书翻译按章合并请求，按编号保存，只重试缺项，并显示耗时与复用译文');
   } catch (error) {
     console.error(error.message);
     throw error;

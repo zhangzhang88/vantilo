@@ -203,7 +203,9 @@ class AgentRuntime extends EventEmitter {
     const controller = new AbortController();
     this.readerRequests ??= new Map();
     if (payload.requestId) this.readerRequests.set(payload.requestId, controller);
-    const task = (this.readerJobQueue || Promise.resolve()).then(() => this.#runReaderAi({...payload, signal:controller.signal}));
+    const queuedAt = performance.now();
+    const task = (this.readerJobQueue || Promise.resolve()).then(() =>
+      this.#runReaderAi({ ...payload, signal: controller.signal, queueMs: Math.round(performance.now() - queuedAt) }));
     this.readerJobQueue = task.catch(() => {});
     return task.finally(async () => { this.readerJobCount--; if(payload.requestId)this.readerRequests.delete(payload.requestId); await this.store.pruneReaderTaskRecords(); });
   }
@@ -212,7 +214,9 @@ class AgentRuntime extends EventEmitter {
     const controller=this.readerRequests?.get(requestId); controller?.abort();
     return {cancelled:Boolean(controller)};
   }
-  async #runReaderAi({ instructions, input, modelId, reasoningEffort, signal, requestId, taskKind }) {
+  async #runReaderAi({ instructions, input, modelId, reasoningEffort, signal, requestId, taskKind, queueMs }) {
+    const preparationStarted = performance.now();
+    let modelStarted;
     signal?.throwIfAborted();
     if (this.stopped) throw new Error('Agent 已停止。');
     if (this.activeTask) throw new Error('Agent 正在处理其他任务，请稍后重试。');
@@ -244,7 +248,11 @@ class AgentRuntime extends EventEmitter {
         const message = this.store.get(session.id).messages.find(item => item.taskId === taskId && item.role === 'assistant');
         const output = message?.text?.trim();
         if (!output || output.length > (taskKind === 'learning-material' ? 65000 : 20000)) reject(new Error('Agent 返回内容格式无效，请重试。'));
-        else resolve(output);
+        else if (taskKind === 'translation-batch') {
+          const finished = performance.now();
+          const started = modelStarted ?? finished;
+          resolve({ output, timings: { queueMs, preparationMs: Math.round(started - preparationStarted), modelMs: Math.round(finished - started) } });
+        } else resolve(output);
       };
       const onEvent = event => { if (event.type === 'task-status' && event.sessionId === session.id && ['completed','failed','cancelled'].includes(event.status)) finish(event); };
       const timer = setTimeout(() => {
@@ -254,15 +262,15 @@ class AgentRuntime extends EventEmitter {
       }, taskKind === 'learning-material' ? 240000 : 90000);
       this.on('event', onEvent);
       signal?.addEventListener('abort',cancel,{once:true});
-      void this.submit(session.id, prompt, { readerTask: true }).then(result => { taskId = result.taskId; if(signal?.aborted)cancel(); if (earlyTerminal) finish(earlyTerminal); }, error => { cleanup(); reject(error); });
+      void this.submit(session.id, prompt, { readerTask: true, ...(taskKind === 'translation-batch' ? { onModelStart: () => { modelStarted = performance.now(); } } : {}) }).then(result => { taskId = result.taskId; if(signal?.aborted)cancel(); if (earlyTerminal) finish(earlyTerminal); }, error => { cleanup(); reject(error); });
     });
   }
 
-  async submit(sessionId, text, { readerTask = false, permissionMode = 'supervised' } = {}) {
+  async submit(sessionId, text, { readerTask = false, permissionMode = 'supervised', onModelStart } = {}) {
     if (typeof sessionId !== 'string') throw new Error('Choose a conversation before sending a message.');
     if (typeof text !== 'string' || !text.trim()) throw new Error('请输入任务内容。');
     if (text.length > MAX_PROMPT_LENGTH) throw new Error(`任务内容不能超过 ${MAX_PROMPT_LENGTH} 个字符。`);
-    if (!['supervised','accept-edits','automatic','full-access'].includes(permissionMode)) throw new Error('Invalid permission mode.');
+    if (permissionMode !== 'supervised' && permissionMode !== 'automatic') throw new Error('Invalid permission mode.');
     if (readerTask && permissionMode !== 'supervised') throw new Error('Reader tasks always use supervised mode.');
     const requestedSession = this.store.get(sessionId);
     if (Boolean(requestedSession.readerScopeKey) !== readerTask) throw new Error('Reader 与 Agent 会话不能交叉提交');
@@ -293,7 +301,7 @@ class AgentRuntime extends EventEmitter {
     });
     if(task.abortController.signal.aborted){this._finish(task.id,'cancelled');return {taskId:task.id,sessionId};}
     task.phase='running';this._publishTaskState();
-    this.driver.startTurn(text.trim(), session.codexThreadId, { dynamicTools: this.toolCatalog.dynamicTools(task.toolSnapshot), workspaceRoot: workspaceState.root, model: modelConfig.modelId, effort: modelConfig.reasoningEffort }).then(async ({ threadId, turnId }) => {
+    this.driver.startTurn(text.trim(), session.codexThreadId, { dynamicTools: this.toolCatalog.dynamicTools(task.toolSnapshot), workspaceRoot: workspaceState.root, model: modelConfig.modelId, effort: modelConfig.reasoningEffort, ...(onModelStart ? { onModelStart } : {}) }).then(async ({ threadId, turnId }) => {
       if (threadId) {
         if (task.isNewThread) {
           try { await this.store.setCodexThread(sessionId, threadId, task.threadCatalogFingerprint); }
@@ -524,7 +532,7 @@ class AgentRuntime extends EventEmitter {
       approval = this.approvals.request({
         serverRequestId: call.requestId, callId: call.callId, sessionId: task.sessionId, taskId: task.id,
         threadId: call.threadId, turnId: call.turnId, toolName: call.tool, reason: prepared.input.reason,
-        autoApprove: task.permissionMode === 'automatic' || task.permissionMode === 'full-access' || (task.permissionMode === 'accept-edits' && call.tool === 'write_workspace_file'),
+        autoApprove: task.permissionMode === 'automatic' && prepared.tool.effect === 'read-only',
         relativePath, operation, ...(call.tool === 'read_workspace_passage' ? { lineRange:{startLine:prepared.input.startLine,endLine:prepared.input.endLine} } : {}), workspaceRoot: workspace.root, workspaceRevision: workspace.revision
       });
     } catch (error) { return deny('approval_unavailable', error.message); }

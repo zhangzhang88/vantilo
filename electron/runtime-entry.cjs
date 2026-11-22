@@ -83,7 +83,11 @@ parentPort.on('message', async event => {
     let result;
     switch (method) {
       case 'reader:cancel': result=readerEngine.cancel(input.data.requestId); break;
-      case 'reader:ai': result = { output: await readerEngine.run(input.data) }; break;
+      case 'reader:ai': {
+        const answer = await readerEngine.run(input.data);
+        result = typeof answer === 'string' ? { output: answer } : answer;
+        break;
+      }
       case 'account:status': result = await runtime.driver.accountStatus(); break;
       case 'account:login': if (runtime.activeTask || readerEngine.busy) throw new Error('请先结束当前任务'); accountChanging=true;try{await readerEngine.reset(); result = await runtime.driver.startAccountLogin();}finally{accountChanging=false;} break;
       case 'account:logout': if (runtime.activeTask || readerEngine.busy) throw new Error('请先结束当前任务'); accountChanging=true;try{await readerEngine.reset(); result = await runtime.driver.logoutAccount();}finally{accountChanging=false;} break;

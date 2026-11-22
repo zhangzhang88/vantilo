@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { bookChapterReadingDocumentId } from "../shared/reading-document-identity";
 import type { BookLanguage } from "../shared/book-language";
 import type { BookRecord } from "../shared/book-data-contract";
-import { ChineseReader, firstNarratableParagraph, narratableParagraphIndexes, type ChineseReaderControls } from "./chinese-reader";
-import { CHINESE_LISTENING_KEY, loadChineseListeningRecords, resolveChineseListeningPosition } from "./chinese-listening-state";
+import { ChineseReader, type ChineseReaderControls } from "./chinese-reader";
+import { CHINESE_LISTENING_KEY, loadChineseListeningRecords, narratableParagraphIndexes, resolveChineseListeningPosition } from "./chinese-listening-state";
 import { bookReaderCollection, type ReaderDocumentView } from "./reading-document-view";
 import { getReaderStorage } from "./reader-storage";
 import type { AudiobookAction, AudiobookControlsState, AudiobookMode, AudiobookSnapshot } from "../shared/audiobook-bridge";
@@ -30,6 +31,11 @@ export function hasBookListeningPosition(book: Pick<BookRecord, "id">, mode: Aud
   return Boolean(mostRecentPosition(book, mode));
 }
 
+export function bookListeningChapterId(book: BookRecord) {
+  const position = mostRecentPosition(book, "translation");
+  return position && book.chapters.find(chapter => bookChapterReadingDocumentId(book.id, chapter.id) === position.documentId)?.id;
+}
+
 export function bookListeningActivity(book: Pick<BookRecord, "id">, mode: AudiobookMode): number | undefined {
   const position = mostRecentPosition(book, mode);
   return position ? position.updatedAt ?? 0 : undefined;
@@ -44,7 +50,7 @@ export interface AudiobookStart {
 export type AudiobookCommand = AudiobookAction | { type: "play-from"; position: AudiobookStart };
 
 export type AudiobookSource =
-  | { kind: "book"; book: BookRecord }
+  | { kind: "book"; book: BookRecord; translationEngineId?: string }
   | { kind: "magazine"; issueId: string; label: string; article: ReaderDocumentView; translationEngineId?: string };
 
 export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, onState, onTranscript, onReturn, onClose }: {
@@ -60,15 +66,15 @@ export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, o
 }) {
   const chapters = useMemo(() => {
     if (source.kind === "magazine") {
-      const first = firstNarratableParagraph(source.article);
-      return first === undefined ? [] : [{ document: source.article, first, role: undefined }];
+      const playable = narratableParagraphIndexes(source.article);
+      return playable.length ? [{ document: source.article, first: playable[0], playable, role: undefined }] : [];
     }
     const { book } = source;
     const documents = bookReaderCollection(book).documents;
     const roles = new Map(book.chapters.map(chapter => [chapter.id, chapter.role]));
     return documents.flatMap(document => {
-      const first = firstNarratableParagraph(document);
-      return first === undefined ? [] : [{ document, first, role: roles.get(document.id) }];
+      const playable = narratableParagraphIndexes(document);
+      return playable.length ? [{ document, first: playable[0], playable, role: roles.get(document.id) }] : [];
     });
   }, [source]);
   const story = chapters.filter(({ document, role }) =>
@@ -78,8 +84,9 @@ export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, o
   const storageKey = source.kind === "book" ? listeningKey(source.book, mode) : CHINESE_LISTENING_KEY;
   const [selection, setSelection] = useState(() => {
     const requested = start && chapters.find(chapter => chapter.document.id === start.chapterId);
-    if (requested && start && !start.preferSavedPosition) {
-      return { id: requested.document.id, startAt: firstNarratableParagraph(requested.document, start.paragraphIndex) ?? requested.first, autoplay: true };
+    if (start && !start.preferSavedPosition) {
+      const startAt = requested?.playable.find(index => index >= start.paragraphIndex);
+      return { id: startAt === undefined ? undefined : requested?.document.id, startAt, autoplay: startAt !== undefined };
     }
     const storage = getReaderStorage();
     const records = loadChineseListeningRecords(storage, storageKey);
@@ -88,20 +95,24 @@ export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, o
       const match = chapters.find(chapter => chapter.document.identity.documentId === record.documentId);
       if (!match) continue;
       const resolved = resolveChineseListeningPosition([record], record.documentId, match.document.paragraphs);
-      if (!resolved || firstNarratableParagraph(match.document, resolved.paragraphIndex) !== resolved.paragraphIndex) continue;
-      if (!record.completed) return { id: match.document.id, startAt: undefined, autoplay: true, resumePosition: resolved };
+      if (!resolved) continue;
+      const startAt = match.playable.find(index => index >= resolved.paragraphIndex);
+      if (!resolved.completed && startAt !== undefined) {
+        if (startAt === resolved.paragraphIndex) return { id: match.document.id, startAt: undefined, autoplay: true, resumePosition: resolved };
+        return { id: match.document.id, startAt, autoplay: true };
+      }
       const next = playlist.find(chapter => chapter.document.id === match.document.id);
       const following = next && playlist[playlist.indexOf(next) + 1];
       if (following) return { id: following.document.id, startAt: following.first, autoplay: true };
+      if (startAt !== resolved.paragraphIndex) return { id: undefined, startAt: undefined, autoplay: false };
       return { id: match.document.id, startAt: undefined, autoplay: source.kind === "magazine", resumePosition: resolved };
     }
-    const first = playlist[0];
-    return { id: first?.document.id,
-      startAt: first && start ? firstNarratableParagraph(first.document, start.paragraphIndex) ?? first.first : first?.first,
-      autoplay: true };
+    const first = requested ?? playlist[0];
+    const startAt = requested && start ? requested.playable.find(index => index >= start.paragraphIndex) : first?.first;
+    return { id: startAt === undefined ? undefined : first?.document.id, startAt, autoplay: startAt !== undefined };
   });
   const [engineId, setEngineId] = useState(() => mode === "translation"
-    ? (source.kind === "magazine" ? source.translationEngineId : undefined) ?? loadListeningTranslationEngine(getReaderStorage())
+    ? source.translationEngineId ?? loadListeningTranslationEngine(getReaderStorage())
     : undefined);
   const [engineError, setEngineError] = useState("");
   const [engineAttempt, setEngineAttempt] = useState(0);
@@ -176,7 +187,8 @@ export function ReaderAudiobook({ source, mode, start, sessionId, controlsRef, o
       case "play-from": {
         const chapter = chapters.find(item => item.document.id === action.position.chapterId);
         if (!chapter) break;
-        const startAt = firstNarratableParagraph(chapter.document, action.position.paragraphIndex) ?? chapter.first;
+        const startAt = chapter.playable.find(index => index >= action.position.paragraphIndex);
+        if (startAt === undefined) break;
         lastActivity.current = Date.now();
         if (chapter === current && player.current) player.current.playFrom(startAt);
         else setSelection({ id: chapter.document.id, startAt, autoplay: true });

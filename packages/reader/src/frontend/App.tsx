@@ -2,8 +2,9 @@ import { PracticeWorkshop } from "./practice-workshop";
 import { CuratedArticleCopyButton } from "./curated-article-copy-button";
 import { GlobalNavigation } from "./global-navigation";
 import { BookDetailTabs, BookLessonsList } from "./book-detail-content";
-import { ChineseReader, narratableParagraphIndexes } from "./chinese-reader";
-import { ReaderAudiobook, ReaderAudiobookTranscript, bookAudiobookMode, bookListeningActivity, hasBookListeningPosition, type AudiobookCommand, type AudiobookSource, type AudiobookStart, type AudiobookTranscript } from "./book-audiobook";
+import { ChineseReader } from "./chinese-reader";
+import { narratableParagraphIndexes } from "./chinese-listening-state";
+import { ReaderAudiobook, ReaderAudiobookTranscript, bookAudiobookMode, bookListeningActivity, bookListeningChapterId, hasBookListeningPosition, type AudiobookCommand, type AudiobookSource, type AudiobookStart, type AudiobookTranscript } from "./book-audiobook";
 import { AudiobookDock } from "./audiobook-dock";
 import { useAudiobookBridge } from "./use-audiobook-bridge";
 import type { AudiobookMode, AudiobookSnapshot } from "../shared/audiobook-bridge";
@@ -73,7 +74,7 @@ import {
 } from "./reading-history-state";
 import { loadNotesState, notesStateFromItems, readerNoteBelongsToDocument, readerNoteDocument, removeNoteFromState, resolveNoteAnchor, resolvedAnchoredNotesForDocument, saveNotesState, updateNoteText, type ReaderNote, type ReaderNoteAnchor, type ReaderNoteSelectionAnchor, type ResolvedNoteAnchor } from "./notes-state";
 import type { ArticleImage, DictionaryLookupResponse, EpubImportPreview, EpubReplacementPreview, GuidePreparationStatus, IssueHeader, IssueRecord } from "../shared/types";
-import type { BookImportPreview, BookRecord, BookSummary } from "../shared/book-data-contract";
+import type { BookImportPreview, BookRecord, BookSummary, ReadingDocumentReference, ReadingDocumentHeadingBlock } from "../shared/book-data-contract";
 import type { ContentDiscoverySnapshot, DiscoveryCandidate } from "../shared/content-discovery";
 import type { ScienceArticle } from "../shared/science-article";
 import { scienceArticleImages } from "../shared/science-article";
@@ -184,8 +185,8 @@ import { createReaderReturnTarget, type ReaderReturnSource, type ReaderReturnTar
 import { resolveParagraphNavigationTarget, type ParagraphNavigationDirection } from "./reader-paragraph-navigation";
 import { captureReaderJumpBackTarget, resolveReaderJumpBackTarget, type ReaderJumpBackTarget } from "./reader-jump-back";
 import { bookChapterRoleLabel, buildBookTocGroups, resolveBookContinueChapter } from "./book-library";
-import { issueWithTranslationTitles, magazineTranslationTargets, savedIssueTranslationEngine } from "./issue-translation";
-import { IssueTranslationControls, useIssueArticleTitles, useIssueTranslationQueue } from "./issue-translation-controls";
+import { chapterTranslationTargets, issueWithTranslationTitles, magazineTranslationTargets, savedBookTranslationEngine, savedIssueTranslationEngine, type TranslationBatchSource } from "./issue-translation";
+import { BackgroundBookTranslation, IssueTranslationControls, TranslationBatchControls, useIssueArticleTitles, useIssueTranslationQueue } from "./issue-translation-controls";
 import { bookReaderCollection, bookLessonReaderCollection, magazineReaderCollection, type ReaderCollectionView, type ReaderDocumentView } from "./reading-document-view.js";
 
 type Drawer = "toc" | "notes" | "vocabulary" | null;
@@ -1999,7 +2000,7 @@ function BookLibraryPage({ books, loading, error, onOpenBook, onListen, onImport
   );
 }
 
-function BookDetailPage({ lessonsSection, lessonCount, lessonsLoading, book, loading, error, tocStatus, tocError, onRegenerate, onBack, onOpenChapter, onListen, readingLanguage, languageOverride, onLanguageChange, readerState }: { lessonsSection: ReactNode; lessonCount: number; lessonsLoading: boolean; readerState: ReaderStateData; book: BookRecord | null; loading: boolean; error: string | null; tocStatus: BookTocChineseStatus | null; tocError: string | null; onRegenerate: () => void; onBack: () => void; onOpenChapter: (chapterId: string) => void; onListen: () => void; readingLanguage: BookLanguage; languageOverride?: BookLanguage; onLanguageChange: (value?: BookLanguage) => void }) {
+function BookDetailPage({ bookTranslation, lessonsSection, lessonCount, lessonsLoading, book, loading, error, tocStatus, tocError, onRegenerate, onBack, onOpenChapter, onListen, readingLanguage, languageOverride, onLanguageChange, readerState }: { bookTranslation?: ReactNode; lessonsSection: ReactNode; lessonCount: number; lessonsLoading: boolean; readerState: ReaderStateData; book: BookRecord | null; loading: boolean; error: string | null; tocStatus: BookTocChineseStatus | null; tocError: string | null; onRegenerate: () => void; onBack: () => void; onOpenChapter: (chapterId: string) => void; onListen: () => void; readingLanguage: BookLanguage; languageOverride?: BookLanguage; onLanguageChange: (value?: BookLanguage) => void }) {
   const [languageError, setLanguageError] = useState("");
   if (loading) return <div className="page"><button className="text-button" onClick={onBack}>← 返回电子书</button><div className="empty-panel">正在读取电子书目录…</div></div>;
   if (error || !book) return <div className="page"><button className="text-button" onClick={onBack}>← 返回电子书</button><div className="empty-panel">{error ? `无法读取电子书：${error}` : "这本电子书不存在。"}</div></div>;
@@ -2037,7 +2038,7 @@ function BookDetailPage({ lessonsSection, lessonCount, lessonsLoading, book, loa
       </section>
       <BookDetailTabs key={book.id} bookId={book.id} lessonCount={lessonCount} lessonsLoading={lessonsLoading} lessons={lessonsSection}>
       <section className="toc-card book-toc-card">
-        <div className="section-title-row"><div><div className="eyebrow">Table of contents</div><h2>目录</h2></div><span className="muted-text">保持 EPUB 原始阅读顺序</span></div>
+        <div className="section-title-row"><div><div className="eyebrow">Table of contents</div><h2>目录</h2></div>{bookTranslation || <span className="muted-text">保持 EPUB 原始阅读顺序</span>}</div>
         {!originalChinese && <div className="book-toc-status" data-testid="book-toc-chinese-status">
           <span>{tocError ?? tocStatus?.error ?? (tocStatus?.state === "running" ? "中文目录生成中…" : tocStatus?.state === "ready" ? `中文目录已缓存 · ${tocStatus.model}` : "中文目录尚未生成；请配置 AI 服务")}</span>
           {tocStatus?.state !== "running" && <button className="text-button" onClick={onRegenerate}>{tocStatus?.state === "ready" ? "用当前模型重新生成" : "生成中文目录"}</button>}
@@ -2843,7 +2844,9 @@ function ReaderPage({
   const followAudiobookParagraph = currentAudiobookPosition?.following ? currentAudiobookPosition.paragraphIndex : undefined;
   const [readerMode, setReaderMode] = useState<ReaderMode>(() => loadReaderView(article.identity.documentId)?.mode ?? "article");
   const [readerLanguage, setReaderLanguage] = useState<"english" | "chinese">(() => !audiobookMode && loadReaderView(article.identity.documentId)?.language === "chinese" ? "chinese" : "english");
-  const listenableParagraphs = useMemo(() => new Set(audiobookMode === "translation" ? narratableParagraphIndexes(article) : []), [article, audiobookMode]);
+  const listenableIndexes = useMemo(() => narratableParagraphIndexes(article), [article]);
+  const listenableParagraphs = useMemo(() => new Set(listenableIndexes), [listenableIndexes]);
+  const [noListeningStartFor, setNoListeningStartFor] = useState<string>();
   useEffect(() => { onQuietViewChange?.(focusMode || readerMode === "sentence"); }, [focusMode, readerMode, onQuietViewChange]);
   useEffect(() => () => onQuietViewChange?.(false), [onQuietViewChange]);
   const assistantContextRef = useRef<ReaderAssistantContext | null>(null);
@@ -2998,6 +3001,7 @@ function ReaderPage({
   const articleTitleTranslationTarget = useMemo(() => titleTranslationTarget({ document: article.identity, sourceText: article.title }), [article.identity.documentId, article.title]);
   const fullArticleTranslationTargets = useMemo(() => {
     if (article.identity.kind === "article") return magazineTranslationTargets(article);
+    if (article.identity.kind === "book-chapter") return chapterTranslationTargets(article);
     const targets = [
       ...(!article.titleZh && isTranslatableText(article.title) ? [titleTranslationTarget({ document: article.identity, sourceText: article.title })] : []),
       ...(() => { let headingIndex = 0; return article.blocks.flatMap(block => {
@@ -3063,13 +3067,18 @@ function ReaderPage({
     articleImages.forEach((image) => groups.set(image.afterParagraphIndex, [...(groups.get(image.afterParagraphIndex) ?? []), image]));
     return groups;
   }, [articleImages]);
+  const [bookReference, setBookReference] = useState<ReadingDocumentReference | null>(null);
+  const bookReferenceDialog = useRef<HTMLDialogElement>(null);
+  const paragraphReferences = useMemo(() => new Map(article.blocks.flatMap(block =>
+    block.kind === "paragraph" && block.references?.length ? [[block.paragraphIndex, block.references] as const] : []
+  )), [article.blocks]);
   const headingsBeforeParagraph = useMemo(() => {
-    const groups = new Map<number, Array<{ level: 1 | 2 | 3; text: string; headingIndex: number }>>();
-    let pending: Array<{ level: 1 | 2 | 3; text: string; headingIndex: number }> = [];
+    const groups = new Map<number, Array<ReadingDocumentHeadingBlock & { headingIndex: number }>>();
+    let pending: Array<ReadingDocumentHeadingBlock & { headingIndex: number }> = [];
     let headingIndex = 0;
     article.blocks.forEach((block) => {
       if (block.kind === "heading") {
-        pending = [...pending, { level: block.level, text: block.text, headingIndex }];
+        pending = [...pending, { ...block, headingIndex }];
         headingIndex += 1;
         return;
       }
@@ -5384,7 +5393,34 @@ function ReaderPage({
     return () => window.removeEventListener("keydown", handleReaderShortcut);
   }, []);
 
-  function renderParagraphRange(
+  function renderBookReference(reference: ReadingDocumentReference, key: number) {
+    const label = `注释 ${reference.label}`;
+    return <sup key={key} className="book-source-reference">{reference.note
+      ? <button type="button" data-label={reference.label} aria-label={`查看${label}`} onClick={() => {
+        setBookReference(reference);
+        const dialog = bookReferenceDialog.current;
+        if (dialog && !dialog.open) dialog.showModal();
+      }} />
+      : <span data-label={reference.label} title={`${label}的内容无法找到`} />}</sup>;
+  }
+
+  function renderParagraphRange(paragraph: string, paragraphIndex: number, start: number, end: number, key: string) {
+    if (start === end) return null;
+    const references = paragraphReferences.get(paragraphIndex)?.filter(reference =>
+      (reference.offset > start || start === 0) && reference.offset <= end);
+    if (!references?.length) return renderParagraphText(paragraph, paragraphIndex, start, end, key);
+    let cursor = start;
+    return <>
+      {references.map((reference, index) => {
+        const before = renderParagraphText(paragraph, paragraphIndex, cursor, reference.offset, `${key}:${index}`);
+        cursor = reference.offset;
+        return <Fragment key={index}>{before}{renderBookReference(reference, index)}</Fragment>;
+      })}
+      {renderParagraphText(paragraph, paragraphIndex, cursor, end, `${key}:end`)}
+    </>;
+  }
+
+  function renderParagraphText(
     paragraph: string,
     paragraphIndex: number,
     rangeStart: number,
@@ -5484,6 +5520,14 @@ function ReaderPage({
     currentParagraphIndex: currentReadingParagraphIndex, locateParagraph: locateCodexParagraph };
   return (
     <div className={`reader-page-shell ${focusMode ? "is-focus-mode" : ""} ${readerMode === "sentence" ? "is-sentence-mode" : ""} ${readerLanguage === "chinese" ? "is-chinese-mode" : ""}`} data-focus-mode={focusMode} data-reader-mode={readerMode} data-reader-language={readerLanguage} data-theme={preferences.theme}>
+      {paragraphReferences.size > 0 || article.blocks.some(block => block.kind === "heading" && block.references?.length) ? (
+        <dialog ref={bookReferenceDialog} className="book-delete-dialog book-source-reference-dialog"
+          aria-labelledby="book-source-reference-title" onClose={() => setBookReference(null)}>
+          <h2 id="book-source-reference-title">注释 {bookReference?.label}</h2>
+          <p>{bookReference?.note}</p>
+          <form method="dialog"><button className="primary-button">关闭</button></form>
+        </dialog>
+      ) : null}
       <div className="reader-toolbar">
         <div className="reader-toolbar-left reader-focus-hidden">
           <button className="icon-button" aria-label={issue.kind === "lessons" ? "返回精选阅读与备课" : issue.kind === "book" ? "返回本书目录" : "返回本期目录"} onClick={onBack}>←</button>
@@ -5537,9 +5581,15 @@ function ReaderPage({
               onClick={returnToJumpBackTarget}
             >↩ <span>刚才位置</span></button>
           )}
-          {onListenFromHere ? <button className="toolbar-button" onClick={() =>
-            onListenFromHere(readerMode === "sentence" ? currentSentence?.paragraphIndex ?? 0 : currentReadingParagraphIndex() ?? 0, false, paragraphTranslationEngine)
-          }>{audiobookMode === "translation" ? "听中文译文" : "从这里听"}</button> : <button className={`toolbar-button reader-chinese-button ${readerLanguage === "chinese" ? "is-active" : ""}`} aria-label={readerLanguage === "chinese" ? "返回英文阅读" : "中文阅读"} aria-pressed={readerLanguage === "chinese"} title={readerLanguage === "chinese" ? "返回对应英文段落" : "中文全文与听书"} onClick={toggleChineseReader}>{readerLanguage === "chinese" ? "A" : "中"}<span>{readerLanguage === "chinese" ? "返回英文" : "中文阅读"}</span></button>}
+          {audiobookMode === "original" ? null : onListenFromHere ? <button className="toolbar-button" onClick={() => {
+            const index = readerMode === "sentence" ? currentSentence?.paragraphIndex ?? 0 : currentReadingParagraphIndex() ?? 0;
+            const start = listenableIndexes.find(paragraphIndex => paragraphIndex >= index);
+            setNoListeningStartFor(start === undefined ? article.identity.documentId : undefined);
+            if (start === undefined) return;
+            onListenFromHere(start, false, paragraphTranslationEngine);
+          }
+          }>听中文译文</button> : <button className={`toolbar-button reader-chinese-button ${readerLanguage === "chinese" ? "is-active" : ""}`} aria-label={readerLanguage === "chinese" ? "返回英文阅读" : "中文阅读"} aria-pressed={readerLanguage === "chinese"} title={readerLanguage === "chinese" ? "返回对应英文段落" : "中文全文与听书"} onClick={toggleChineseReader}>{readerLanguage === "chinese" ? "A" : "中"}<span>{readerLanguage === "chinese" ? "返回英文" : "中文阅读"}</span></button>}
+          {noListeningStartFor === article.identity.documentId && <span role="status">当前位置之后没有可朗读的正文</span>}
           {issue.kind === "book" && <BookSourceButton identity={article.identity} className="toolbar-button reader-source-button" />}
           <button
             className={`toolbar-button reader-full-translation-button ${fullArticleTranslationExpanded ? "is-active" : ""}`}
@@ -5778,7 +5828,10 @@ function ReaderPage({
                       onClick={() => beginParagraphNote(index, paragraph)}
                     >记</button>
                     {onListenFromHere && listenableParagraphs.has(index) && <button type="button" className="paragraph-listen-button"
-                      aria-label={`从第 ${index + 1} 段开始听`} onClick={() => onListenFromHere(index, true, paragraphTranslationEngine)}>▶ 从本段听</button>}
+                      aria-label={`从第 ${index + 1} 段开始听`} onClick={() => {
+                        setNoListeningStartFor(undefined);
+                        onListenFromHere(index, true, paragraphTranslationEngine);
+                      }}>▶ 从本段听</button>}
                     {expanded && (
                       <div className={`translation-panel ${translation?.status === "error" ? "is-error" : ""}`}>
                         <div className="translation-label">
@@ -5812,7 +5865,13 @@ function ReaderPage({
                     const headingExpanded = headingTranslation?.expanded ?? false;
                     return (
                       <div className="reading-book-heading-block" key={`${article.identity.documentId}:${index}:heading:${headingIndex}`}>
-                        <HeadingTag className={`reading-book-heading level-${heading.level}`}>{heading.text}</HeadingTag>
+                        <HeadingTag className={`reading-book-heading level-${heading.level}`}>{heading.references?.length ? <>
+                          {heading.references.map((reference, noteIndex) => <Fragment key={noteIndex}>
+                            {heading.text.slice(heading.references?.[noteIndex - 1]?.offset ?? 0, reference.offset)}
+                            {renderBookReference(reference, noteIndex)}
+                          </Fragment>)}
+                          {heading.text.slice(heading.references.at(-1)?.offset)}
+                        </> : heading.text}</HeadingTag>
                         {issue.kind === "book" && isTranslatableText(heading.text) && (
                           <>
                             <button
@@ -7409,6 +7468,22 @@ export default function App() {
     () => selectedBookRecord ? bookReaderCollection(selectedBookRecord, readerState.bookProgress, bookTocStatus?.titles) : null,
     [selectedBookRecord, readerState.bookProgress, bookTocStatus],
   );
+  const bookBatchStart = audiobookSource?.kind === "book" && audiobookSource.book.id === selectedBookRecord?.id
+    ? activeAudiobook?.chapterId
+    : undefined;
+  const bookBatchSource = useMemo<TranslationBatchSource | undefined>(() => {
+    if (!selectedBookRecord || !selectedBookReaderCollection || page !== "book") return undefined;
+    const chapter = resolveBookContinueChapter(selectedBookRecord, readerState.lastBookPosition, readerState.bookProgress);
+    const reading = [readingHistoryState.lastRead, ...readingHistoryState.items].find(entry => {
+      const document = entry && readingEntryDocument(entry);
+      return document?.kind === "book-chapter" && document.bookId === selectedBookRecord.id && document.chapterId === chapter?.id;
+    });
+    const readingAt = reading ? Date.parse(reading.lastOpenedAt) || 0 : 0;
+    const listeningAt = bookListeningActivity(selectedBookRecord, "translation") ?? -1;
+    const listeningChapter = listeningAt >= readingAt ? bookListeningChapterId(selectedBookRecord) : undefined;
+    return { kind: "book", collection: selectedBookReaderCollection,
+      startChapterId: bookBatchStart ?? listeningChapter ?? chapter?.id ?? bookListeningChapterId(selectedBookRecord) };
+  }, [selectedBookRecord, selectedBookReaderCollection, page, readerState.lastBookPosition, readerState.bookProgress, readingHistoryState, bookBatchStart]);
   const selectedBookDocument = selectedBookReaderCollection
     ? selectedBookReaderCollection.documents.find((document) => document.id === selectedBookChapterId) ?? selectedBookReaderCollection.documents[0]
     : undefined;
@@ -8039,17 +8114,19 @@ export default function App() {
     if (audiobookSnapshot && audiobookSnapshot.phase !== "playing" && audiobookSnapshot.phase !== "loading") controlAudiobook({ type: "toggle" });
   }
 
-  function startBookAudiobook(start?: AudiobookStart, book = selectedBookRecord) {
+  function startBookAudiobook(start?: AudiobookStart, book = selectedBookRecord, engineId?: string) {
     if (!book) return;
     const language = Object.hasOwn(bookLanguageOverrides, book.id) ? bookLanguageOverrides[book.id] : classifyBookLanguage(book);
     const mode = bookAudiobookMode(language);
+    const translationEngineId = mode === "translation" ? engineId ?? savedBookTranslationEngine(book.id) : undefined;
     const current = audiobookSession?.source;
-    if (current?.kind === "book" && current.book.id === book.id && audiobookSession?.mode === mode && current.book.sourceFingerprint === book.sourceFingerprint) {
+    if (current?.kind === "book" && current.book.id === book.id && audiobookSession?.mode === mode && current.book.sourceFingerprint === book.sourceFingerprint
+      && (!translationEngineId || current.translationEngineId === translationEngineId)) {
       if (start) controlAudiobook({ type: "play-from", position: start });
       else resumeAudiobook();
       return;
     }
-    beginAudiobook({ kind: "book", book }, mode, start);
+    beginAudiobook({ kind: "book", book, translationEngineId }, mode, start);
   }
 
   function startMagazineAudiobook(issue: ReaderIssue, article: ReaderDocumentView, paragraphIndex: number, explicit = false, translationEngineId?: string) {
@@ -8418,6 +8495,9 @@ export default function App() {
       {!isReaderPage && <GlobalNavigation items={navItems} page={page} loading={loading} onNavigate={handleNav} assistantOpen={assistantVisible} onToggleAssistant={toggleAssistant} />}
 
       <main className={`main-panel ${page === "reader" || page === "book-reader" || page === "lesson-reader" ? "reader-mode" : ""}`}>
+        <BackgroundBookTranslation queue={issueTranslationQueue}
+          detailBookId={page === "book" && selectedBookLanguage === "en" ? selectedBookRecord?.id : undefined}
+          onOpenBook={openBook} />
         <BookPrepLayout global reader={isReaderPage} prep={assistantPanel}><div className="global-page-content">
         {(page === "library" || page === "publication" || page === "issue" || page === "search") && (loadError || issueLoadFailures.length > 0) && (
           <section className="empty-panel" role="alert" data-testid="issue-load-warning">
@@ -8460,7 +8540,8 @@ export default function App() {
               onPlayFrom={playFromTranscript}
               onBack={() => setPage(page === "magazine-transcript" ? "issue" : "book")} />
           : <div className="empty-panel" role="status">正在准备译文…</div>)}
-        {page === "book" && <BookDetailPage lessonCount={selectedLessonCollection?.documents.length ?? 0} lessonsLoading={bookLessonsLoading} lessonsSection={<BookLessonsList
+        {page === "book" && <BookDetailPage bookTranslation={selectedBookLanguage === "en" && bookBatchSource &&
+          <TranslationBatchControls key={selectedBookRecord?.id} source={bookBatchSource} queue={issueTranslationQueue} />} lessonCount={selectedLessonCollection?.documents.length ?? 0} lessonsLoading={bookLessonsLoading} lessonsSection={<BookLessonsList
           documents={selectedLessonCollection?.documents ?? []} loading={bookLessonsLoading} error={bookLessonsError}
           newLessonId={newBookLesson?.bookId === selectedBookRecord?.id ? newBookLesson?.id : undefined} onHighlightShown={acknowledgeNewBookLesson}
           onRetry={() => setBookLessonsReload((value) => value + 1)}
@@ -8587,7 +8668,11 @@ export default function App() {
             onBack={() => { setReaderFocusMode(false); setReaderReturnTarget(null); setPage("book"); }}
             audiobookMode={bookAudiobookMode(selectedBookLanguage)}
             audiobookPosition={audiobookPosition}
-            onListenFromHere={paragraphIndex => startBookAudiobook({ chapterId: selectedBookDocument.id, paragraphIndex })}
+            preferredTranslationEngine={selectedBookLanguage === "en" && selectedBookRecord
+              ? (audiobookSource?.kind === "book" && audiobookJump?.documentId === selectedBookDocument.identity.documentId
+                ? audiobookSource.translationEngineId : undefined) ?? savedBookTranslationEngine(selectedBookRecord.id)
+              : undefined}
+            onListenFromHere={(paragraphIndex, _explicit, engineId) => startBookAudiobook({ chapterId: selectedBookDocument.id, paragraphIndex }, selectedBookRecord, engineId)}
             audiobookJump={audiobookJump}
             onConsumeAudiobookJump={consumeAudiobookJump}
             onOpenArticle={openBookChapter}

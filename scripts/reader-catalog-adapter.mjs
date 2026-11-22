@@ -105,7 +105,7 @@ export function adaptCatalogPreview(source,filename) {
   }
   const readLater=take('          {(\n            <button\n              className={`toolbar-button reader-focus-hidden ${queuedForLater','          )}');
   const jumpBack=take('          {jumpBackTarget && (','          )}');
-  const chinese=take('          {onListenFromHere ? <button className="toolbar-button"','</button>}')
+  const chinese=take('          {audiobookMode === "original" ? null : onListenFromHere ? <button className="toolbar-button"','</button>}')
     .replaceAll('reader-chinese-button','reader-chinese-button vantilo-reader-translation-action')
     .replaceAll('中文阅读','听书版')
     .replace('{readerLanguage === "chinese" ? "A" : "中"}','');

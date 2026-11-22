@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { adaptivePlaybackTarget, firstPlayReady, ChineseStreamingAudioPlayer, WebAudioPcmSink, type ChineseAudioDiagnosticEvent, type PcmAudioSink } from "./chinese-streaming-audio-player";
+import { adaptivePlaybackTarget, firstPlaybackTarget, ChineseStreamingAudioPlayer, WebAudioPcmSink, type ChineseAudioDiagnosticEvent, type PcmAudioSink } from "./chinese-streaming-audio-player";
 import type { SpeechCursor } from "./chinese-audio-types";
 import type { SpeechPcmChunk } from "./chinese-tts-stream";
+import { SpeechLoudness } from "./speech-loudness";
 
 const pcm = { sampleRate: 24000, samples: new Int16Array(2400) };
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 function fixture(synthesize = vi.fn(async function* (_text: string, _signal: AbortSignal) { yield pcm; }),
   options: { monitor?: boolean; bufferedSeconds?: () => number; onAppend?: (frame: SpeechPcmChunk) => void; now?: () => number;
-    splitText?: (value: string) => string[]; diagnostic?: (value: ChineseAudioDiagnosticEvent) => void;
+    getText?: (index: number) => string; splitText?: (value: string) => string[]; diagnostic?: (value: ChineseAudioDiagnosticEvent) => void;
     generationRtf?: (text: string) => number | null } = {}) {
   const phase = vi.fn(), position = vi.fn(), appends: Array<{cursor:SpeechCursor;offset:number;resume:number}> = [];
   const actions = { pause: vi.fn(), resume: vi.fn(), stop: vi.fn(), setRate: vi.fn(), finish: vi.fn(async () => {}) };
@@ -18,7 +19,7 @@ function fixture(synthesize = vi.fn(async function* (_text: string, _signal: Abo
     bufferedSeconds: () => options.bufferedSeconds?.() ?? 0,
     finish: actions.finish, pause: actions.pause, resume: actions.resume, stop: actions.stop, setRate: actions.setRate,
   };
-  const player = new ChineseStreamingAudioPlayer({ indices: [0,1], getText: async i => `第${i}段中文。`, synthesize, phase, position,
+  const player = new ChineseStreamingAudioPlayer({ indices: [0,1], getText: async i => options.getText?.(i) ?? `第${i}段中文。`, synthesize, phase, position,
     sink: () => sink, monitorTestSink: options.monitor, now: options.now,
     splitText: options.splitText, diagnostic: options.diagnostic, generationRtf: options.generationRtf });
   return { player, phase, position, appends, actions, synthesize };
@@ -90,12 +91,12 @@ describe("Streaming Chinese audiobooks", () => {
   });
 
   it("starts sooner for faster TTS but remains cautious when generation is slow", () => {
-    expect(firstPlayReady(0, 2.9, 6)).toBe(false);
-    expect(firstPlayReady(0, 3, 6)).toBe(true);
-    expect(firstPlayReady(0, 1.9, 3)).toBe(false);
-    expect(firstPlayReady(0, 2, 3)).toBe(true);
-    expect(firstPlayReady(0, 3.49, 10)).toBe(false);
-    expect(firstPlayReady(0, 3.5, 10)).toBe(true);
+    expect(firstPlaybackTarget(null, 0, false)).toBe(3);
+    expect(firstPlaybackTarget(0.35, 0, false)).toBe(2);
+    expect(firstPlaybackTarget(0.35, 0, true)).toBe(6);
+    expect(firstPlaybackTarget(0.35, 1.5, false)).toBe(6);
+    expect(firstPlaybackTarget(0.7 * 1.5, 0, false)).toBe(6);
+    expect(firstPlaybackTarget(1.6, 2, false)).toBeCloseTo(9.95);
   });
 
   it("starts on the first completed PCM reserve without waiting for more chunks", async () => {
@@ -183,8 +184,8 @@ describe("Streaming Chinese audiobooks", () => {
     }), { now: () => time });
     const run = f.player.start({ paragraphIndex: 0, chunkIndex: 0 });
     await flush();
-    expect(f.appends.length).toBeGreaterThan(0);
-    expect(f.phase.mock.calls.at(-1)?.[0]).toBe("playing");
+    expect(f.appends).toHaveLength(0);
+    expect(f.phase.mock.calls.at(-1)?.[0]).toBe("loading");
     release();
     await run;
     expect(f.appends.length).toBeGreaterThan(0);
@@ -235,12 +236,15 @@ describe("Streaming Chinese audiobooks", () => {
     const run = f.player.start({ paragraphIndex: 0, chunkIndex: 0 });
     await flush();
     expect(f.phase.mock.calls.at(-1)?.[0]).toBe("playing");
-    remaining = 1.0; // Simulate playback consuming almost all scheduled audio.
+    remaining = 1.0; // A short interruption can still be absorbed by the queue.
+    await new Promise(resolve => setTimeout(resolve, 160));
+    expect(f.actions.pause).not.toHaveBeenCalled();
+    remaining = 0.2; // Pause only when the actual output is about to run dry.
     await new Promise(resolve => setTimeout(resolve, 160));
     expect(f.actions.pause).toHaveBeenCalled();
     expect(f.phase.mock.calls.at(-1)?.[0]).toBe("loading");
     expect(f.actions.resume.mock.calls.length).toBe(1); // startup release only
-    remaining = 2.0; // Still below adaptive (minimum 3-second) recovery target.
+    remaining = 4.0; // Still below the six-second recovery reserve.
     await new Promise(resolve => setTimeout(resolve, 160));
     expect(f.phase.mock.calls.at(-1)?.[0]).toBe("loading");
     next();
@@ -401,6 +405,37 @@ describe("Streaming Chinese audiobooks", () => {
     expect(f.actions.stop).toHaveBeenCalled();
     expect(f.phase.mock.calls.some(args => args[0] === "error")).toBe(false);
   });
+  it.each([1, 1.25])("starts at %sx with a natural split while the next PCM chunk is pending", async rate => {
+    const first = "静谧的夜色笼罩着远山，".repeat(9) + "山下很安静。";
+    const second = "太阳升起来以后他们才继续往山上走，".repeat(3) + "最后到达山顶。";
+    let release!: () => void;
+    const next = new Promise<void>(resolve => { release = resolve; });
+    const trace: ChineseAudioDiagnosticEvent[] = [];
+    const f = fixture(vi.fn(async function* (text: string) {
+      if (text !== first) await next;
+      yield { sampleRate: 24000, samples: new Int16Array(24000 * 4) };
+    }), {
+      getText: index => index === 0 ? first + second : "尾声。",
+      generationRtf: () => 0.35,
+      monitor: true,
+      bufferedSeconds: () => 3,
+      diagnostic: event => trace.push(event),
+    });
+    f.player.setRate(rate);
+    const playing = f.player.start({ paragraphIndex: 0, chunkIndex: 0 });
+    await flush();
+    try {
+      expect(f.synthesize.mock.calls.map(([text]) => text)).toEqual([first, second]);
+      expect(trace.find(event => event.event === "startup_ready")).toMatchObject({ availableSeconds: 4 / rate });
+      expect(f.phase.mock.calls.at(-1)?.[0]).toBe("playing");
+    } finally {
+      release();
+      await playing;
+    }
+    expect(trace.filter(event => event.event === "low_buffer")).toHaveLength(0);
+    expect(f.appends.map(entry => entry.cursor.chunkText)).toEqual([first, second, "尾声。"]);
+  });
+
   it("resumes matching translated chunks at the saved audio offset", async () => {
     const f = fixture();
     await f.player.start({ paragraphIndex: 1, chunkIndex: 0, chunkText: "第1段中文。", seconds: 0.05 });
@@ -411,8 +446,46 @@ describe("Streaming Chinese audiobooks", () => {
   });
 });
 
+describe("Audiobook loudness balance", () => {
+  it("raises sustained quiet speech gradually and leaves silence and loud peaks intact", () => {
+    const loudness = new SpeechLoudness();
+    const quiet = new Float32Array(24000).fill(0.018);
+    loudness.beginChunk();
+    loudness.apply(quiet);
+    expect(quiet[0]).toBeCloseTo(0.018, 6);
+    expect(quiet[4800]).toBeGreaterThan(0.018);
+    expect(quiet.at(-1)).toBeGreaterThan(0.031);
+    expect(quiet.at(-1)).toBeLessThan(0.036);
+
+    loudness.beginChunk();
+    const peak = new Float32Array([1, -1, 0]);
+    loudness.apply(peak);
+    expect([...peak]).toEqual([1, -1, 0]);
+    const silence = new Float32Array(24000);
+    loudness.apply(silence);
+    expect(silence.some(Boolean)).toBe(false);
+    const normal = new Float32Array(24000).fill(0.063);
+    loudness.apply(normal);
+    expect(normal.at(-1)).toBeCloseTo(0.063, 5);
+  });
+
+  it("attenuates a sustained loud passage and recovers for a quieter one", () => {
+    const loudness = new SpeechLoudness();
+    const loud = new Float32Array(24000).fill(0.12);
+    loudness.apply(loud);
+    expect(loud[0]).toBeCloseTo(0.12, 6);
+    expect(loud.at(-1)).toBeLessThan(0.074);
+    expect(loud.at(-1)).toBeGreaterThan(0.071);
+
+    const quiet = new Float32Array(48000).fill(0.022);
+    loudness.apply(quiet);
+    expect(quiet[0]).toBeLessThan(0.022);
+    expect(quiet.at(-1)).toBeGreaterThan(0.027);
+  });
+});
+
 describe("WebAudio pitch-safe PCM scheduling", () => {
-  it("schedules pitch-preserved PCM at playbackRate=1 even for 1.5x listening", async () => {
+  it.each([false, true])("preserves audio duration at 1.5x with loudness balance %s", async balanceLoudness => {
     const instances: Array<{
       buffers: Array<{ duration: number; samples: Float32Array }>;
       sources: Array<{ playbackRate: { value: number }; onended: null | (() => void); start: (at: number) => void; disconnect: () => void }>;
@@ -448,7 +521,7 @@ describe("WebAudio pitch-safe PCM scheduling", () => {
       close() { return Promise.resolve(); }
     }
     vi.stubGlobal("AudioContext", MockContext);
-    const sink = new WebAudioPcmSink(() => {});
+    const sink = new WebAudioPcmSink(() => {}, balanceLoudness);
     try {
       const signal = new Int16Array(24000);
       for (let i = 0; i < signal.length; i++) signal[i] = Math.round(10000 * Math.sin(i * 2 * Math.PI * 220 / 24000));

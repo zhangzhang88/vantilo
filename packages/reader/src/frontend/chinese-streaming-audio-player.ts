@@ -1,6 +1,7 @@
-import { splitChineseSpeech } from "./chinese-listening-state";
+import { resolveSpeechChunk, splitChineseSpeech } from "./chinese-listening-state";
 import type { SpeechCursor, SpeechPhase } from "./chinese-audio-types";
 import type { SpeechPcmChunk } from "./chinese-tts-stream";
+import { SpeechLoudness } from "./speech-loudness";
 import { PcmPitchPreservingStretch } from "./pcm-pitch-preserving-stretch";
 
 type TimedCursor = { cursor: SpeechCursor; seconds: number };
@@ -12,13 +13,9 @@ type AudioTimeline = TimedCursor & { start: number; end: number; rate: number };
 const MIN_STARTUP_SECONDS = 3;
 const MAX_STARTUP_SECONDS = 10;
 const UNOBSERVED_STARTUP_SECONDS = 6;
-const LOW_BUFFER_SECONDS = 1.5;
+const NEAR_EMPTY_SECONDS = 0.25;
+const MIN_RECOVERY_SECONDS = 6;
 const MAX_SCHEDULED_SECONDS = 14;
-// Start after a small real PCM reserve is available. The previous gate waited
-// for complete speech units and several seconds of reserve, even though the
-// TTS transport had already delivered usable frames.
-const FIRST_PLAY_MIN_BUFFER_SECONDS = 2;
-const FIRST_PLAY_MAX_BUFFER_SECONDS = 3.5;
 
 export function adaptivePlaybackTarget(rtf: number | null, recentGapSeconds = 0): number {
   if (rtf === null) return UNOBSERVED_STARTUP_SECONDS;
@@ -27,10 +24,12 @@ export function adaptivePlaybackTarget(rtf: number | null, recentGapSeconds = 0)
   return Math.max(MIN_STARTUP_SECONDS, Math.min(MAX_STARTUP_SECONDS, target));
 }
 
-export function firstPlayReady(_completedChunks: number, playableSeconds: number, dynamicTarget: number): boolean {
-  const reserve = Math.max(FIRST_PLAY_MIN_BUFFER_SECONDS,
-    Math.min(FIRST_PLAY_MAX_BUFFER_SECONDS, dynamicTarget * 0.5));
-  return playableSeconds >= reserve;
+export function firstPlaybackTarget(rtf: number | null, recentGapSeconds: number, afterStall: boolean): number {
+  const target = adaptivePlaybackTarget(rtf, recentGapSeconds);
+  if (afterStall || (rtf !== null && rtf >= 0.85) || recentGapSeconds >= 1.25) {
+    return Math.max(MIN_RECOVERY_SECONDS, target);
+  }
+  return Math.max(2, target / 2);
 }
 
 export type ChineseAudioDiagnosticEvent = {
@@ -71,7 +70,9 @@ export class WebAudioPcmSink implements PcmAudioSink {
   private stretchCursor?: SpeechCursor;
   private segmentRate = 1;
   private progressSeconds = 0;
-  constructor(private onPosition: (position: TimedCursor) => void) {
+  private loudness?: SpeechLoudness;
+  constructor(private onPosition: (position: TimedCursor) => void, balanceLoudness = false) {
+    if (balanceLoudness) this.loudness = new SpeechLoudness();
     // Constructed synchronously from the click handler so browser audio activation is permitted.
     void this.context.resume().catch(() => {});
     this.timer = setInterval(() => { const current = this.position(); if (current) this.onPosition(current); }, 250);
@@ -85,6 +86,7 @@ export class WebAudioPcmSink implements PcmAudioSink {
     if (!count) return;
     // Speeding up an AudioBufferSourceNode also raises vocal pitch. Stretch
     // the PCM time axis separately so voices retain their natural pitch.
+    if (this.stretchCursor !== cursor) this.loudness?.beginChunk();
     if (this.stretchCursor && (this.stretchCursor !== cursor || this.segmentRate !== this.rate)) {
       this.flushStretch();
       this.stretchCursor = undefined;
@@ -97,6 +99,7 @@ export class WebAudioPcmSink implements PcmAudioSink {
     }
     const samples = new Float32Array(count);
     for (let i = 0; i < count; i++) samples[i] = frame.samples[i + skipSamples] / 32768;
+    this.loudness?.apply(samples);
     this.schedule(this.stretch ? this.stretch.push(samples) : samples, cursor);
   }
 
@@ -107,7 +110,8 @@ export class WebAudioPcmSink implements PcmAudioSink {
     const source = this.context.createBufferSource();
     source.buffer = buffer; source.playbackRate.value = 1;
     source.connect(this.context.destination);
-    const start = Math.max(this.nextStart, this.context.currentTime + 0.02);
+    const now = this.context.currentTime;
+    const start = this.nextStart >= now ? this.nextStart : now + 0.02;
     const seconds = this.progressSeconds;
     const end = start + buffer.duration;
     this.timeline.push({ cursor, seconds, start, end, rate: this.segmentRate });
@@ -171,6 +175,7 @@ interface PlayerDependencies {
   getText: (index: number) => Promise<string>;
   synthesize: (text: string, signal: AbortSignal) => AsyncIterable<SpeechPcmChunk>;
   splitText?: (text: string) => string[];
+  balanceLoudness?: boolean;
   phase: (phase: SpeechPhase, error?: string) => void;
   position: (cursor: SpeechCursor, seconds: number, completed: boolean) => void;
   sink?: (position: (value: TimedCursor) => void) => PcmAudioSink;
@@ -197,12 +202,13 @@ export class ChineseStreamingAudioPlayer {
   private bufferingFirstPlayback = false;
   private readonly durations = new Map<string, ChunkDuration>();
   private rebuffering = false;
+  private hasRebuffered = false;
   private generationFinished = false;
   private monitorTimer?: ReturnType<typeof setInterval>;
 
   constructor(private dependencies: PlayerDependencies) {}
   setRate(rate: number) { this.rate = rate; this.sink?.setRate(rate); }
-  clearSeekHistory() { this.durations.clear(); }
+  clearSeekHistory() { this.durations.clear(); this.hasRebuffered = false; }
 
   currentCursor(): SpeechCursor | undefined {
     return (this.sink?.position() ?? this.latest)?.cursor;
@@ -290,9 +296,9 @@ export class ChineseStreamingAudioPlayer {
     // A new seek/voice is a new stream; verify readiness again. Ordinary
     // pause/resume on this stream does not restart its buffer gate.
     this.bufferingFirstPlayback = true;
-    this.dependencies.bufferProgress?.(0, UNOBSERVED_STARTUP_SECONDS);
+    this.dependencies.bufferProgress?.(0, firstPlaybackTarget(null, 0, this.hasRebuffered));
     try {
-      const sink = (this.dependencies.sink ?? (callback => new WebAudioPcmSink(callback)))(publish);
+      const sink = (this.dependencies.sink ?? (callback => new WebAudioPcmSink(callback, this.dependencies.balanceLoudness)))(publish);
       this.sink = sink; sink.setRate(this.rate);
       let current: SpeechCursor | null = cursor, firstAudio = true;
       let firstPcmReported = false;
@@ -304,20 +310,23 @@ export class ChineseStreamingAudioPlayer {
       let recentGapSeconds = 0;
       let lastFrameAt: number | null = null;
       const now = clock;
-      const readyTarget = () => adaptivePlaybackTarget(actualGenerationRtf ?? streamRtf, recentGapSeconds);
-      const reportStartup = () => this.dependencies.bufferProgress?.(startupAudioSeconds / this.rate, readyTarget());
+      const currentRtf = () => actualGenerationRtf ?? streamRtf;
+      const startupTarget = () => firstPlaybackTarget(currentRtf(), recentGapSeconds, this.hasRebuffered);
+      const recoveryTarget = () => Math.max(MIN_RECOVERY_SECONDS, adaptivePlaybackTarget(currentRtf(), recentGapSeconds));
+      const reportStartup = () => this.dependencies.bufferProgress?.(startupAudioSeconds / this.rate, startupTarget());
       const supervise = !this.dependencies.sink || this.dependencies.monitorTestSink === true;
       const checkBuffer = () => {
         if (!valid() || !supervise || this.paused || this.bufferingFirstPlayback || firstAudio) return;
         const ahead = sink.bufferedSeconds();
-        if (!this.rebuffering && !this.generationFinished && ahead < LOW_BUFFER_SECONDS) {
+        if (!this.rebuffering && !this.generationFinished && ahead < NEAR_EMPTY_SECONDS) {
           this.rebuffering = true;
+          this.hasRebuffered = true;
           sink.pause();
-          this.dependencies.bufferProgress?.(ahead, readyTarget());
+          this.dependencies.bufferProgress?.(ahead, recoveryTarget());
           this.dependencies.phase("loading");
-          diagnostic("low_buffer", current ?? cursor, { availableSeconds: ahead, targetSeconds: readyTarget(), rtf: streamRtf ?? undefined });
+          diagnostic("low_buffer", current ?? cursor, { availableSeconds: ahead, targetSeconds: recoveryTarget(), rtf: currentRtf() ?? undefined });
         } else if (this.rebuffering) {
-          const target = readyTarget();
+          const target = recoveryTarget();
           this.dependencies.bufferProgress?.(ahead, target);
           if (ahead >= target || this.generationFinished) {
             this.rebuffering = false;
@@ -332,7 +341,7 @@ export class ChineseStreamingAudioPlayer {
         if (firstAudio && offset + frame.samples.length / frame.sampleRate > resume) {
           firstAudio = false;
           if (!this.paused) this.dependencies.phase("playing");
-          if (supervise) this.monitorTimer = setInterval(checkBuffer, 120);
+          if (supervise) this.monitorTimer = setInterval(checkBuffer, 80);
         }
         if (this.rebuffering) checkBuffer();
       };
@@ -342,7 +351,7 @@ export class ChineseStreamingAudioPlayer {
         if (this.paused) await new Promise<void>(resolve => { this.wake = resolve; });
         if (!valid()) return;
         diagnostic("startup_ready", current ?? cursor, {
-          availableSeconds: startupAudioSeconds / this.rate, targetSeconds: readyTarget(),
+          availableSeconds: startupAudioSeconds / this.rate, targetSeconds: startupTarget(),
           completedChunks: completedStartupChunks, rtf: streamRtf ?? undefined,
         });
         // No fixed minimum loading time. A sufficient reserve or a completed
@@ -360,9 +369,8 @@ export class ChineseStreamingAudioPlayer {
         const chunks = (this.dependencies.splitText ?? splitChineseSpeech)(await this.dependencies.getText(current.paragraphIndex));
         if (!valid()) break;
         if (!chunks.length) throw new Error("这一段没有可朗读的中文");
-        const chunkIndex: number = current.chunkText && chunks[current.chunkIndex] !== current.chunkText ? 0 : Math.min(current.chunkIndex, chunks.length - 1);
+        const { chunkIndex, seconds: resumeSeconds } = resolveSpeechChunk(chunks, current);
         const selected: SpeechCursor = { paragraphIndex: current.paragraphIndex, chunkIndex, chunkText: chunks[chunkIndex] };
-        const resumeSeconds = current.chunkText && current.chunkText !== chunks[chunkIndex] ? 0 : current.seconds ?? 0;
         const durationKey = `${selected.paragraphIndex}:${selected.chunkIndex}`;
         const duration = this.durations.get(durationKey) ?? {
           cursor: selected, seconds: 0, complete: false, lastInParagraph: chunkIndex === chunks.length - 1,
@@ -418,7 +426,7 @@ export class ChineseStreamingAudioPlayer {
             // Release the first playable PCM reserve while Qwen is still
             // generating the rest of this utterance. Playback monitoring then
             // pauses before the queue drains if synthesis falls behind.
-            if (firstPlayReady(completedStartupChunks, startupAudioSeconds / this.rate, readyTarget())) {
+            if (startupAudioSeconds / this.rate >= startupTarget()) {
               await releaseStartup();
               hasAudio = true;
               if (!valid()) break;
@@ -451,9 +459,7 @@ export class ChineseStreamingAudioPlayer {
         if (this.bufferingFirstPlayback) {
           completedStartupChunks++;
           const available = startupAudioSeconds / this.rate;
-          // First-play protection: completed, consecutive units and a larger
-          // reserve. A fully completed short article bypasses this at EOF.
-          if (firstPlayReady(completedStartupChunks, available, readyTarget())) {
+          if (available >= startupTarget()) {
             await releaseStartup();
             if (!valid()) break;
           }
@@ -472,7 +478,7 @@ export class ChineseStreamingAudioPlayer {
       // safe to start immediately without reaching a partial-stream quota.
       if (this.bufferingFirstPlayback) {
         this.dependencies.bufferProgress?.(startupAudioSeconds / this.rate,
-          Math.min(startupAudioSeconds / this.rate, readyTarget()));
+          Math.min(startupAudioSeconds / this.rate, startupTarget()));
       }
       await releaseStartup();
       if (!valid()) return;

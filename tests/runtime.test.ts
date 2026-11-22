@@ -245,6 +245,32 @@ describe('AgentRuntime sessions and tasks',()=>{
     expect(read).toHaveBeenCalledOnce();expect(events.some(event=>event.type==='tool-execution'&&event.stage==='completed'&&event.approvalId===approval.approvalId)).toBe(true);
     driver.emit('turn',{status:'completed',turnId:'turn-1'});await waitFor(()=>runtime.activeTask===null);
   });
+  it('automatically approves a scoped read while refusing unpublished writes', async () => {
+    const { runtime, driver, workspace } = await runtimeWith();
+    await writeFile(path.join(workspace.state().root, 'actual.txt'), 'authorized contents');
+    const { session } = await runtime.createSession();
+    const events: any[] = [];
+    runtime.on('event', (event: any) => events.push(event));
+    await runtime.submit(session.id, 'Read actual.txt.', { permissionMode: 'automatic' });
+    await waitFor(() => runtime.activeTask?.turnId === 'turn-1');
+    const context = { threadId: 'thread-1', turnId: 'turn-1', namespace: null };
+    const read = await driver.invokeTool({
+      ...context, requestId: 81, callId: 'automatic-read', tool: 'read_workspace_file',
+      arguments: { path: 'actual.txt', reason: 'Read the requested text' },
+    });
+    expect(JSON.parse(read.contentItems[0].text)).toMatchObject({
+      ok: true, data: { path: 'actual.txt', content: 'authorized contents' },
+    });
+
+    const write = await driver.invokeTool({
+      ...context, requestId: 82, callId: 'automatic-write', tool: 'write_workspace_file',
+      arguments: { path: 'actual.txt', reason: 'Replace the requested text', content: 'replacement' },
+    });
+    expect(JSON.parse(write.contentItems[0].text)).toMatchObject({ ok: false, error: { code: 'unknown_tool' } });
+    expect(events.some(event => event.type === 'tool-approval-requested')).toBe(false);
+    driver.emit('turn', { status: 'completed', turnId: 'turn-1' });
+    await waitFor(() => runtime.activeTask === null);
+  });
   it('does not execute a rejected or cancelled tool request',async()=>{
     const {runtime,store,driver,workspace}=await runtimeWith();await writeFile(path.join(workspace.state().root,'actual.txt'),'must not be read');
     const {session}=await runtime.createSession();const events:any[]=[];runtime.on('event',(event:any)=>events.push(event));const {taskId}=await runtime.submit(session.id,'Read actual.txt.');
@@ -357,6 +383,21 @@ describe('Reader jobs reuse AgentRuntime', () => {
     (driver as any).accountStatus = vi.fn(async()=>({connected:false,email:null}));
     await expect(runtime.runReaderAi({instructions:'x',input:'y',modelSourceSessionId:null})).rejects.toThrow(/登录/);
     expect(driver.startTurn).not.toHaveBeenCalled();
+    await runtime.stop();
+  });
+  it('returns queue, session preparation and model timings for a Reader translation batch', async () => {
+    const {runtime,driver} = await runtimeWith();
+    (driver as any).accountStatus = vi.fn(async () => ({ connected: true }));
+    const pending = runtime.runReaderAi({ instructions: 'Translate the items', input: 'Synthetic items', taskKind: 'translation-batch' });
+    await waitFor(() => driver.startTurn.mock.calls.length === 1);
+    driver.startTurn.mock.calls[0][2].onModelStart();
+    driver.emit('delta', { delta: '批量译文' });
+    driver.emit('turn', { status: 'completed', turnId: driver.turnId });
+    const result = await pending;
+    expect(result).toMatchObject({ output: '批量译文', timings: {
+      queueMs: expect.any(Number), preparationMs: expect.any(Number), modelMs: expect.any(Number),
+    } });
+    expect(Object.values(result.timings).every(value => Number.isInteger(value) && Number(value) >= 0)).toBe(true);
     await runtime.stop();
   });
 });

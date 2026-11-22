@@ -4,16 +4,24 @@ import type { BookCategoryId } from "./book-category.js";
 
 export type ReadingDocumentHeadingLevel = 1 | 2 | 3;
 
+export interface ReadingDocumentReference {
+  offset: number;
+  label: string;
+  note?: string;
+}
+
 export interface ReadingDocumentHeadingBlock {
   kind: "heading";
   level: ReadingDocumentHeadingLevel;
   text: string;
+  references?: ReadingDocumentReference[];
 }
 
 export interface ReadingDocumentParagraphBlock {
   kind: "paragraph";
   paragraphIndex: number;
   text: string;
+  references?: ReadingDocumentReference[];
 }
 
 export type ReadingDocumentBlock = ReadingDocumentHeadingBlock | ReadingDocumentParagraphBlock;

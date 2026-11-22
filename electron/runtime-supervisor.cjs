@@ -90,7 +90,9 @@ class RuntimeSupervisor extends EventEmitter {
   setProjectPinned(path, pinned) { return this.request('project:pin', { path, pinned }); }
   removeProject(path) { return this.request('project:remove', { path }); }
   resolveToolApproval(approvalId, sessionId, taskId, decision) { return this.request('approval:resolve', { approvalId, sessionId, taskId, decision }); }
-  submit(sessionId, text) { return this.request('submit', { sessionId, text }); }
+  submit(sessionId, text, { permissionMode } = {}) {
+    return this.request('submit', { sessionId, text, permissionMode });
+  }
   cancel(taskId) { return this.request('cancel', { taskId }); }
 
   _onMessage(raw) {

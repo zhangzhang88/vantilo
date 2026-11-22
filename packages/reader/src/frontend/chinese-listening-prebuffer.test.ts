@@ -87,19 +87,21 @@ describe("Chinese audiobook cold-start prebuffer", () => {
     prebuffer.dispose();
     await second;
   });
-  it("limits the rolling background queue to four chunks and advances across paragraph boundaries", async () => {
+  it("keeps a bounded six-chunk window and reports available audio in seconds", async () => {
     const generate = vi.fn(async function* () { yield frame(1); }) as typeof streamChineseListeningTts;
     const prebuffer = new ChineseListeningPrebuffer(generate);
-    for (const text of ["first", "second", "third", "fourth"]) await prebuffer.prefetch(text, "serena");
-    expect(generate).toHaveBeenCalledTimes(4);
+    const chunks = ["first", "second", "third", "fourth", "fifth", "sixth"];
+    for (const text of chunks) await prebuffer.prefetch(text, "serena");
+    expect(generate).toHaveBeenCalledTimes(6);
     expect(prebuffer.isComplete("first", "serena")).toBe(true);
-    await prebuffer.prefetch("fifth", "serena");
-    expect(generate).toHaveBeenCalledTimes(4);
-    prebuffer.retainWindow(["second", "third", "fourth", "fifth"].map(text => ({ text, voice: "serena" })));
-    expect(prebuffer.isComplete("first", "serena")).toBe(false);
-    await prebuffer.prefetch("fifth", "serena");
-    expect(prebuffer.isComplete("fifth", "serena")).toBe(true);
-    expect(generate).toHaveBeenCalledTimes(5);
+    expect(prebuffer.availableSeconds("first", "serena")).toBe(0.1);
+    await prebuffer.prefetch("seventh", "serena");
+    expect(generate).toHaveBeenCalledTimes(6);
+    prebuffer.retainWindow([...chunks.slice(1), "seventh"].map(text => ({ text, voice: "serena" })));
+    expect(prebuffer.availableSeconds("first", "serena")).toBe(0);
+    await prebuffer.prefetch("seventh", "serena");
+    expect(prebuffer.availableSeconds("seventh", "serena")).toBe(0.1);
+    expect(generate).toHaveBeenCalledTimes(7);
     prebuffer.dispose();
   });
 

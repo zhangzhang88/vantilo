@@ -1,3 +1,5 @@
+import type { ReaderDocumentView } from "./reading-document-view";
+
 export const CHINESE_LISTENING_KEY = "magazine-reader-chinese-listening-v1";
 export interface ChineseListeningPosition {
   documentId: string;
@@ -38,17 +40,80 @@ export function resolveChineseListeningPosition(records: ChineseListeningPositio
   return matches.length === 1 ? { ...saved, paragraphIndex: matches[0] } : undefined;
 }
 
-/** Bound long unpunctuated Chinese as well as normal sentences; omit no content. */
-export function splitChineseSpeech(text: string, limit = 130): string[] {
-  const chunks: string[] = [];
-  let current = "";
-  for (const sentence of text.match(/[^。！？!?；;\n]+[。！？!?；;\n]*/gu) ?? []) {
-    for (const character of sentence) {
-      current += character;
-      if (Array.from(current).length >= limit) { chunks.push(current); current = ""; }
-    }
-    if (Array.from(current).length >= limit / 2) { chunks.push(current); current = ""; }
+const standaloneDate = /^[·•・]?\s*[0-9]{4}年\s*[0-9]{1,2}月\s*[0-9]{1,2}日[。.]?$/u;
+const pageNumber = /^(?:第\s*[0-9]+\s*[页頁]|Page\s+[0-9]+)$/iu;
+const sourceLabel = /^(?:[▲▼△▽]\s*)?(?:资料来源|資料來源|图表来源|圖表來源|Sources?)\s*:/iu;
+
+export function narratableParagraphIndexes(article: Pick<ReaderDocumentView, "paragraphs" | "tables" | "visuals">): number[] {
+  const excluded = new Set([
+    ...(article.tables ?? []).flatMap(table => table.captionParagraphIndexes),
+    ...(article.visuals ?? []).flatMap(visual => [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]),
+  ]);
+  const playable: number[] = [];
+  for (const [index, text] of article.paragraphs.entries()) {
+    if (excluded.has(index) || !/\p{L}/u.test(text)) continue;
+    const line = text.normalize("NFKC").trim();
+    if (pageNumber.test(line) || sourceLabel.test(line) || (!playable.length && standaloneDate.test(line))) continue;
+    playable.push(index);
   }
-  if (current.trim()) chunks.push(current);
+  return playable;
+}
+
+const sentenceEnd = /[。！？!?；;…\n]/u;
+const clauseEnd = /[，、：,:]/u;
+const closingPunctuation = /[」』”’）》】〉）)\]"']/u;
+const numeric = /[0-9０-９]/u;
+
+export function splitChineseSpeech(text: string, limit = 130): string[] {
+  if (!text.trim() || !Number.isInteger(limit) || limit < 1) return [];
+  const characters = Array.from(text);
+  const chunks: string[] = [];
+  const minimum = Math.ceil(limit / 2);
+  let start = 0;
+  while (start + limit < characters.length) {
+    const maximum = start + limit;
+    let sentence = 0, clause = 0;
+    for (let i = start + minimum - 1; i < maximum; i++) {
+      const character = characters[i];
+      const next = characters[i + 1];
+      const atSentenceEnd = sentenceEnd.test(character)
+        || (character === "." && (/\s/u.test(next) || closingPunctuation.test(next)));
+      const withinNumber = (character === "," || character === "，" || character === ":" || character === "：")
+        && numeric.test(characters[i - 1]) && numeric.test(next);
+      if (!atSentenceEnd && (!clauseEnd.test(character) || withinNumber)) continue;
+
+      // Keep closing quotes and runs of punctuation with the sentence or clause.
+      let end = i + 1;
+      while (end < maximum && (closingPunctuation.test(characters[end]) || sentenceEnd.test(characters[end]))) end++;
+      if (!closingPunctuation.test(characters[end]) && !sentenceEnd.test(characters[end])) {
+        if (atSentenceEnd) sentence = end;
+        else clause = end;
+      }
+      i = end - 1;
+    }
+    const end = sentence || clause || maximum;
+    chunks.push(characters.slice(start, end).join(""));
+    start = end;
+  }
+  chunks.push(characters.slice(start).join(""));
   return chunks.filter(chunk => chunk.trim());
+}
+
+/** Older split points can land inside a new chunk. Replay from its beginning
+ * because the saved seconds refer to audio synthesized from different text. */
+export function resolveSpeechChunk(chunks: string[], position: { chunkIndex: number; chunkText?: string; seconds?: number }) {
+  const { chunkIndex, chunkText, seconds = 0 } = position;
+  if (!chunkText || chunks[chunkIndex] === chunkText) {
+    return { chunkIndex: Math.max(0, Math.min(chunkIndex, chunks.length - 1)), seconds };
+  }
+  const text = chunks.join("");
+  const offset = text.indexOf(chunkText);
+  if (offset !== -1 && text.indexOf(chunkText, offset + 1) === -1) {
+    let end = 0;
+    for (const [index, chunk] of chunks.entries()) {
+      end += chunk.length;
+      if (end > offset) return { chunkIndex: index, seconds: chunk === chunkText ? seconds : 0 };
+    }
+  }
+  return { chunkIndex: 0, seconds: 0 };
 }

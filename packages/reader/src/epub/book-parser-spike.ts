@@ -2,10 +2,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
 import * as cheerio from "cheerio";
-import type { AnyNode } from "domhandler";
+import { hasChildren, isTag, isText, type AnyNode } from "domhandler";
 import { normalizeSpace } from "./epub-core.js";
-import type { ReadingTableCell, ReadingTableImage } from "../shared/book-data-contract.js";
-import { inspectBookVisuals, type BookVisualSpike } from "./book-visuals.js";
+import type { ReadingDocumentReference, ReadingTableCell, ReadingTableImage } from "../shared/book-data-contract.js";
+import { inspectBookVisuals, zipReference, type BookVisualSpike } from "./book-visuals.js";
 
 const posix = path.posix;
 
@@ -31,11 +31,13 @@ export interface BookContentHeadingSpike {
   kind: "heading";
   level: 1 | 2 | 3;
   text: string;
+  references?: ReadingDocumentReference[];
 }
 
 export interface BookContentParagraphSpike {
   kind: "paragraph";
   text: string;
+  references?: ReadingDocumentReference[];
 }
 
 export type BookContentBlockSpike = BookContentHeadingSpike | BookContentParagraphSpike;
@@ -173,7 +175,66 @@ function looksLikeNumberedChapter(title: string): boolean {
   return /^\d+\s+\S/.test(title.trim());
 }
 
-async function contentDocument(html: string, documentPath: string, zip: JSZip, fixedLayout: boolean): Promise<{ blocks: BookContentBlockSpike[]; tables: BookContentTableSpike[]; visuals: BookVisualSpike[]; boundaryForHref: (href: string) => { index: number; isHeading: boolean } | null }> {
+type NoteDocuments = Map<string, Promise<cheerio.CheerioAPI | undefined>>;
+
+function hasReferenceType(value: string | undefined, type: string) {
+  return value?.split(/\s+/).includes(type) ?? false;
+}
+
+function isNoteReference(node: AnyNode) {
+  return isTag(node) && (
+    hasReferenceType(node.attribs["epub:type"], "noteref") ||
+    hasReferenceType(node.attribs.role, "doc-noteref")
+  );
+}
+
+async function readNote(href: string, documentPath: string, zip: JSZip, noteDocuments: NoteDocuments) {
+  const hash = href.indexOf("#");
+  if (hash < 0 || hash === href.length - 1) return undefined;
+  const file = hash === 0 ? documentPath : zipReference(documentPath, href);
+  if (!file || !/\.x?html?$/i.test(file)) return undefined;
+  let anchor: string;
+  try { anchor = decodeURIComponent(href.slice(hash + 1)); } catch { return undefined; }
+  if (!noteDocuments.has(file)) {
+    noteDocuments.set(file, (async () => {
+      const entry = zip.file(file);
+      return entry ? cheerio.load(await entry.async("text"), { xmlMode: true }) : undefined;
+    })());
+  }
+  const notes = await noteDocuments.get(file);
+  if (!notes) return undefined;
+  const target = notes("[id], a[name]").filter((_, node) =>
+    notes(node).attr("id") === anchor || notes(node).attr("name") === anchor
+  ).first();
+  if (!target.length) return undefined;
+  const container = target.closest("aside, li, p").first();
+  const clone = (container.length ? container : target).clone();
+  clone.find("script, style, [role~='doc-backlink'], [epub\\:type~='backlink']").remove();
+  const text = clone.find("p").toArray().map(node => normalizeSpace(notes(node).text())).filter(Boolean).join("\n");
+  return (text || normalizeSpace(clone.text())).slice(0, 4000) || undefined;
+}
+
+function readBlockText($: cheerio.CheerioAPI, element: AnyNode) {
+  if (!$(element).find("[role~='doc-noteref'], [epub\\:type~='noteref']").length) {
+    return { text: normalizeSpace($(element).text()), references: [] };
+  }
+  let raw = "";
+  const references: Array<Omit<ReadingDocumentReference, "note"> & { href: string }> = [];
+  function append(node: AnyNode) {
+    if (isNoteReference(node)) {
+      references.push({
+        label: normalizeSpace($(node).text()).slice(0, 32) || "注",
+        offset: normalizeSpace(raw).length,
+        href: $(node).attr("href") ?? $(node).find("a[href]").first().attr("href") ?? "",
+      });
+    } else if (isText(node)) raw += node.data;
+    else if (hasChildren(node)) node.children.forEach(append);
+  }
+  append(element);
+  return { text: normalizeSpace(raw), references };
+}
+
+async function contentDocument(html: string, documentPath: string, zip: JSZip, fixedLayout: boolean, noteDocuments: NoteDocuments): Promise<{ blocks: BookContentBlockSpike[]; tables: BookContentTableSpike[]; visuals: BookVisualSpike[]; boundaryForHref: (href: string) => { index: number; isHeading: boolean } | null }> {
   const $ = cheerio.load(html, { xmlMode: true });
   const blocks: BookContentBlockSpike[] = [];
   const elements = $("body").find("*").toArray();
@@ -186,15 +247,20 @@ async function contentDocument(html: string, documentPath: string, zip: JSZip, f
     if (anchor && !anchors.has(anchor)) anchors.set(anchor, element);
     const directCell = (tag === "td" || tag === "th" || tag === "caption") && !$(element).find("p, h1, h2, h3, table").length;
     if (tag !== "h1" && tag !== "h2" && tag !== "h3" && tag !== "p" && !directCell) continue;
-    const text = normalizeSpace($(element).text());
+    const { text, references } = readBlockText($, element);
     if (!text) continue;
+    const notes = await Promise.all(references.map(async ({ href, ...reference }) => {
+      const note = await readNote(href, documentPath, zip, noteDocuments);
+      return note ? { ...reference, note } : reference;
+    }));
+    const content = { text, ...(notes.length ? { references: notes } : {}) };
     blockElements.push(element);
     if (tag === "p" || directCell) {
-      blocks.push({ kind: "paragraph", text });
+      blocks.push({ kind: "paragraph", ...content });
       continue;
     }
     const level = Number(tag.slice(1)) as 1 | 2 | 3;
-    blocks.push({ kind: "heading", level, text });
+    blocks.push({ kind: "heading", level, ...content });
   }
   // Keep the old paragraph stream intact: tables only reference those text anchors.
   const indexByElement = new Map(blockElements.map((element, index) => [element, index]));
@@ -361,11 +427,12 @@ export async function inspectBookEpubSpike(filePath: string): Promise<BookEpubSp
   const blocksBySeed = new Map<number, BookContentBlockSpike[]>();
   const tablesBySeed = new Map<number, BookContentTableSpike[]>();
   const visualsBySeed = new Map<number, BookVisualSpike[]>();
+  const noteDocuments: NoteDocuments = new Map();
   const fixedLayout = $package("meta[property='rendition:layout']").text().trim() === "pre-paginated" || $package("meta[name='fixed-layout']").attr("content") === "true";
   for (const [documentPath, group] of seedsByDocument) {
     const entry = zip.file(documentPath);
     if (!entry) continue;
-    const content = await contentDocument(await entry.async("text"), documentPath, zip, fixedLayout);
+    const content = await contentDocument(await entry.async("text"), documentPath, zip, fixedLayout, noteDocuments);
     const boundaries = group.map(({ seed }) => content.boundaryForHref(seed.href));
     const units = group.flatMap((candidate, position) => position === 0 || !boundaries[position] || boundaries[position].isHeading
       ? [{ ...candidate, start: position === 0 ? 0 : boundaries[position]?.index ?? null }]

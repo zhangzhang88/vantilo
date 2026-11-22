@@ -3,11 +3,36 @@ import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { request as httpRequest } from 'node:http';
+import { createServer } from 'node:net';
 import { expect, it, vi } from 'vitest';
 const require = createRequire(import.meta.url);
 const { startPortableReader } = require('../electron/portable-reader-service.cjs');
 const sessionToken='a'.repeat(64), sessionCookie='__Host-vantilo-reader='+sessionToken;
 function apiFetch(service:any,url:string,init:RequestInit={}) { const headers=new Headers(init.headers);headers.set('cookie',sessionCookie);return fetch(url,{...init,headers}); }
+
+it.each(['apiPort', 'webPort'] as const)('preserves the actual bind error when %s is occupied', async portOption => {
+  const occupied = createServer();
+  const root = await mkdtemp(path.join(os.tmpdir(), 'vantilo-reader-port-'));
+  let service: any;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      occupied.once('error', reject);
+      occupied.listen(0, '127.0.0.1', resolve);
+    });
+    const address = occupied.address();
+    if (!address || typeof address === 'string') throw new Error('Missing occupied port');
+    const options = { assetsDir: path.resolve('build/reader'), libraryRoot: root, autoSync: false, apiPort: 0, webPort: 0 };
+    await expect(startPortableReader({ ...options, [portOption]: address.port })).rejects.toMatchObject({
+      code: 'EADDRINUSE', port: address.port,
+    });
+    service = await startPortableReader(options);
+    expect(service.webOrigin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+  } finally {
+    await service?.close();
+    await new Promise<void>(resolve => occupied.close(() => resolve()));
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('runs compiled Reader without source/Node dependencies, removes science APIs, and imports four latest fixture issues idempotently', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'vantilo-install-fixture-'));

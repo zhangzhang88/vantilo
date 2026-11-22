@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { StorageNotice } from "./storage-notice";
+import "../../../../src/ui/design-tokens.css";
 import "./styles.css";
 import "./app-theme.css";
 import "./chinese-reader.css";

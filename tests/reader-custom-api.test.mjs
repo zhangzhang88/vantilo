@@ -16,6 +16,30 @@ describe('custom OpenAI-compatible API provider',()=>{
   expect(()=>validateConfig({...config,baseUrl:'https://user:pass@example.com/v1'})).toThrow();
   expect(()=>validateConfig({...config,baseUrl:'https://example.com/v1?key=secret'})).toThrow();
  });
+ it.each(['169.254.1.23', '[fe80::1]'])('requires HTTPS for a link-local literal (%s)', host => {
+  expect(() => validateConfig({ ...config, baseUrl: `http://${host}/v1` })).toThrow(/HTTPS/);
+  expect(validateConfig({ ...config, baseUrl: `https://${host}/v1` }).baseUrl).toBe(`https://${host}/v1`);
+ });
+ it('keeps legacy link-local profiles editable while blocking their HTTP requests', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'vantilo-custom-api-link-local-'));
+  const filePath = path.join(dir, 'provider.json');
+  const id = '00000000-0000-4000-8000-000000000001';
+  const configOnDisk = { id, name: 'Legacy LAN', model: 'qwen3', baseUrl: 'http://169.254.1.23/v1' };
+  const fetchImpl = vi.fn(async () => Response.json({ choices: [{ message: { content: '译文' } }] }));
+  try {
+   const other = { ...configOnDisk, id: '00000000-0000-4000-8000-000000000002', baseUrl: 'http://[::1]:1234/v1' };
+   await writeFile(filePath, JSON.stringify({ version: 2, activeId: id, profiles: [{ config: configOnDisk }, { config: other }] }));
+   const service = createReaderCustomApi({ filePath, safeStorage: safeStorage(), fetchImpl });
+   expect((await service.get()).profiles).toHaveLength(2);
+   await expect(service.complete({ instruction: 'Translate', input: 'Hello' })).rejects.toThrow(/HTTPS/);
+   expect(fetchImpl).not.toHaveBeenCalled();
+   await expect(service.complete({ instruction: 'Translate', input: 'Hello', selectedProfileId: other.id })).resolves.toBe('译文');
+   await expect(service.save({ ...configOnDisk, baseUrl: 'http://localhost:1234/v1' })).resolves.toMatchObject({ id, baseUrl: 'http://localhost:1234/v1' });
+   expect((await service.get()).profiles).toHaveLength(2);
+  } finally {
+   await rm(dir, { recursive: true, force: true });
+  }
+ });
  it('encrypts the key at rest, never returns it, and preserves it when the field is blank',async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-custom-api-'));const filePath=path.join(dir,'provider.json');
   try{

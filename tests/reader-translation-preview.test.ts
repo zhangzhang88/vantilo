@@ -9,14 +9,14 @@ function setup({customApi}:any={}) {
  const handlers:any={};
  const api={get:(p:string,h:any)=>handlers[p]=h,post:(p:string,h:any)=>handlers[p]=h};
  const model={inspect:vi.fn(async()=>({selected:true,helperAvailable:true,health:{ready:true}})),recheck:vi.fn(async()=>({ready:true})),translate:vi.fn(async(_input:any)=>({translation:'树皮粗糙。',model:'Qwen3.5 4B',provider:'qwen-mlx'}))};
- const runAi=vi.fn(async()=> '树皮粗糙。');
+ const runAi=vi.fn(async (): Promise<unknown> => '树皮粗糙。');
  const listModels=vi.fn(async()=>({models:[{id:'gpt-test',displayName:'Test',defaultEffort:'low'}]}));
  const getAccountStatus=vi.fn(async()=>({connected:true}));
  registerTranslationPreview(api,{model,runAi,listModels,getAccountStatus,customApi,lifetime:new AbortController()});
- async function post(body:any,raw=new EventEmitter()) {
+ async function post(body:any,raw=new EventEmitter(),endpoint="translate") {
   const reply:any={raw,header:vi.fn(),code(n:number){this.status=n;return this;},send(value:any){this.value=value;return value;},status:200};
   const req:any={body,raw:new EventEmitter()};
-  const result=await handlers['/api/vantilo-translation/translate'](req,reply);
+  const result=await handlers['/api/vantilo-translation/'+endpoint](req,reply);
   return {result,status:reply.status};
  }
  async function postSentence(body:any) {
@@ -44,6 +44,48 @@ describe('explicit preview translation engines',()=>{
   expect(await background).toMatchObject({status:409});
   expect((await c.post({engineId,text:'Background issue paragraph.',background:true})).status).toBe(200);
  });
+ it('shares a pending batch item and gives a different foreground request the next turn', async () => {
+  const c = setup();
+  const engineId = 'codex:gpt-test';
+  const timings = { queueMs: 12, preparationMs: 30, modelMs: 220 };
+  let finish!: (value: unknown) => void;
+  let began!: () => void;
+  const started = new Promise<void>(resolve => { began = resolve; });
+  c.runAi.mockImplementationOnce(async (_payload?: unknown, options?: { signal: AbortSignal }) => {
+    began();
+    return new Promise(resolve => {
+      finish = resolve;
+      options?.signal.addEventListener('abort', () => resolve(null), { once: true });
+    });
+  });
+  const texts = ['First passage.', 'Second passage.', 'Third passage.'];
+  const batch = c.post({ engineId, texts }, undefined, 'batch');
+  await started;
+  const same = c.post({ engineId, text: texts[0] });
+  const other = c.post({ engineId, text: 'Different passage.' });
+  expect(c.runAi).toHaveBeenCalledTimes(1);
+  finish({ output: JSON.stringify({ translations: [
+    { id: 2, translation: '第三段。' }, { id: 0, translation: '第一段。' },
+    { id: 2, translation: '重复编号。' }, { id: 7, translation: '未知编号。' },
+  ] }), timings });
+  expect(await batch).toMatchObject({ status: 200, result: { timings, results: [{ translation: '第一段。' }, null, null] } });
+  expect(await same).toMatchObject({ status: 200, result: { translation: '第一段。' } });
+  expect(await other).toMatchObject({ status: 200 });
+  expect(c.runAi).toHaveBeenCalledTimes(2);
+  expect(c.runAi).toHaveBeenNthCalledWith(1, expect.objectContaining({ modelId: 'gpt-test', taskKind: 'translation-batch',
+    input: JSON.stringify(texts.map((text, id) => ({ id, text }))) }), expect.anything());
+ });
+
+ it('rejects unbounded batches and only lets Codex engines use the batch endpoint', async () => {
+  const c = setup();
+  for (const body of [
+    { engineId: 'codex:gpt-test', texts: ['x'.repeat(4801)] },
+    { engineId: 'codex:gpt-test', texts: Array(7).fill('passage') },
+    { engineId: localId, texts: ['passage'] },
+  ]) expect((await c.post(body, undefined, 'batch')).status).toBe(400);
+  expect(c.runAi).not.toHaveBeenCalled();
+ });
+
  it('keeps offline Qwen translation local while loading choices for the model selector',async()=>{
   const c=setup();const r=await c.post({engineId:localId,text:'The bark is rough.'});
   expect(r.status).toBe(200);expect(r.result).toMatchObject({engineId:localId,provider:'qwen-mlx'});

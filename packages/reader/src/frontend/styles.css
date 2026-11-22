@@ -8034,6 +8034,26 @@ input.learning-slot { outline-offset: 4px; border-bottom-color: var(--accent); }
   border-left-color: var(--theme-accent);
 }
 
+.background-book-translation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 0.875rem;
+}
+
+.background-book-translation button {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .issue-translation-controls {
   display: grid;
   justify-items: end;
@@ -8088,4 +8108,30 @@ input.learning-slot { outline-offset: 4px; border-bottom-color: var(--accent); }
   .issue-translation-controls {
     justify-items: start;
   }
+}
+
+.book-source-reference {
+  margin-inline: 0.12em;
+  color: var(--accent, #176f75);
+  font-size: 0.72em;
+  line-height: 0;
+  user-select: none;
+}
+
+.book-source-reference button {
+  padding: 0 0.15em;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.book-source-reference [data-label]::before {
+  content: attr(data-label);
+}
+
+.book-source-reference-dialog p {
+  white-space: pre-line;
 }

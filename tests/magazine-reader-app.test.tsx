@@ -29,7 +29,7 @@ vi.mock('@react-spectrum/s2/icons/ChevronDown', () => ({ default: () => null }))
 vi.mock('@react-spectrum/s2/icons/ChevronRight', () => ({ default: () => null }));
 vi.mock('@react-spectrum/s2/icons/PinOn', () => ({ default: () => null }));
 vi.mock('../src/ui/agent-composer', () => ({
-  AgentComposer: ({ value, onChange, onSubmit, modelControl }: any) => <><textarea aria-label="Agent 草稿" value={value} onChange={event => onChange(event.target.value)} /><button type="button" aria-label="发送测试消息" onClick={() => onSubmit(value)}>发送</button>{modelControl}</>,
+  AgentComposer: ({ value, onChange, onSubmit, modelControl, permissionControl }: any) => <><textarea aria-label="Agent 草稿" value={value} onChange={event => onChange(event.target.value)} /><button type="button" aria-label="发送测试消息" onClick={() => onSubmit(value)}>发送</button>{permissionControl}{modelControl}</>,
 }));
 vi.mock('../src/ui/conversation-message', () => ({ ConversationMessage: () => null }));
 
@@ -57,6 +57,17 @@ function mount(initialStatus:any={status:'ready'}) {
 }
 
 describe('Reader inside the Agent application', () => {
+  it('submits the mode selected in the Agent permission picker', async () => {
+    const api = mount();
+    const picker = await screen.findByRole('button', { name: '权限模式' });
+    await waitFor(() => expect((picker as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^自动/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Agent 草稿' }), { target: { value: '读取文件' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送测试消息' }));
+    await waitFor(() => expect(api.submitTask).toHaveBeenCalledWith('session-fixture', '读取文件', 'automatic'));
+  });
+
   it('opens from home on demand and returns to the existing session and draft', async () => {
     const api = mount();
     await waitFor(() => expect(api.openSession).toHaveBeenCalledOnce());

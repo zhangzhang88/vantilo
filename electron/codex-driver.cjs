@@ -295,7 +295,7 @@ class CodexDriver extends EventEmitter {
     this.emit('turn',{status:'failed',turnId,error:message});
   }
 
-  async startTurn(text, resumeThreadId = null, { dynamicTools = [], workspaceRoot = this.cwd, model = null, effort = null } = {}) {
+  async startTurn(text, resumeThreadId = null, { dynamicTools = [], workspaceRoot = this.cwd, model = null, effort = null, onModelStart } = {}) {
     this.cancelRequested = false;
     // A thread already loaded by this app-server must not be resumed again: Codex can retain its loaded model config, while turn/start carries the per-turn override.
     const threadId = resumeThreadId
@@ -305,6 +305,7 @@ class CodexDriver extends EventEmitter {
       : await this.createThread({ dynamicTools, workspaceRoot, model });
     if (this.cancelRequested) { this.emit('turn', { status: 'cancelled', turnId: null }); return { threadId, turnId: null, cancelled: true }; }
     this.activeTurnId = null; this.turnActive = false;
+    onModelStart?.();
     const result = await this.request('turn/start', { threadId, input: [{ type: 'text', text, text_elements: [] }], cwd: workspaceRoot, runtimeWorkspaceRoots: [workspaceRoot], approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly', networkAccess: false }, model: model ?? null, effort: effort ?? null });
     const turnId = result?.turn?.id || this.activeTurnId;
     const earlyError=this.pendingTurnErrors.get(turnId);

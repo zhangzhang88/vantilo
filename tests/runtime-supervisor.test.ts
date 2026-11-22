@@ -41,6 +41,24 @@ describe('supervised Runtime IPC', () => {
     await expect(supervisor.submit(sessionId, '')).rejects.toThrow(/Invalid Runtime/);
     await supervisor.stop();
   });
+  it('forwards the selected permission mode and rejects modes outside the desktop picker', async () => {
+    const { child, supervisor, starting } = setup();
+    await starting;
+    const sessionId = '20000000-0000-4000-8000-000000000001';
+    const taskId = '30000000-0000-4000-8000-000000000001';
+    const submission = supervisor.submit(sessionId, 'read a file', { permissionMode: 'automatic' });
+    const request = child.messages.at(-1);
+    expect(request).toMatchObject({ method: 'submit', payload: { sessionId, text: 'read a file', permissionMode: 'automatic' } });
+    child.reply(request, { sessionId, taskId });
+    await expect(submission).resolves.toEqual({ sessionId, taskId });
+
+    const sentCount = child.messages.length;
+    for (const permissionMode of ['accept-edits', 'full-access']) {
+      await expect(supervisor.submit(sessionId, 'read a file', { permissionMode })).rejects.toThrow(/Invalid Runtime/);
+    }
+    expect(child.messages).toHaveLength(sentCount);
+    await supervisor.stop();
+  });
   it('exposes validated history operations and propagates structured storage errors', async () => {
     const { child, supervisor, starting } = setup(); await starting;
     const listing = supervisor.listSessions(); const listRequest = child.messages.at(-1);

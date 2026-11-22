@@ -1,4 +1,6 @@
-/* Rico MD Claude theme, adapted for the Codex discussion reader. */
+/* Unified AI conversation styling for the Reader Codex assistant.
+ * Aligned with src/ui/design-tokens.css and src/ui/conversation.css so the
+ * Agent workspace and Reader assistant share one cohesive chat language. */
 .codex-prep-turn.assistant {
   padding: 6px 0;
   border: 0;
@@ -13,28 +15,33 @@
 
 .codex-prep-chat .codex-prep-turn.user > .chat-markdown {
   box-sizing: border-box;
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 10px 14px;
+  border-radius: var(--vantilo-chat-bubble-radius, 16px 16px 4px 16px);
   background: var(--theme-selected);
+  color: var(--theme-ink);
+  font-family: var(--vantilo-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif);
+  font-size: var(--vantilo-chat-font-size, 14.5px);
+  line-height: 1.6;
 }
 
 .codex-prep-turn.assistant .chat-markdown {
   box-sizing: border-box;
   max-width: 100%;
-  padding: 12px 16px 16px;
-  border: 1px solid var(--theme-line);
-  border-radius: 12px;
-  background: var(--theme-surface);
+  padding: 8px 2px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--theme-ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  letter-spacing: -.005em;
-  line-height: 1.75;
+  font-family: var(--vantilo-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif);
+  font-size: var(--vantilo-chat-font-size, 14.5px);
+  letter-spacing: -0.005em;
+  line-height: var(--vantilo-chat-line-height, 1.72);
 }
 
 .codex-prep-reply-actions {
   display: flex;
   gap: 4px;
-  margin: 5px 0 0 2px;
+  margin: 4px 0 0 2px;
 }
 
 .codex-prep-reply-actions button {
@@ -46,13 +53,13 @@
   height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--vantilo-radius-xs, 7px);
   background: transparent;
   color: var(--theme-muted);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  transition: background-color .15s ease, color .15s ease;
+  transition: background-color var(--vantilo-duration-fast, 140ms) ease, color var(--vantilo-duration-fast, 140ms) ease;
 }
 
 .codex-prep-reply-actions button::after {
@@ -62,7 +69,7 @@
   bottom: calc(100% + 7px);
   left: 0;
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: var(--vantilo-radius-xs, 6px);
   background: var(--theme-ink);
   color: var(--theme-surface);
   content: attr(data-tooltip);
@@ -73,7 +80,7 @@
   opacity: 0;
   pointer-events: none;
   transform: translateY(3px);
-  transition: opacity .12s ease, transform .12s ease;
+  transition: opacity 120ms ease, transform 120ms ease;
 }
 
 .codex-prep-reply-actions button:hover::after,
@@ -86,7 +93,7 @@
 .codex-prep-reply-actions.user-message-actions {
   justify-content: flex-end;
   width: 100%;
-  margin: 2px 0 0;
+  margin: 3px 0 0;
 }
 
 .codex-prep-reply-actions.user-message-actions button::after {
@@ -111,68 +118,76 @@
 }
 
 .codex-prep-turn.assistant .chat-markdown p {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: inherit;
-  line-height: 1.75;
+  line-height: var(--vantilo-chat-line-height, 1.72);
 }
 
 .codex-prep-turn.assistant .chat-markdown > :first-child { margin-top: 0; }
 .codex-prep-turn.assistant .chat-markdown > :last-child { margin-bottom: 0; }
+
 .codex-prep-turn.assistant .chat-markdown h3,
 .codex-prep-turn.assistant .chat-markdown h4,
 .codex-prep-turn.assistant .chat-markdown h5 {
   font-weight: 650;
-  line-height: 1.35;
+  letter-spacing: -0.015em;
+  line-height: 1.38;
 }
 
 .codex-prep-turn.assistant .chat-markdown h3 {
-  margin: 20px 0 12px;
-  color: var(--theme-accent);
-  font-size: max(1.2em, 20px);
-  letter-spacing: -.02em;
+  margin: 18px 0 10px;
+  color: var(--theme-ink);
+  font-size: 17px;
 }
 
 .codex-prep-turn.assistant .chat-markdown h4 {
-  margin: 18px 0 10px;
+  margin: 16px 0 8px;
   color: var(--theme-ink);
-  font-size: max(1.12em, 19px);
-  letter-spacing: -.01em;
+  font-size: 15.5px;
 }
 
 .codex-prep-turn.assistant .chat-markdown h5 {
-  margin: 16px 0 10px;
+  margin: 14px 0 8px;
   color: var(--theme-ink);
-  font-size: max(1.06em, 18px);
+  font-size: 14.5px;
 }
 
 .codex-prep-turn.assistant .chat-markdown strong {
-  padding: 1px 4px;
-  border-radius: 4px;
-  background: var(--theme-selected);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--theme-ink);
   font-size: 1em;
   font-weight: 650;
 }
 
-.codex-prep-turn.assistant .chat-markdown em { color: var(--theme-secondary); }
+.codex-prep-turn.assistant .chat-markdown em {
+  color: var(--theme-secondary);
+}
+
 .codex-prep-turn.assistant .chat-markdown a {
   color: var(--theme-accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-bottom: 0;
 }
 
 .codex-prep-turn.assistant .chat-markdown ul,
 .codex-prep-turn.assistant .chat-markdown ol {
-  margin: 12px 0 16px;
-  padding-left: 26px;
+  margin: 10px 0 14px;
+  padding-left: 22px;
 }
 
-.codex-prep-turn.assistant .chat-markdown li { margin: 7px 0; line-height: 1.75; }
+.codex-prep-turn.assistant .chat-markdown li {
+  margin: 5px 0;
+  line-height: var(--vantilo-chat-line-height, 1.72);
+}
+
 .codex-prep-turn.assistant .chat-markdown blockquote {
-  margin: 16px 0;
-  padding: 10px 14px;
+  margin: 14px 0;
+  padding: 8px 14px;
   border-left: 3px solid var(--theme-accent);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--vantilo-radius-sm, 8px) var(--vantilo-radius-sm, 8px) 0;
   background: var(--theme-soft);
   color: var(--theme-secondary);
   line-height: 1.65;
@@ -181,22 +196,22 @@
 .codex-prep-turn.assistant .chat-markdown pre {
   max-width: 100%;
   overflow-x: auto;
-  padding: 14px;
+  padding: 13px 15px;
   border: 1px solid var(--theme-line);
-  border-radius: 10px;
+  border-radius: var(--vantilo-chat-code-radius, 10px);
   background: var(--theme-soft);
   color: var(--theme-ink);
   white-space: pre-wrap;
 }
 
 .codex-prep-turn.assistant .chat-markdown code {
-  padding: 2px 5px;
-  border: 1px solid var(--theme-line);
-  border-radius: 5px;
+  padding: 1.5px 6px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: var(--vantilo-radius-xs, 6px);
   background: var(--theme-soft);
-  color: var(--theme-secondary);
-  font-family: "SF Mono", Consolas, Monaco, monospace;
-  font-size: .92em;
+  color: var(--theme-accent);
+  font-family: var(--vantilo-font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.88em;
 }
 
 .codex-prep-turn.assistant .chat-markdown pre code {
@@ -204,20 +219,33 @@
   border: 0;
   background: transparent;
   color: inherit;
+  font-size: 12.5px;
 }
 
 .codex-prep-turn.assistant .chat-markdown hr {
-  max-width: 180px;
+  max-width: none;
   height: 1px;
-  margin: 24px auto;
+  margin: 20px 0;
   border: 0;
-  background: var(--theme-line);
+  background: var(--theme-line-soft);
 }
 
-/* Source navigation shares the assistant's global theme and readable control size. */
+/* Source navigation references */
 .codex-prep-panel .reading-assistant-references button {
-  background: var(--theme-soft); color: var(--theme-secondary); border-color: var(--theme-line);
-  font: 500 12px/1.5 system-ui,sans-serif; padding: 4px 9px;
+  background: var(--theme-soft);
+  color: var(--theme-secondary);
+  border-color: var(--theme-line);
+  border-radius: var(--vantilo-radius-sm, 8px);
+  font: 500 12px/1.5 var(--vantilo-font-sans, system-ui, sans-serif);
+  padding: 4px 10px;
 }
-.codex-prep-panel .reading-assistant-references button:hover { color: var(--theme-accent); background: var(--theme-selected); }
-.codex-prep-panel .reading-assistant-references button:disabled { opacity: .45; cursor: default; }
+
+.codex-prep-panel .reading-assistant-references button:hover {
+  color: var(--theme-accent);
+  background: var(--theme-selected);
+}
+
+.codex-prep-panel .reading-assistant-references button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

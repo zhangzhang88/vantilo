@@ -12,12 +12,17 @@ function isPrivateHost(host) {
   const version = net.isIP(name);
   if (version === 4) {
     const [a,b] = name.split('.').map(Number);
-    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
   }
-  if (version === 6) return name === '::1' || name.startsWith('fc') || name.startsWith('fd') || name.startsWith('fe80:');
+  if (version === 6) return name === '::1' || name.startsWith('fc') || name.startsWith('fd');
   return false;
 }
-function validateConfig(input) {
+function assertAllowedHttpHost(url) {
+  if (url.protocol === 'http:' && !isPrivateHost(url.hostname)) {
+    throw new Error('自定义 API 的 HTTP 地址只支持回环地址和常见局域网地址。链路本地地址和公网地址请使用 HTTPS。');
+  }
+}
+function validateConfig(input, { stored = false } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['id','name','baseUrl','model','apiKey'].includes(key))) throw new Error('自定义 API 设置无效');
   const id = typeof input.id === 'string' && /^[a-f0-9-]{36}$/i.test(input.id) ? input.id : randomUUID();
   const name = typeof input.name === 'string' ? input.name.trim() : '';
@@ -26,7 +31,7 @@ function validateConfig(input) {
   let url;
   try { url = new URL(typeof input.baseUrl === 'string' ? input.baseUrl.trim() : ''); } catch { throw new Error('请输入有效的 API 地址'); }
   if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !url.hostname || /[\r\n\0]/.test(input.baseUrl)) throw new Error('API 地址必须是有效的 HTTP(S) 根地址，不能包含账号、密码、查询参数或片段');
-  if (url.protocol === 'http:' && !isPrivateHost(url.hostname)) throw new Error('公网 API 必须使用 HTTPS；HTTP 仅允许 localhost 或局域网地址');
+  if (!stored) assertAllowedHttpHost(url);
   if (url.pathname.endsWith('/models')) throw new Error('请填写兼容 OpenAI 的 API 根地址或 Responses/Chat Completions 接口地址');
   if (!name || name.length > 80 || /[\u0000-\u001f]/.test(name)) throw new Error('请填写 1–80 个字符的服务名称');
   if (!model || model.length > 256 || /[\r\n\0]/.test(model)) throw new Error('请填写有效的模型名称');
@@ -65,7 +70,8 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
   const failure = (code, message) => Object.assign(new Error(message), { code });
   function parseProfile(item) {
     if (!item || typeof item !== 'object' || !item.config || typeof item.config.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(item.config.id)) throw failure('corrupt_json', '自定义 API 配置格式无效，原文件已保留');
-    const config = validateConfig({ ...item.config, apiKey: '' });
+    // Keep legacy profiles editable so a blocked address cannot lock out other services.
+    const config = validateConfig({ ...item.config, apiKey: '' }, { stored: true });
     const encryptedApiKey = item.encryptedApiKey;
     const cacheRevision = item.cacheRevision;
     if (cacheRevision !== undefined && (typeof cacheRevision !== 'string' || !/^[a-f0-9-]{36}$/i.test(cacheRevision))) throw failure('corrupt_json', 'API 模型标识错误，原文件已保留');
@@ -202,6 +208,7 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
       if(expectedEngineId!==undefined && expectedEngineId!==customApiEngineId(profile)) throw failure('engine_changed', '所选 API 模型或地址已变更，请重新选择模型');
       if(task!==undefined&&task!=='word-context')throw new Error('自定义 API 请求类型无效');
       if(profileId!==undefined&&profileId!==profile.id)throw new Error('自定义 API 已切换，请重新点词');
+      assertAllowedHttpHost(new URL(profile.baseUrl));
       return request({...profile,apiKey:decrypt(profile)},{instruction,input,signal,task});
     },
   };

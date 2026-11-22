@@ -15,7 +15,7 @@ type Entry = {
   waiters: Set<() => void>;
   finished: Promise<void>;
 };
-const MAX_PREFETCHED_CHUNKS = 4;
+export const MAX_PREFETCHED_CHUNKS = 6;
 const MAX_SAMPLES_PER_CHUNK = 24_000 * 45;
 const RECOVERY_DELAY_MS = 250;
 
@@ -54,6 +54,11 @@ export class ChineseListeningPrebuffer {
   isComplete(text: string, voice: ChineseAudiobookVoice): boolean {
     const entry = this.entries.get(JSON.stringify([voice, text]));
     return Boolean(entry?.done && !entry.failed);
+  }
+
+  availableSeconds(text: string, voice: ChineseAudiobookVoice): number {
+    const entry = this.entries.get(JSON.stringify([voice, text]));
+    return entry && !entry.failed ? entry.samples / 24_000 : 0;
   }
 
   /** Actual synthesis throughput, including model startup. Cached PCM can

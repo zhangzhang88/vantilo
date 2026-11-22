@@ -13,16 +13,19 @@ import { AgentComposer, type ComposerHandle } from './ui/agent-composer';
 import { CodexModelPicker } from './ui/codex-model-picker';
 import { PermissionModePicker, type PermissionMode } from './ui/permission-mode-picker';
 import { ConversationMessage } from './ui/conversation-message';
-import { MagazineReaderModule, type MagazineReaderStatus, type MagazineSyncState } from './ui/magazine-reader-module';
+import { MagazineReaderModule, isReaderAppearance, type MagazineReaderStatus, type MagazineSyncState, type ReaderAppearance } from './ui/magazine-reader-module';
 import { ReaderOnboarding, type ReaderSetupCheck } from './ui/reader-onboarding';
+import { SidebarToggle } from './ui/sidebar-toggle';
 import { isScrollViewportNearEnd } from './model/codex-models';
 import { settleTaskToolActivities, toolActivityLabel, type ToolActivity } from './model/tool-activity';
+import './ui/design-tokens.css';
 import './style.css';
 import './ui/session-navigation.css';
 import './ui/agent-composer.css';
 import './ui/permission-mode-picker.css';
 import './ui/conversation.css';
 import './ui/macos-shell.css';
+import './ui/global-appearance.css';
 
 type EngineTask={taskId:string;sessionId:string;owner:'agent'|'reader';phase:'starting'|'running'|'cancelling'|'finishing'};
 type RuntimeState = { activeTask?:EngineTask|null; status: 'connecting'|'ready'|'error'|'stopped'; error?: string };
@@ -73,14 +76,53 @@ function formatDate(value:string) { const date=new Date(value); return Number.is
 function projectName(root:string) { return root.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1)||root; }
 function sortSessions(items:SessionSummary[]) { return [...items].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)); }
 
+const HOST_APPEARANCE_STORAGE_KEY = 'vantilo-host-appearance-v1';
+function loadHostAppearance(): ReaderAppearance {
+  try {
+    const raw = localStorage.getItem(HOST_APPEARANCE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (isReaderAppearance(parsed)) return parsed;
+    }
+  } catch { /* ignore storage errors */ }
+  return { theme: 'night', fontSize: 16, fontFamily: 'sans' };
+}
+
 function App() {
+  const [appearance, setAppearance] = React.useState<ReaderAppearance>(loadHostAppearance);
+  const handleAppearanceChange = React.useCallback((next: ReaderAppearance) => {
+    setAppearance(prev => {
+      if (prev.theme === next.theme && prev.fontSize === next.fontSize && prev.fontFamily === next.fontFamily) return prev;
+      try { localStorage.setItem(HOST_APPEARANCE_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const isDarkTheme = appearance.theme === 'night' || appearance.theme === 'blue';
   const [sidebarWidth,setSidebarWidth]=React.useState(230);
   const [sidebarHidden,setSidebarHidden]=React.useState(false);
   const [account,setAccount]=React.useState<AccountState|null>(null);
   const [accountBusy,setAccountBusy]=React.useState(false);
   const [readerDestination,setReaderDestination]=React.useState<{target:'settings'|'library'|'practice';sequence:number}|undefined>({target:'library',sequence:0});
   const [settingsActive,setSettingsActive]=React.useState(false);
-  function openReaderDestination(target:'settings'|'library'|'practice') {setSettingsActive(target==='settings');setReaderDestination(previous=>({target,sequence:(previous?.sequence??0)+1}));void enterMagazineReader();}
+  function openReaderDestination(target:'settings'|'library'|'practice') {
+    setSettingsActive(target==='settings');
+    setReaderDestination(previous=>({target,sequence:(previous?.sequence??0)+1}));
+    void enterMagazineReader();
+  }
+  const shortcutActionRef = React.useRef(openReaderDestination);
+  shortcutActionRef.current = openReaderDestination;
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey)) return;
+      if (event.key === '1') { event.preventDefault(); setSettingsActive(false); setActiveModule('agent'); return; }
+      if (event.key === '2') { event.preventDefault(); shortcutActionRef.current('library'); return; }
+      if (event.key === '3') { event.preventDefault(); shortcutActionRef.current('practice'); return; }
+      if (event.key === ',') { event.preventDefault(); shortcutActionRef.current('settings'); return; }
+      if (event.key === '\\') { event.preventDefault(); setSidebarHidden(hidden => !hidden); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const [audiobookTarget,setAudiobookTarget]=React.useState<HTMLElement|null>(null);
   const [activeModule,setActiveModule]=React.useState<'agent'|'magazine-reader'>('agent');
   const [magazineReaderStatus,setMagazineReaderStatus]=React.useState<MagazineReaderStatus>('idle');
@@ -427,11 +469,11 @@ function App() {
   const sessionWorkspaceMismatch=Boolean(workspace.root&&currentSession&&currentSession.workspaceRoot!==workspace.root);
   const composerDisabled=Boolean(account&&!account.connected)||runtime.status!=='ready'||busy||!selectedSessionId||!storage.available||!workspace.root||sessionWorkspaceMismatch||loadingConversation;
 
-  return <Provider colorScheme="dark" background="base"><main className={`vantilo-macos-shell ${sidebarHidden && activeModule === 'agent' ? 'sidebar-collapsed' : ''}`}>
-    <div className="app-titlebar"><span className="app-window-title" aria-hidden="true">Vantilo</span>{account && <div className="account-controls"><span>{account.connected ? `ChatGPT 已登录${account.email ? ' · ' + account.email : ''}` : 'Agent 与 Reader 共用 ChatGPT 账号'}</span><button type="button" disabled={accountBusy || busy} onClick={() => void changeAccount()}>{accountBusy ? '正在处理…' : account.connected ? '退出账号' : '登录 ChatGPT'}</button></div>}</div>
+  return <Provider colorScheme={isDarkTheme ? 'dark' : 'light'} background="base"><main data-vantilo-theme={appearance.theme} className={`vantilo-macos-shell ${sidebarHidden && activeModule === 'agent' ? 'sidebar-collapsed' : ''}`}>
+    <div className="app-titlebar"><div className="app-titlebar-leading">{activeModule === 'agent' && <SidebarToggle collapsed={sidebarHidden} onToggle={() => setSidebarHidden(hidden => !hidden)} />}<span className="app-window-title" aria-hidden="true">Vantilo</span></div>{account && <div className={`account-controls ${account.connected ? 'is-connected' : ''}`} title={account.connected ? `ChatGPT 已登录${account.email ? ' · ' + account.email : ''}` : 'Agent 与 Reader 共用 ChatGPT 账号'}><span className="account-status-dot" aria-hidden="true" /><span className="account-status-text">{account.connected ? (account.email || 'ChatGPT 已登录') : '未登录 ChatGPT'}</span><button type="button" disabled={accountBusy || busy} onClick={() => void changeAccount()}>{accountBusy ? '正在处理…' : account.connected ? '退出账号' : '登录 ChatGPT'}</button></div>}</div>
     <MainNavigation onHome={()=>{setSettingsActive(false);setActiveModule('agent');}} onMagazineReader={()=>openReaderDestination('library')} onPractice={()=>openReaderDestination('practice')} onSettings={()=>openReaderDestination('settings')} activeSection={settingsActive&&activeModule==='magazine-reader'?'settings':activeModule==='magazine-reader'&&readerDestination?.target==='practice'?'practice':activeModule}/>
     <div className={activeModule === 'magazine-reader' ? 'workspace-sheet workspace-sheet-reader' : 'workspace-sheet'} style={{'--sidebar-width':`${sidebarWidth}px`} as React.CSSProperties}>
-    {(magazineReaderStatus !== 'idle' || activeModule === 'magazine-reader') && <MagazineReaderModule navigationRequest={readerDestination} visible={activeModule === 'magazine-reader'} status={magazineReaderStatus} error={magazineReaderError} onRetry={() => void enterMagazineReader()} onBack={() => setActiveModule('agent')} syncState={magazineSyncState} onSync={() => void syncMagazineReader()} onSetup={() => setReaderSetupOpen(true)} audiobookTarget={audiobookTarget}
+    {(magazineReaderStatus !== 'idle' || activeModule === 'magazine-reader') && <MagazineReaderModule navigationRequest={readerDestination} visible={activeModule === 'magazine-reader'} status={magazineReaderStatus} error={magazineReaderError} onRetry={() => void enterMagazineReader()} onBack={() => setActiveModule('agent')} syncState={magazineSyncState} onSync={() => void syncMagazineReader()} onSetup={() => setReaderSetupOpen(true)} onAppearanceChange={handleAppearanceChange} audiobookTarget={audiobookTarget}
       onShowReader={showAudiobookOriginal} />}
     {activeModule === 'agent' && <>
     {!sidebarHidden&&<WorkspaceSidebar label="会话侧栏" width={sidebarWidth} onResize={setSidebarWidth}><SidebarHeading>Vantilo</SidebarHeading><button className="new" onClick={()=>void newSession()} disabled={!storage.available}><AddCircle aria-hidden="true"/><span>新建会话</span></button>
