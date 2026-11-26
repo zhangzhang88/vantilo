@@ -1,53 +1,36 @@
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const { listGutenbergIntroEngines } = createRequire(import.meta.url)('../electron/gutenberg-intro-engines.cjs');
 
-describe('Book introduction model menu follows Reader translation catalog', () => {
-  it('includes every saved API before the live Codex catalog', async () => {
-    const profile = {configured:true,id:'saved-profile-123',name:'Local Qwen',model:'qwen3.5-4b'};
-    const listModels = vi.fn(async()=>({models:[
-      {id:'gpt-6-luna',displayName:'GPT-6-Luna',defaultEffort:'high'},
-      {id:'gpt-7-future',displayName:'GPT-7-Future',defaultEffort:'medium'}
-    ]}));
-    const other={id:'other-profile',name:'Second API',model:'second-model',apiKey:'synthetic-secret'};
-    const result=await listGutenbergIntroEngines({customApi:{get:async()=>({...profile,activeId:profile.id,profiles:[other,profile]})},listModels});
-    const expectedCustom='custom-api:'+createHash('sha256').update(profile.id).digest('hex').slice(0,12);
-    const secondCustom='custom-api:'+createHash('sha256').update(other.id).digest('hex').slice(0,12);
+describe('Book introduction model menu uses saved custom API profiles only', () => {
+  it('includes every saved custom API profile without Codex engines', async () => {
+    const profile = { configured: true, id: 'saved-profile-123', name: 'Local Qwen', model: 'qwen3.5-4b' };
+    const other = { id: 'other-profile', name: 'Second API', model: 'second-model', apiKey: 'synthetic-secret' };
+    const result = await listGutenbergIntroEngines({ customApi: { get: async () => ({ ...profile, activeId: profile.id, profiles: [other, profile] }) } });
+    const expectedCustom = 'custom-api:' + createHash('sha256').update(profile.id).digest('hex').slice(0, 12);
+    const secondCustom = 'custom-api:' + createHash('sha256').update(other.id).digest('hex').slice(0, 12);
     expect(result.defaultId).toBe(expectedCustom);
     expect(result.engines).toEqual([
-      {id:expectedCustom,label:'自定义 API · Local Qwen / qwen3.5-4b',engine:'custom',modelId:'qwen3.5-4b',effort:null},
-      {id:secondCustom,label:'自定义 API · Second API / second-model',engine:'custom',modelId:'second-model',effort:null},
-      {id:'codex:gpt-6-luna',label:'Codex / ChatGPT · GPT-6-Luna',engine:'codex',modelId:'gpt-6-luna',effort:'high'},
-      {id:'codex:gpt-7-future',label:'Codex / ChatGPT · GPT-7-Future',engine:'codex',modelId:'gpt-7-future',effort:'medium'}
+      { id: expectedCustom, label: 'Local Qwen · qwen3.5-4b', engine: 'custom', modelId: 'qwen3.5-4b', effort: null },
+      { id: secondCustom, label: 'Second API · second-model', engine: 'custom', modelId: 'second-model', effort: null },
     ]);
-    expect(listModels).toHaveBeenCalledOnce();
   });
 
   it('reflects a changed selected custom API without exposing credentials', async () => {
-    let chosen={configured:true,id:'first',name:'Local Qwen',model:'qwen3.5-4b',apiKey:'secret'};
-    const api={get:async()=>chosen};
-    const listModels=async()=>({models:[]});
-    const first=await listGutenbergIntroEngines({customApi:api,listModels});
-    chosen={configured:true,id:'second',name:'MiniMax',model:'minimax-m3',apiKey:'secret-two'};
-    const second=await listGutenbergIntroEngines({customApi:api,listModels});
+    let chosen = { configured: true, id: 'first', name: 'Local Qwen', model: 'qwen3.5-4b', apiKey: 'secret' };
+    const api = { get: async () => chosen };
+    const first = await listGutenbergIntroEngines({ customApi: api });
+    chosen = { configured: true, id: 'second', name: 'MiniMax', model: 'minimax-m3', apiKey: 'secret-two' };
+    const second = await listGutenbergIntroEngines({ customApi: api });
     expect(first.engines[0].id).not.toBe(second.engines[0].id);
-    expect(second.engines[0].label).toContain('MiniMax / minimax-m3');
+    expect(second.engines[0].label).toContain('MiniMax · minimax-m3');
     expect(JSON.stringify(second)).not.toContain('secret');
   });
 
-  it('keeps the remaining provider available if either provider is unavailable', async () => {
-    const codexOnly=await listGutenbergIntroEngines({
-      customApi:{get:async()=>{throw Error('locked')}},
-      listModels:async()=>({models:[{id:'gpt-next',displayName:'GPT Next',defaultEffort:'low'}]})
-    });
-    expect(codexOnly.engines.map((item:any)=>item.id)).toEqual(['codex:gpt-next']);
-    const customOnly=await listGutenbergIntroEngines({
-      customApi:{get:async()=>({configured:true,id:'custom',model:'my-model',name:'My API'})},
-      listModels:async()=>{throw Error('offline')}
-    });
-    expect(customOnly.engines).toHaveLength(1);
-    expect(customOnly.engines[0].engine).toBe('custom');
+  it('returns an empty engine list if custom API storage is unavailable', async () => {
+    const unavailable = await listGutenbergIntroEngines({ customApi: { get: async () => { throw Error('locked'); } } });
+    expect(unavailable).toEqual({ engines: [], defaultId: '' });
   });
 });

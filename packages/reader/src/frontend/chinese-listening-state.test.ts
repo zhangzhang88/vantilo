@@ -14,6 +14,39 @@ describe("Chinese listening state", () => {
     expect(playable).toEqual([2, 7, 8]);
     expect(playable.find(index => index >= 9)).toBeUndefined();
     expect(narratableParagraphIndexes({ paragraphs: ["·2005年12月8日", "Page 19"] })).toEqual([]);
+
+    // Body prose inside a complex-layout original visual (such as a paragraph with an inline cover image) remains narratable.
+    expect(narratableParagraphIndexes({
+      paragraphs: ["《超越感觉》旨在向你介绍批判性思考。", "然而，在过去十年中。"],
+      visuals: [{
+        id: "inline-img",
+        kind: "original",
+        reason: "complex-layout",
+        beforeParagraphIndex: 0,
+        captionParagraphIndexes: [],
+        coveredParagraphIndexes: [0],
+        captionText: "",
+        originalFragment: "node-0",
+        images: [],
+      }],
+    })).toEqual([0, 1]);
+
+    // Universal skip for chapter-end bibliographic endnotes, locator codes (e.g. P1-C01-5), and trailing reference headings without skipping normal numbered prose.
+    expect(narratableParagraphIndexes({
+      paragraphs: [
+        "这是第一章正文段落。",
+        "1. 首先，在得出结论之前要理清问题。",
+        "参考文献",
+        '1 Maxwell Maltz, Psycho-Cybernetics (New York: Pocket Books, 1969), pp. 49-53',
+        '2 Thomas R. Blakeslee, The Right Brain (Garden City, N.Y.: Anchor Press/Doubleday, 1980).',
+        '4 Ibid., pp.88-90.',
+        '7 "Teacher Uses Prayer," Binghamton (New York) press, November 16, 1982, p.1.',
+        '9 Binghamton (New York) Press, march 27, 1989, p.1A.',
+        '10 "When \'News\' Is Almost a Crime," Time, March 21, 1983, p.84.',
+        '11 张三：《思考的方法》，某某出版社，2020年，第 35 页。',
+        "P1-C01-5",
+      ],
+    })).toEqual([0, 1]);
   });
   it("round-trips location, segment and speed in backups without audio", () => {
     const storage = memory(); saveChineseListeningPosition(storage, record);

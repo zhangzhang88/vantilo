@@ -17,9 +17,16 @@ export function isReaderAppearance(value: unknown): value is ReaderAppearance {
   return typeof item.theme === 'string' && ['paper','sepia','green','blue','night'].includes(item.theme) && typeof item.fontSize === 'number' && Number.isInteger(item.fontSize) && item.fontSize >= 12 && item.fontSize <= 24 && (item.fontFamily === 'serif' || item.fontFamily === 'sans');
 }
 const MAGAZINE_READER_URL = 'http://127.0.0.1:5175/';
-type BridgeMessage = {type:string;token?:string;bookId?:string;documentId?:string;pageId?:string;mode?:'sentence'|'article';english?:boolean;action?:'sentence'|'lookup'|'translation'|'scroll';requestId?:string;operation?:'snapshot'|'replace'|'clear';record?:unknown;snapshot?:unknown;message?:unknown;terminal?:boolean};
-type VocabularyBackupEvent = {type:'freeze'|'resume'|'status';requestId:string;phase?:string;progress?:number;message?:string;result?:{name:string;size:number;sha256:string;vocabularyCount:number}};
-type HostBridge = {onSystemSuspended?:(callback:()=>void)=>()=>void;onVocabularyBackupEvent?:(callback:(event:VocabularyBackupEvent)=>void)=>()=>void;startVocabularyBackup?:(requestId:string)=>Promise<{canceled?:boolean}>;submitVocabularyBackupSnapshot?:(requestId:string,snapshot:unknown)=>Promise<{accepted:boolean}>;cancelVocabularyBackup?:(requestId:string)=>Promise<{canceled:boolean}>;revealVocabularyBackup?:()=>Promise<{shown:boolean}>;getVocabularyBackupStatus?:()=>Promise<{lastBackup:{createdAt:string;name:string;path:string;size:number;sha256:string;vocabularyCount:number}|null}>};
+type BgTranslationState = { id: string; bookId: string; bookTitle: string; statusText: string };
+type BridgeMessage = {type:string;token?:string;bookId?:string;documentId?:string;pageId?:string;mode?:'sentence'|'article';english?:boolean;action?:'sentence'|'lookup'|'translation'|'scroll';requestId?:string;operation?:'snapshot'|'replace'|'clear';record?:unknown;snapshot?:unknown;state?:unknown;message?:unknown;terminal?:boolean};
+function isBgTranslationState(value: unknown): value is BgTranslationState {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === 'string' && item.id.length > 0 && typeof item.bookId === 'string' && item.bookId.length > 0
+    && typeof item.bookTitle === 'string' && typeof item.statusText === 'string';
+}
+type VocabularyBackupEvent = {type:'freeze'|'unfreeze'|'resume'|'status';requestId:string;phase?:string;progress?:number;message?:string;result?:{name:string;size:number;sha256:string;vocabularyCount:number}};
+type HostBridge = {onSystemSuspended?:(callback:()=>void)=>()=>void;onTtsInstallUpdated?:(callback:(event:{installed:boolean})=>void)=>()=>void;onCustomApiUpdated?:(callback:(event:{configured:boolean})=>void)=>()=>void;onVocabularyBackupEvent?:(callback:(event:VocabularyBackupEvent)=>void)=>()=>void;startVocabularyBackup?:(requestId:string)=>Promise<{canceled?:boolean}>;submitVocabularyBackupSnapshot?:(requestId:string,snapshot:unknown)=>Promise<{accepted:boolean}>;cancelVocabularyBackup?:(requestId:string)=>Promise<{canceled:boolean}>;revealVocabularyBackup?:()=>Promise<{shown:boolean}>;getVocabularyBackupStatus?:()=>Promise<{lastBackup:{createdAt:string;name:string;path:string;size:number;sha256:string;vocabularyCount:number}|null}>};
 
 export function MagazineReaderModule({navigationRequest,status,error,onRetry,onBack,syncState,onSync,onSetup,onAppearanceChange,audiobookTarget,onShowReader,visible=true}: {
   navigationRequest?:{target:'settings'|'library'|'practice';sequence:number};status:MagazineReaderStatus;error:string|null;onRetry:()=>void;onBack:()=>void;syncState?:MagazineSyncState|null;onSync?:()=>void;onSetup?:()=>void;onAppearanceChange?:(appearance:ReaderAppearance)=>void;visible?:boolean;audiobookTarget?:HTMLElement|null;onShowReader?:()=>void;
@@ -28,6 +35,7 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
   const [discoveryOpen,setDiscoveryOpen]=React.useState(false),[growthOpen,setGrowthOpen]=React.useState(false);
   const [instanceToken,setInstanceToken]=React.useState<string|null>(null);
   const [audiobook,setAudiobook]=React.useState<AudiobookSnapshot|null>(null);
+  const [bgTranslation,setBgTranslation]=React.useState<BgTranslationState|null>(null);
   const lastActivityAt=React.useRef(0);
   const initRetryRef=React.useRef<number|null>(null);
   const [session,setSession]=React.useState<SessionState>(()=>createReadingSession(readGrowthRecord()));
@@ -63,7 +71,7 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
     return()=>clearInterval(id);
   },[growthStorageValid]);
   React.useEffect(()=>{
-    if(status!=='ready')setAudiobook(null);
+    if(status!=='ready'){setAudiobook(null);setBgTranslation(null);}
   },[status]);
   React.useEffect(()=>{
     const receive=(event:MessageEvent<BridgeMessage>)=>{
@@ -76,6 +84,10 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
       }
       if(data.type==='vantilo:audiobook-state'){
         if(instanceToken&&data.token===instanceToken&&(data.snapshot===null||isAudiobookSnapshot(data.snapshot)))setAudiobook(data.snapshot);
+        return;
+      }
+      if(data.type==='vantilo:bg-translation-state'){
+        if(data.state===null||isBgTranslationState(data.state))setBgTranslation(data.state);
         return;
       }
       if(data.type==='vantilo:open-environment-settings'){onSetup?.();return;}
@@ -136,6 +148,18 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
   },[origin,navigate,onSetup,onAppearanceChange,instanceToken,visible,growthOpen,discoveryOpen,growthStorageValid]);
   React.useEffect(()=>{
     const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+    return api?.onTtsInstallUpdated?.((event)=>{
+      frameRef.current?.contentWindow?.postMessage({type:'vantilo:tts-installer-updated',installed:Boolean(event?.installed)},origin);
+    });
+  },[origin]);
+  React.useEffect(()=>{
+    const api=(window as Window & {vantilo?:HostBridge}).vantilo;
+    return api?.onCustomApiUpdated?.((event)=>{
+      frameRef.current?.contentWindow?.postMessage({type:'vantilo:custom-api-updated',configured:Boolean(event?.configured)},origin);
+    });
+  },[origin]);
+  React.useEffect(()=>{
+    const api=(window as Window & {vantilo?:HostBridge}).vantilo;
     return api?.onVocabularyBackupEvent?.((event)=>{
       if(!event||event.requestId!==vocabularyBackupRequestRef.current||!frameRef.current?.contentWindow||!instanceToken)return;
       frameRef.current.contentWindow.postMessage({...event,type:`vantilo:vocabulary-backup-${event.type}`,token:instanceToken},origin);
@@ -153,10 +177,11 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
     setSession(current=>current.documentId?leaveReadingSession(current,current.documentId,current.pageId??undefined):current);if(initRetryRef.current!==null)clearInterval(initRetryRef.current);
     const token=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}-${Math.random()}`;
     setAudiobook(null);
+    setBgTranslation(null);
     setInstanceToken(token);
     const frame=frameRef.current?.contentWindow;
     frame?.postMessage({type:'vantilo:audiobook-connect',token},origin);
-    const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-init',token},'*');send();
+    const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-init',token},origin);send();
     let attempts=0;initRetryRef.current=window.setInterval(()=>{send();if(++attempts>=30&&initRetryRef.current!==null){clearInterval(initRetryRef.current);initRetryRef.current=null;}},300);navigate();
   };
   const continueReading=()=>{if(growthStorageValid)setSession(current=>resumeSession(current,Date.now()));};
@@ -180,8 +205,16 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
       :status!=='ready'?<div className="magazine-reader-state" role="status" aria-live="polite"><span className="magazine-reader-spinner" aria-hidden="true"/><h2>正在启动阅读空间…</h2><p>正在连接本机 Magazine Reader 服务，请稍候。</p></div>:null}
     {session.reminder&&visible&&!growthOpen&&<aside className="growth-reminder" role="alertdialog" aria-label="阅读提醒"><strong>还在阅读吗？</strong><p>计时已暂停，你的阅读成果已保存。</p><button onClick={continueReading}>继续阅读</button><button onClick={()=>setSession(s=>pauseSession(s,'user'))}>先暂停</button></aside>}
     {daily>=1800&&daily-1<1800&&<div className="growth-success" role="status">今日30分钟阅读目标已达成，继续阅读也会累计。</div>}
+    {visible&&(growthOpen||discoveryOpen)&&bgTranslation&&<aside className="host-bg-translation-pill" aria-label="后台全书翻译">
+      <span className="host-bg-translation-dot" aria-hidden="true"/>
+      <span role="status" className="host-bg-translation-status">{bgTranslation.statusText}</span>
+      <span className="host-bg-translation-actions">
+        <button type="button" className="host-bg-translation-open" title={bgTranslation.bookTitle} onClick={()=>{setGrowthOpen(false);setDiscoveryOpen(false);onShowReader?.();frameRef.current?.contentWindow?.postMessage({type:'vantilo:bg-translation-action',action:'open',bookId:bgTranslation.bookId},origin);}}>查看《{bgTranslation.bookTitle}》</button>
+        <button type="button" onClick={()=>{frameRef.current?.contentWindow?.postMessage({type:'vantilo:bg-translation-action',action:'pause',jobId:bgTranslation.id},origin);}}>暂停全书翻译</button>
+      </span>
+    </aside>}
   </section>
     {audiobookTarget&&audiobook&&createPortal(<AudiobookDock key={audiobook.sessionId} state={audiobook}
-      send={sendAudiobookAction}/>,audiobookTarget)}
+      send={sendAudiobookAction} onOpenTtsSetup={onSetup}/>,audiobookTarget)}
   </>;
 }

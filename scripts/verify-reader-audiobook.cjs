@@ -154,7 +154,7 @@ async function main() {
           }
           if (selectedProfileId === profiles[2].id) {
             selectedApiRequests.push(input);
-            if (testBookBatch && input === englishBody) {
+            if (testBookBatch && input === englishFollowup) {
               bookBatchBodyAttempts++;
               signal.throwIfAborted();
               return new Promise((resolve, reject) => {
@@ -162,11 +162,11 @@ async function main() {
                 signal.addEventListener('abort', abort, { once: true });
                 finishBookBatch = () => {
                   signal.removeEventListener('abort', abort);
-                  resolve(translatedFirst);
+                  resolve(translatedFollowup);
                 };
               });
             }
-            if (testBookBatch && input === englishFollowup) return translatedFollowup;
+            if (testBookBatch && input === englishBody) return translatedFirst;
             return '这段译文来自另一个已保存的测试模型。';
           }
           assert.equal(selectedProfileId, profiles[0].id);
@@ -227,9 +227,9 @@ async function main() {
           function Host() {
             const [reader, setReader] = React.useState(true);
             const [target, setTarget] = React.useState(null);
-            return <main className="vantilo-macos-shell" style={{display:"grid",height:"100vh",gridTemplateRows:"52px minmax(0,1fr) auto",gridTemplateColumns:"56px minmax(0,1fr)"}}>
+            return <main className="vantilo-macos-shell" style={{display:"grid",height:"100vh",gridTemplateRows:"44px minmax(0,1fr) auto",gridTemplateColumns:"minmax(0,1fr)"}}>
               <nav style={{gridColumn:"1 / -1"}}><button onClick={() => setReader(false)}>Agent 工作台</button><button onClick={() => setReader(true)}>返回阅读</button></nav>
-              <div className="workspace-sheet" style={{gridRow:2,gridColumn:2,display:"grid",minHeight:0}}>
+              <div className="workspace-sheet workspace-sheet-reader" style={{gridRow:2,gridColumn:1,display:"grid",minHeight:0}}>
                 <MagazineReaderModule visible={reader} status="ready" error={null} onRetry={() => {}}
                   onBack={() => setReader(false)} audiobookTarget={target} onShowReader={() => setReader(true)} />
                 {!reader && <section aria-label="Agent 工作台">测试工作台</section>}
@@ -332,14 +332,14 @@ async function main() {
     await untilHost(`document.querySelector('.magazine-reader-module')?.hidden && ${player}?.dataset.phase === 'playing'`);
     const background = await until(`(${resumeLookup})?.seconds > ${agentEntry.seconds} + 0.5`);
     assert.equal(background, playbackFrame);
-    await clickHost('回到原文');
+    await clickHost('回到当前位置');
     await untilHost(`!document.querySelector('.magazine-reader-module')?.hidden && ${player}?.dataset.phase === 'playing'`);
     await until('document.querySelector(".is-audiobook-source")?.innerText.includes("夜色渐深")');
     assert.equal(spoken.length, callsAtSwitch, '切到 Agent 和回原文不应重新请求语音');
     await clickHost('暂停朗读');
     await untilHost(`${player}?.dataset.phase === 'paused'`);
     await clickHost('Agent 工作台');
-    await clickHost('回到原文');
+    await clickHost('回到当前位置');
     await untilHost(`!document.querySelector('.magazine-reader-module')?.hidden && ${player}?.dataset.phase === 'paused'`);
     await until('document.querySelector(".is-audiobook-source")?.innerText.includes("夜色渐深")');
     await browserSession.flushStorageData();
@@ -399,15 +399,13 @@ async function main() {
     await until(`${libraryGrid} && !${libraryGrid}.innerText.includes('海边灯火测试书')`);
     await click('英文');
     await until(`${libraryGrid}?.innerText.includes('海边灯火测试书') && ${libraryGrid}?.innerText.includes('Lantern Fixture')`);
-    await clickHost('展开播放设置');
-    await untilHost('Boolean(document.querySelector(".audiobook-dock-settings select"))');
+    await clickHost('切换播放倍速，当前 1 倍速');
+    await untilHost('Boolean(document.querySelector("[data-testid=audiobook-rate-picker]"))');
     await window.webContents.executeJavaScript(`(() => {
-      const rate = [...document.querySelectorAll(".audiobook-dock-settings label")].find(label => label.textContent.startsWith("倍速")).querySelector("select");
-      rate.value = "1.25";
-      rate.dispatchEvent(new Event("change", { bubbles: true }));
+      const btn = [...document.querySelectorAll("[data-testid=audiobook-rate-picker] button")].find(item => item.textContent.includes("1.25x"));
+      btn?.click();
     })()`, true);
     await until(`(${resumeLookup})?.rate === 1.25`);
-    await clickHost('收起播放设置');
     const beforeClose = await resumed.executeJavaScript(resumeLookup);
     await clickHost('关闭播放器');
     await untilHost(`!${player} && document.querySelector(".vantilo-audiobook-slot")?.offsetHeight === 0`);
@@ -455,6 +453,7 @@ async function main() {
     assert.equal(savedTranslation.sourceText, englishFollowup);
     assert.ok(savedTranslation.seconds > englishPosition.seconds);
     await click('← 返回书籍');
+    await click('← 返回电子书');
     await click('继续听译文');
     await untilHost(`${player}?.innerText.includes("Chapter 2") && ${player}.dataset.phase === 'playing'`);
     await until(`(${translatedLookup})?.seconds > ${savedTranslation.seconds} + 0.3`);
@@ -470,7 +469,7 @@ async function main() {
         && cards[0].querySelectorAll('.book-cover').length === 1 && cards[0].getBoundingClientRect().height <= 110
         && cards[0].querySelector('p')?.textContent.includes('全书')
         && cards[0].querySelector('[data-testid=book-continue-reading]')
-        && cards[0].querySelector('[data-testid=book-continue-listening]')?.textContent.trim() === '继续听译文';
+        && !cards[0].querySelector('[data-testid=book-continue-listening]');
     })()`);
     await sameBookCard.executeJavaScript(`document.querySelector('[data-testid=book-continue-reading]').click()`, true);
     const resumedBook = await until(`document.querySelector('.reading-body')?.textContent.includes(${JSON.stringify(englishFollowup)})`);
@@ -507,8 +506,7 @@ async function main() {
     console.log('PASS: 全文复用听书译文，只补译缺失标题，收起再展开时零翻译请求和零旧配置请求');
     await click('←');
     await click('电子书');
-    const cardWithListening = await until(`Boolean(document.querySelector('[data-testid=book-continue-listening]'))`);
-    await cardWithListening.executeJavaScript(`document.querySelector('[data-testid=book-continue-listening]').click()`, true);
+    await click('继续听译文');
     await untilHost(`${player}?.innerText.includes("Chapter 2") && ${player}.dataset.phase === 'playing'`);
     assert.deepEqual(translationInputs, expectedInputs);
     await untilHost(`${player}?.innerText.includes('回到原文') && !${player}.innerText.includes('回到中英对照')`);
@@ -516,9 +514,44 @@ async function main() {
     const bookReading = 'document.querySelector("[data-testid=book-continue-reading]")';
     const bookShelf = await until(`Boolean(${bookReading})`);
     await bookShelf.executeJavaScript(`${bookReading}.click()`, true);
-    const sourcePlay = 'document.querySelector(".reading-paragraph-block .paragraph-listen-button")';
-    const bookStart = await until(`Boolean(${sourcePlay}) && document.querySelector('.reader-page-shell')?.innerText.includes('Chapter 1')`);
-    await bookStart.executeJavaScript(`${sourcePlay}.click()`, true);
+    const selectAndListenOriginalBlock = blockExpr => `(async () => {
+      const block = ${blockExpr};
+      const p = block?.querySelector(':scope > p') ?? block?.querySelector('p');
+      if (!p) return false;
+      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      const firstNode = walker.nextNode();
+      if (!firstNode || !firstNode.textContent) return false;
+      let endNode = firstNode;
+      let remaining = 12;
+      let endOffset = Math.min(remaining, firstNode.textContent.length);
+      remaining -= endOffset;
+      while (remaining > 0) {
+        const next = walker.nextNode();
+        if (!next) break;
+        if (!next.textContent) continue;
+        endNode = next;
+        endOffset = Math.min(remaining, next.textContent.length);
+        remaining -= endOffset;
+      }
+      const range = document.createRange();
+      range.setStart(firstNode, 0);
+      range.setEnd(endNode, endOffset);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      p.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      let btn = document.querySelector('[data-testid=selection-assist-popover] .selection-listen-here-button');
+      for (let i = 0; !btn && i < 10; i++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        btn = document.querySelector('[data-testid=selection-assist-popover] .selection-listen-here-button');
+      }
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`;
+    const firstSourceBlock = 'document.querySelector(".reading-body .reading-paragraph-block")';
+    const bookStart = await until(`Boolean(${firstSourceBlock}) && document.querySelector('.reader-page-shell')?.innerText.includes('Chapter 1')`);
+    assert.equal(await bookStart.executeJavaScript(selectAndListenOriginalBlock(firstSourceBlock), true), true);
     await until(`(${translatedLookup})?.sourceText === ${JSON.stringify(englishBody)}`);
     await untilHost(`${player}?.innerText.includes("Chapter 1") && ${player}.dataset.phase === 'playing'`);
     await until(`document.querySelector('.reading-body .is-audiobook-source > p')?.innerText === ${JSON.stringify(englishBody)}`);
@@ -624,15 +657,38 @@ async function main() {
     await until(`(${magazinePosition})?.completed === true`);
     assert.deepEqual(spoken.slice(magazineSpokenStart), [magazineTranslation, magazineTranslation]);
     await clickHost('回到译文');
-    const firstTranscriptPlay = 'document.querySelector("[data-testid=audiobook-transcript] .paragraph-listen-button")';
-    const magazineTranscript = await until(`Boolean(${firstTranscriptPlay}) && ${magazineHighlight}`);
-    await magazineTranscript.executeJavaScript(`${firstTranscriptPlay}.click()`, true);
+    const transcriptParagraphSelector = '[data-testid=audiobook-transcript] [data-transcript-paragraph]';
+    const listenFromTranscriptParagraph = index => `(async () => {
+      const blocks = document.querySelectorAll(${JSON.stringify(transcriptParagraphSelector)});
+      const block = blocks[${index}];
+      const p = block?.querySelector('p');
+      if (!p) return false;
+      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      const textNode = walker.nextNode();
+      if (!textNode || !textNode.textContent) return false;
+      const range = document.createRange();
+      range.setStart(textNode, 0);
+      range.setEnd(textNode, Math.min(4, textNode.textContent.length));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      p.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      let listenButton = document.querySelector('[data-testid=transcript-selection-menu] button');
+      for (let i = 0; !listenButton && i < 10; i++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        listenButton = document.querySelector('[data-testid=transcript-selection-menu] button');
+      }
+      if (!listenButton) return false;
+      listenButton.click();
+      return true;
+    })()`;
+    const magazineTranscript = await until(`document.querySelectorAll(${JSON.stringify(transcriptParagraphSelector)}).length >= 2 && ${magazineHighlight}`);
+    assert.equal(await magazineTranscript.executeJavaScript(listenFromTranscriptParagraph(0), true), true);
     await until(`(${magazinePosition})?.sourceText === ${JSON.stringify(magazineOpening)} && (${magazinePosition}).seconds > .3`);
     await untilHost(`${player}?.dataset.phase === 'playing'`);
     await clickHost('暂停朗读');
     await untilHost(`${player}?.dataset.phase === 'paused'`);
-    const secondTranscriptPlay = 'document.querySelectorAll("[data-testid=audiobook-transcript] .paragraph-listen-button")[1]';
-    await magazineTranscript.executeJavaScript(`${secondTranscriptPlay}.click()`, true);
+    assert.equal(await magazineTranscript.executeJavaScript(listenFromTranscriptParagraph(1), true), true);
     await until(`(${magazinePosition})?.sourceText === ${JSON.stringify(magazineBody)} && (${magazinePosition}).seconds > .3`);
     await until(magazineHighlight);
     await clickHost('关闭播放器');
@@ -640,10 +696,10 @@ async function main() {
     await click('← 返回本期目录');
     const chooseAgain = await until(`Boolean(${magazineArticle})`);
     await chooseAgain.executeJavaScript(`(${magazineArticle}).click()`, true);
-    const magazineStart = await until(`Boolean(${sourcePlay})`);
+    const magazineStart = await until(`Boolean(${firstSourceBlock})`);
     // Put the second synthetic paragraph below the fold to measure actual scrolling.
-    await magazineStart.executeJavaScript(`${sourcePlay}.closest('.reading-paragraph-block').style.minHeight = '180vh'`);
-    await magazineStart.executeJavaScript(`${sourcePlay}.click()`, true);
+    await magazineStart.executeJavaScript(`${firstSourceBlock}.style.minHeight = '180vh'`);
+    assert.equal(await magazineStart.executeJavaScript(selectAndListenOriginalBlock(firstSourceBlock), true), true);
     await until(`(${magazinePosition})?.sourceText === ${JSON.stringify(magazineOpening)} && (${magazinePosition}).seconds > .3`);
     await until(`${sourceHighlight}?.textContent.trim() === ${JSON.stringify(magazineOpening)}`);
     await untilHost(`${player}?.dataset.phase === 'playing'`);
@@ -655,9 +711,9 @@ async function main() {
       return window.scrollY > ${originalScroll} + 100 && top >= 0 && top < innerHeight;
     })()`);
     await clickHost('回到译文');
-    const transcriptView = await until(`Boolean(${firstTranscriptPlay}) && ${magazineHighlight}`);
-    await transcriptView.executeJavaScript(`${firstTranscriptPlay}.closest('[data-transcript-paragraph]').style.minHeight = '180vh'`);
-    await transcriptView.executeJavaScript(`${firstTranscriptPlay}.click()`, true);
+    const transcriptView = await until(`document.querySelectorAll(${JSON.stringify(transcriptParagraphSelector)}).length >= 2 && ${magazineHighlight}`);
+    await transcriptView.executeJavaScript(`document.querySelector(${JSON.stringify(transcriptParagraphSelector)}).style.minHeight = '180vh'`);
+    assert.equal(await transcriptView.executeJavaScript(listenFromTranscriptParagraph(0), true), true);
     const highlightedTranscriptText = 'document.querySelector("[data-testid=audiobook-transcript] .is-audiobook-source p")';
     await until(`${highlightedTranscriptText}?.textContent === ${JSON.stringify(magazineOpeningTranslation)}`);
     await untilHost(`${player}?.dataset.phase === 'playing'`);
@@ -688,7 +744,7 @@ async function main() {
     await modelMenu.executeJavaScript(`(() => {
       document.querySelector('.vantilo-translation-menu').open = true;
       const select = ${selectEngine};
-      const option = [...select.options].find(item => item.textContent === '自定义 API · 模拟服务 / fixture-detailed');
+      const option = [...select.options].find(item => item.textContent === '模拟服务 · fixture-detailed');
       select.value = option.value;
       select.dispatchEvent(new Event('change', { bubbles: true }));
     })()`, true);
@@ -794,26 +850,37 @@ async function main() {
     const datedToc = await until(`Boolean(${chapterRow})`);
     await datedToc.executeJavaScript(`(${chapterRow}).click()`, true);
     const blocks = `[...document.querySelectorAll('.reading-body .reading-paragraph-block')]`;
-    const topListeningButton = `[...document.querySelectorAll('button.toolbar-button')].some(button =>
-      ['从这里听', '从当前段听', '听中文译文'].includes(button.textContent.trim()))`;
+    const topChineseListenButton = `Boolean(document.querySelector('button.reader-listen-button[aria-label="朗读正文"]'))`;
+    const hiddenChineseControls = `Boolean(document.querySelector('.reader-full-translation-button, .vantilo-translation-menu, .reader-mode-switch, .paragraph-translate-button'))`;
     const datedReader = await until(`${blocks}[0]?.textContent.includes(${JSON.stringify(chapterDate)})`);
-    assert.equal(await datedReader.executeJavaScript(topListeningButton), false, '整篇模式不显示顶部听书入口');
-    await click('逐句');
-    const sentenceReader = await until(`Boolean(document.querySelector('.sentence-reading-body'))`);
-    assert.equal(await sentenceReader.executeJavaScript(topListeningButton), false, '逐句模式不显示顶部听书入口');
-    await click('整篇');
+    assert.equal(await datedReader.executeJavaScript(topChineseListenButton), true, '中文书阅读页显示顶部朗读按钮');
+    assert.equal(await datedReader.executeJavaScript(hiddenChineseControls), false, '中文书阅读页不显示全文翻译、翻译模型和整篇/逐句切换控件');
 
     const selectedParagraph = `[...document.querySelectorAll('.reading-paragraph-block')].find(block => block.textContent.includes(${JSON.stringify(second)}))`;
-    const playSelected = `${selectedParagraph}?.querySelector('.paragraph-listen-button')`;
-    const selectedReader = await until(`Boolean(${playSelected})`);
+    const selectedReader = await until(`Boolean(${selectedParagraph})`);
     for (const text of [chapterDate, endPageMarker]) {
-      assert.equal(await selectedReader.executeJavaScript(`(() => {
+      assert.equal(await selectedReader.executeJavaScript(`(async () => {
         const block = ${blocks}.find(item => item.textContent.includes(${JSON.stringify(text)}));
-        return Boolean(block && !block.querySelector('.paragraph-listen-button'));
+        const p = block?.querySelector(':scope > p');
+        if (!p) return false;
+        const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+        const textNode = walker.nextNode();
+        if (!textNode) return false;
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, Math.min(4, textNode.textContent.length));
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        p.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const hasListenHere = Boolean(document.querySelector('[data-testid=selection-assist-popover] .selection-listen-here-button'));
+        selection.removeAllRanges();
+        return !hasListenHere;
       })()`), true);
     }
     const selectedRequestStart = spoken.length;
-    await selectedReader.executeJavaScript(`(${playSelected}).click()`, true);
+    assert.equal(await selectedReader.executeJavaScript(selectAndListenOriginalBlock(selectedParagraph), true), true);
     await untilHost(`${player}?.dataset.phase === 'playing'`);
     await until(`${selectedParagraph}?.classList.contains('is-audiobook-source')`);
     assert.equal(spoken[selectedRequestStart], second, '中文原文从本段听应直接合成所选段落');
@@ -843,8 +910,8 @@ async function main() {
     for (let attempt = 0; bookBatchBodyAttempts < 1 && attempt < 100; attempt++) await delay(50);
     assert.equal(bookBatchBodyAttempts, 1);
     const firstRunInputs = selectedApiRequests.slice(batchFirstRequest);
-    assert.ok(firstRunInputs.indexOf(englishFollowup) < firstRunInputs.indexOf(englishBody) && firstRunInputs.includes(englishFollowup),
-      '按最近阅读位置优先完成第二章，然后补译第一章');
+    assert.ok(firstRunInputs.indexOf(englishBody) < firstRunInputs.indexOf(englishFollowup) && firstRunInputs.includes(englishBody),
+      '按原书目录顺序优先完成第一章，然后译第二章');
     await click('← 返回电子书');
     const otherBook = await until(`Boolean(${chineseCard})`);
     await otherBook.executeJavaScript(`(${chineseCard}).click()`, true);
@@ -880,7 +947,7 @@ async function main() {
     await untilHost(`document.querySelector('section[aria-label="Magazine Reader"]')?.hidden`);
     assert.equal(bookBatchAborts, 1, '在 Agent 工作台期间完成任务，Reader 保持隐藏');
     await clickHost('返回阅读');
-    assert.deepEqual(selectedApiRequests.slice(resumeRequest), [englishBody], '重新打开后只补未完成的段落');
+    assert.deepEqual(selectedApiRequests.slice(resumeRequest), [englishFollowup], '重新打开后只补未完成的段落');
 
     const firstBookChapter = `[...document.querySelectorAll('.book-toc-row')].find(row => row.textContent.includes('Chapter 1'))`;
     const completedBook = await until(`Boolean(${firstBookChapter})`);
@@ -908,8 +975,17 @@ async function main() {
     await until(`document.querySelector('.issue-translation-options')?.textContent.includes('待翻译 2 章')`);
     await click('开始翻译');
     await until(`document.querySelector('.issue-translation-progress')?.textContent.includes('全书译文已就绪 · 2/2 章')`);
+    if (process.env.VANTILO_CATALOG_READER_PREVIEW === '1') {
+      assert.deepEqual(catalogRequests, [profiles[1].id, profiles[1].id, profiles[1].id], '全书翻译自动补目录应复用已保存的目录模型而非改写为正文模型');
+    }
     assert.equal(codexBatchInputs.length, 2);
-    assert.ok(codexBatchInputs.every(batch => batch.length >= 2 && batch.length <= 6));
+    assert.deepEqual(
+      codexBatchInputs,
+      process.env.VANTILO_CATALOG_READER_PREVIEW === '1'
+        ? [['The Ridge', englishBody], [englishFollowup]]
+        : [['Chapter 1', 'The Ridge', englishBody], ['Chapter 2', englishFollowup]],
+      'Codex 全书翻译应按章合并请求，并跳过已由中文目录覆盖的章标题',
+    );
     assert.deepEqual(codexFallbackInputs, ['The Ridge'], '只重新请求批次中缺少的译文');
     await until(`document.querySelector('.issue-translation-progress details')?.textContent.includes('会话准备 0.3 秒 · 模型响应 1.4 秒')`);
     const batchReady = await until(`Boolean(${firstBookChapter})`);

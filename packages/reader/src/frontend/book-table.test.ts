@@ -40,4 +40,46 @@ describe("source table layout", () => {
     expect(html).not.toContain("<img");
     expect(html).not.toContain("javascript:");
   });
+  it("renders body paragraphs from complex-layout visuals cleanly without the fallback banner, while keeping compact cues for formulas and SVGs", () => {
+    const html = renderToStaticMarkup(createElement("main", null, renderBookLayout({
+      paragraphs: ["《超越感觉》旨在向你介绍批判性思考。", "然而，在过去十年中。"],
+      identity: bookChapterReadingDocumentIdentity("book:beyond", "chapter:intro"),
+      visuals: [{
+        id: "inline-img-p",
+        kind: "original",
+        reason: "complex-layout",
+        beforeParagraphIndex: 0,
+        captionParagraphIndexes: [],
+        coveredParagraphIndexes: [0],
+        captionText: "",
+        captionPlacement: "after",
+        originalFragment: "node-0",
+        images: [],
+      }],
+    }, index => createElement("p", { "data-index": index }, index === 0 ? "《超越感觉》旨在向你介绍批判性思考。" : "然而，在过去十年中。"))));
+    expect(html).not.toContain("book-visual-fallback");
+    expect(html).not.toContain("原书图形与排版");
+    expect(html.match(/《超越感觉》旨在向你介绍批判性思考。/g)).toHaveLength(1);
+    expect(html.match(/然而，在过去十年中。/g)).toHaveLength(1);
+    expect(html.match(/data-index="0"/g)).toHaveLength(1);
+
+    const formulaHtml = renderToStaticMarkup(createElement("main", null, renderBookLayout({
+      paragraphs: ["E = mc^2"],
+      identity: bookChapterReadingDocumentIdentity("book:beyond", "chapter:math"),
+      visuals: [{
+        id: "formula-0",
+        kind: "original",
+        reason: "formula",
+        beforeParagraphIndex: 0,
+        captionParagraphIndexes: [],
+        coveredParagraphIndexes: [0],
+        captionText: "",
+        captionPlacement: "after",
+        originalFragment: "eq-0",
+        images: [],
+      }],
+    }, index => createElement("p", { "data-index": index }, "E = mc^2"))));
+    expect(formulaHtml).toContain("原书公式");
+    expect(formulaHtml).toContain("查看原书内容");
+  });
 });

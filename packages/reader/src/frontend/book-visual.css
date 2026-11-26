@@ -10,7 +10,10 @@ html[data-color-mode="blue"] .book-visual-image > img:hover { filter: brightness
 .book-visual .book-visual-enlarge { margin-top: 7px; }
 .book-visual figcaption { color: inherit; font: .9em/1.65 var(--reader-body-font); }
 .book-visual figcaption p { margin: .5em 0; }.book-visual figcaption .reading-paragraph-block { margin-bottom: .5em; }
-.book-visual-fallback { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--theme-line); border-radius: 8px; background: var(--theme-surface); font: 14px/1.6 system-ui,sans-serif; }
+.book-visual-fallback { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border: 1px solid color-mix(in srgb, var(--ink, #1c1b18) 12%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--ink, #1c1b18) 4%, transparent); color: color-mix(in srgb, var(--ink, #1c1b18) 72%, transparent); font: 12.5px/1.4 system-ui,sans-serif; }
+.book-visual-fallback button { padding: 3px 10px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ink, #1c1b18) 7%, transparent); color: var(--theme-accent, var(--accent)); font-size: 12px; }
+.book-visual-fallback button:hover { background: color-mix(in srgb, var(--ink, #1c1b18) 12%, transparent); }
+.book-visual-covered-paragraphs { margin-top: 1em; }
 .book-original-dialog { width: min(1200px,96vw); height: 92dvh; max-width: 96vw; max-height: 94dvh; padding: 0; border: 1px solid var(--theme-line); border-radius: var(--vantilo-radius-xl, 16px); background: var(--theme-surface); color: var(--theme-ink); box-shadow: var(--theme-shadow-lg, var(--theme-shadow)); overflow: hidden; }
 .book-original-dialog[open] { display: flex; flex-direction: column; }
 .book-original-dialog::backdrop { background: rgb(0 0 0 / .56); backdrop-filter: blur(8px); }

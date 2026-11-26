@@ -179,6 +179,7 @@ function validBackupValue(entry: UserDataBackupEntryDefinition, value: unknown):
     && (value.colorMode === undefined || value.colorMode === "light" || value.colorMode === "dark" || value.colorMode === "system")
     && (value.readingBackground === undefined || value.readingBackground === "paper" || value.readingBackground === "sepia")
     && (value.fontSize === undefined || (typeof value.fontSize === "number" && Number.isInteger(value.fontSize) && value.fontSize >= 15 && value.fontSize <= 24))
+    && (value.horizontalMargin === undefined || (typeof value.horizontalMargin === "number" && Number.isInteger(value.horizontalMargin) && value.horizontalMargin >= 0 && value.horizontalMargin <= 28))
     && (value.readerWidth === undefined || value.readerWidth === "narrow" || value.readerWidth === "medium" || value.readerWidth === "wide")
     && (value.fontFamily === undefined || value.fontFamily === "serif" || value.fontFamily === "sans")
     && (value.lineHeight === undefined || value.lineHeight === "compact" || value.lineHeight === "standard" || value.lineHeight === "relaxed")

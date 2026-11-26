@@ -1,38 +1,38 @@
-/* Native macOS minimalist design system for Vantilo's Electron shell.
- * Clean neutral graphite layers, hairline borders, subtle translucency,
- * and restrained Apple system-blue accents. */
+/* Claude-inspired warm editorial design system for Vantilo's Electron shell.
+ * Warm obsidian dark base, warm parchment light base, hairline stone borders,
+ * and signature terracotta clay accents. */
 .vantilo-macos-shell {
-  --mac-shell-bg: #141416;
-  --mac-chrome: rgba(26, 26, 29, 0.92);
-  --mac-sidebar: #1a1a1d;
-  --mac-content: #121214;
-  --mac-surface: #1d1d21;
-  --mac-surface-raised: #242429;
-  --mac-surface-hover: rgba(255, 255, 255, 0.065);
-  --mac-line: rgba(255, 255, 255, 0.085);
-  --mac-line-strong: rgba(255, 255, 255, 0.15);
-  --mac-text: #f5f5f7;
-  --mac-secondary: #a1a1a8;
-  --mac-muted: #76767f;
-  --mac-selected: rgba(255, 255, 255, 0.095);
-  --mac-accent: #4c9aff;
-  --mac-accent-solid: #0a84ff;
-  --mac-accent-soft: rgba(10, 132, 255, 0.15);
-  --mac-accent-border: rgba(76, 154, 255, 0.36);
-  --mac-focus: #4c9aff;
-  --mac-success: #34d399;
-  --mac-warning-bg: rgba(245, 158, 11, 0.1);
-  --mac-warning-border: rgba(245, 158, 11, 0.28);
-  --mac-warning-text: #f6d38b;
-  --mac-danger-bg: rgba(239, 68, 68, 0.12);
-  --mac-danger-border: rgba(239, 68, 68, 0.32);
-  --mac-danger-text: #fca5a5;
-  --mac-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
-  --mac-shadow-md: 0 12px 36px rgba(0, 0, 0, 0.42);
-  --mac-shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.58);
+  --mac-shell-bg: #1e1e1c;
+  --mac-chrome: rgba(34, 34, 32, 0.92);
+  --mac-sidebar: #222220;
+  --mac-content: #262624;
+  --mac-surface: #2e2e2b;
+  --mac-surface-raised: #353531;
+  --mac-surface-hover: rgba(236, 235, 228, 0.065);
+  --mac-line: rgba(236, 235, 228, 0.095);
+  --mac-line-strong: rgba(236, 235, 228, 0.16);
+  --mac-text: #ecebe4;
+  --mac-secondary: #b5b3a8;
+  --mac-muted: #8a887e;
+  --mac-selected: rgba(217, 119, 87, 0.14);
+  --mac-accent: #d97757;
+  --mac-accent-solid: #d97757;
+  --mac-accent-soft: rgba(217, 119, 87, 0.15);
+  --mac-accent-border: rgba(217, 119, 87, 0.36);
+  --mac-focus: #d97757;
+  --mac-success: #68b88a;
+  --mac-warning-bg: rgba(217, 155, 67, 0.12);
+  --mac-warning-border: rgba(217, 155, 67, 0.3);
+  --mac-warning-text: #e9c98b;
+  --mac-danger-bg: rgba(226, 120, 111, 0.13);
+  --mac-danger-border: rgba(226, 120, 111, 0.32);
+  --mac-danger-text: #f1a7a0;
+  --mac-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.22);
+  --mac-shadow-md: 0 12px 34px rgba(0, 0, 0, 0.36);
+  --mac-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
   background: var(--mac-shell-bg);
   color: var(--mac-text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  font-family: var(--vantilo-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -67,11 +67,12 @@
 .vantilo-macos-shell .app-window-title {
   flex: none;
   color: var(--mac-text);
-  font-size: 13px;
+  font-family: var(--vantilo-font-serif, Georgia, serif);
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
   line-height: 1;
-  opacity: 0.92;
+  opacity: 0.94;
   user-select: none;
 }
 
@@ -141,7 +142,55 @@
   cursor: default;
 }
 
-/* Left Navigation Rail */
+/* Single-column full-width reading workspace with fixed Settings button in titlebar */
+.vantilo-macos-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.vantilo-macos-shell > .workspace-sheet,
+.vantilo-macos-shell > .vantilo-audiobook-slot {
+  grid-column: 1;
+}
+
+.vantilo-macos-shell .app-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.vantilo-macos-shell .app-titlebar-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mac-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.vantilo-macos-shell .app-titlebar-settings:hover {
+  background: var(--mac-surface-hover);
+  color: var(--mac-text);
+}
+
+.vantilo-macos-shell .app-titlebar-settings.is-active {
+  background: var(--mac-accent-soft);
+  border-color: var(--mac-accent-border);
+  color: var(--mac-accent);
+}
+
+.vantilo-macos-shell .app-titlebar-settings:focus-visible {
+  outline: 2px solid var(--mac-focus);
+  outline-offset: 2px;
+}
+
 .vantilo-macos-shell > .app-rail {
   padding: 10px 0 12px;
   background: var(--mac-sidebar);
@@ -517,13 +566,13 @@
 
 .vantilo-audiobook-slot {
   grid-row: 3;
-  grid-column: 2;
+  grid-column: 1 / -1;
   min-width: 0;
   z-index: 15;
 }
 
 .vantilo-audiobook-slot:not(:empty) {
-  padding: 2px 12px 4px;
+  padding: 0;
 }
 
 .vantilo-audiobook-slot:empty {

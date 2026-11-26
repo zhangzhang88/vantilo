@@ -12,13 +12,8 @@ export const QWEN_TTS_VOICES = [
 ] as const;
 
 export type QwenTtsVoice = (typeof QWEN_TTS_VOICES)[number]["id"];
-/** Private Base model clone, routed to the separate local TTS API. */
-export const MY_VOICE_TTS_ID = "my_voice" as const;
-export type ChineseAudiobookVoice = QwenTtsVoice | typeof MY_VOICE_TTS_ID;
-export const CHINESE_AUDIOBOOK_VOICES = [
-  ...QWEN_TTS_VOICES.filter(voice => voice.group === "中文"),
-  { id: MY_VOICE_TTS_ID, name: "我的声音", description: "个人克隆 · 中文男声", group: "中文" },
-] as const;
+export type ChineseAudiobookVoice = QwenTtsVoice;
+export const CHINESE_AUDIOBOOK_VOICES = QWEN_TTS_VOICES.filter(voice => voice.group === "中文");
 export function isChineseAudiobookVoice(value: unknown): value is ChineseAudiobookVoice {
   return typeof value === "string" && CHINESE_AUDIOBOOK_VOICES.some(item => item.id === value);
 }

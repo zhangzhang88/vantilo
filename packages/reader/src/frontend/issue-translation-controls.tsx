@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BookExportPanel, type BookExportSource } from "./book-export-controls";
 import { isListeningTranslationEngine, loadListeningTranslationEngine } from "./chinese-translation-reuse";
 import {
-  initialIssueTranslationProgress, loadIssueArticleTitles, planIssueTranslation, runIssueTranslation, savedIssueTranslationEngine, saveIssueTranslationEngine,
+  ensureBookChineseCatalog, initialIssueTranslationProgress, loadIssueArticleTitles, planIssueTranslation, runIssueTranslation, savedIssueTranslationEngine, saveIssueTranslationEngine,
   translationBatchId, type IssueTranslationProgress, type TranslationBatchSource,
 } from "./issue-translation";
 import type { ReaderIssue } from "./reader-model";
@@ -52,7 +53,34 @@ export function useIssueTranslationQueue() {
     update({});
     try {
       saveIssueTranslationEngine(id, engine.id);
-      const freshPlan = await planIssueTranslation(source, engine.id);
+      let effectiveSource = source;
+      if (source.kind === "book") {
+        const chapterTitles = await ensureBookChineseCatalog(
+          source.collection.id,
+          engine.id,
+          controller.signal,
+          (done, total) => update({
+            progress: {
+              ...latest.progress,
+              currentTitle: total > 0 ? `生成中文目录 ${done}/${total}` : "生成中文目录中…",
+            },
+          }),
+        );
+        if (chapterTitles && Object.keys(chapterTitles).length > 0) {
+          effectiveSource = {
+            ...source,
+            collection: {
+              ...source.collection,
+              documents: source.collection.documents.map(doc =>
+                doc.titleZh || !Object.hasOwn(chapterTitles, doc.id)
+                  ? doc
+                  : { ...doc, titleZh: chapterTitles[doc.id], tocTitleZh: chapterTitles[doc.id] },
+              ),
+            },
+          };
+        }
+      }
+      const freshPlan = await planIssueTranslation(effectiveSource, engine.id);
       update({ progress: initialIssueTranslationProgress(freshPlan) });
       const progress = await runIssueTranslation(freshPlan, engine.id, controller.signal, progress => update({ progress }));
       update({ phase: progress.failedArticles.length ? "partial" : "complete", progress });
@@ -94,12 +122,46 @@ export function BackgroundBookTranslation({ queue, detailBookId, onOpenBook }: {
   const id = queue.activeId;
   const job = id ? queue.jobs.get(id) : undefined;
   const book = job?.book;
-  if (!id || !book || job.phase !== "running" || book.id === detailBookId) return null;
-  const { progress } = job;
+  const running = Boolean(id && book && job?.phase === "running");
+  const itemText = running && job && job.progress.total > 0 ? ` · ${job.progress.translated}/${job.progress.total} 项` : "";
+  const statusText = running && job
+    ? `${job.progress.retrying ? "全书翻译正在重试" : job.progress.waiting ? "全书翻译等待模型" : "后台翻译全书中"} · ${job.progress.completedArticles}/${job.progress.articles} 章${itemText}`
+    : "";
+
+  useEffect(() => {
+    if (window.parent === window) return;
+    window.parent.postMessage({
+      type: "vantilo:bg-translation-state",
+      state: running && id && book
+        ? { id, bookId: book.id, bookTitle: book.title, statusText }
+        : null,
+    }, "*");
+  }, [running, id, book?.id, book?.title, statusText]);
+
+  useEffect(() => {
+    if (window.parent === window) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent || !event.data || typeof event.data !== "object") return;
+      const data = event.data as { type?: unknown; action?: unknown; bookId?: unknown; jobId?: unknown };
+      if (data.type !== "vantilo:bg-translation-action") return;
+      if (data.action === "open" && typeof data.bookId === "string" && data.bookId) {
+        onOpenBook(data.bookId);
+      } else if (data.action === "pause" && typeof data.jobId === "string" && data.jobId) {
+        queue.pause(data.jobId);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onOpenBook, queue]);
+
+  if (!running || !id || !book || book.id === detailBookId) return null;
   return <aside className="background-book-translation" aria-label="后台全书翻译">
-    <span role="status">{progress.retrying ? "全书翻译正在重试" : progress.waiting ? "全书翻译等待模型" : "后台翻译全书中"} · {progress.completedArticles}/{progress.articles} 章</span>
-    <button type="button" className="text-button" onClick={() => onOpenBook(book.id)} title={book.title}>查看《{book.title}》</button>
-    <button type="button" className="text-button" onClick={() => queue.pause(id)}>暂停全书翻译</button>
+    <span className="background-book-translation-dot" aria-hidden="true" />
+    <span role="status" className="background-book-translation-status">{statusText}</span>
+    <span className="background-book-translation-actions">
+      <button type="button" className="text-button background-book-translation-open" onClick={() => onOpenBook(book.id)} title={book.title}>查看《{book.title}》</button>
+      <button type="button" className="text-button background-book-translation-pause" onClick={() => queue.pause(id)}>暂停全书翻译</button>
+    </span>
   </aside>;
 }
 
@@ -108,13 +170,14 @@ export function IssueTranslationControls({ issue, queue }: { issue: ReaderIssue;
   return <TranslationBatchControls source={source} queue={queue} />;
 }
 
-export function TranslationBatchControls({ source, queue }: { source: TranslationBatchSource; queue: IssueQueue }) {
+export function TranslationBatchControls({ source, queue, bookExport }: { source: TranslationBatchSource; queue: IssueQueue; bookExport?: BookExportSource }) {
   const id = translationBatchId(source);
   const book = source.kind === "book";
   const scope = book ? "全书" : "整期";
   const unit = book ? "章" : "篇";
   const job = queue.jobs.get(id);
   const [open, setOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [list, setList] = useState<EngineChoice[]>([]);
   const [engineId, setEngineId] = useState("");
   const [plan, setPlan] = useState<Plan>();
@@ -128,23 +191,37 @@ export function TranslationBatchControls({ source, queue }: { source: Translatio
 
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setListError("");
-    fetch("/api/vantilo-translation/engines", { signal: controller.signal }).then(async response => {
-      if (!response.ok) throw new Error("无法读取翻译模型列表");
-      const data: { engines: EngineChoice[]; defaultId?: string } = await response.json();
-      if (controller.signal.aborted) return;
-      const available = data.engines.filter(engine => isListeningTranslationEngine(engine.id));
-      const readingEngine = loadListeningTranslationEngine(getReaderStorage());
-      setList(available);
-      setEngineId(current => current || saved || ([readingEngine, data.defaultId].find(id => available.some(engine => engine.id === id)) ?? available[0]?.id ?? ""));
-    }).catch(error => {
-      if (!controller.signal.aborted) setListError(message(error));
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
-    return () => controller.abort();
+    let controller: AbortController | null = null;
+    const load = () => {
+      controller?.abort();
+      const nextController = new AbortController();
+      controller = nextController;
+      setLoading(true);
+      setListError("");
+      fetch("/api/vantilo-translation/engines", { cache: "no-store", signal: nextController.signal }).then(async response => {
+        if (!response.ok) throw new Error("无法读取翻译模型列表");
+        const data: { engines: EngineChoice[]; defaultId?: string } = await response.json();
+        if (nextController.signal.aborted) return;
+        const available = data.engines.filter(engine => isListeningTranslationEngine(engine.id));
+        const readingEngine = loadListeningTranslationEngine(getReaderStorage());
+        setList(available);
+        setEngineId(current => {
+          if (current && available.some(engine => engine.id === current)) return current;
+          if (saved && available.some(engine => engine.id === saved)) return saved;
+          return [readingEngine, data.defaultId].find(item => item && available.some(engine => engine.id === item)) ?? available[0]?.id ?? "";
+        });
+      }).catch(error => {
+        if (!nextController.signal.aborted) setListError(message(error));
+      }).finally(() => {
+        if (!nextController.signal.aborted) setLoading(false);
+      });
+    };
+    load();
+    window.addEventListener("vantilo-custom-api-updated", load);
+    return () => {
+      controller?.abort();
+      window.removeEventListener("vantilo-custom-api-updated", load);
+    };
   }, [open, saved]);
 
   useEffect(() => {
@@ -162,8 +239,16 @@ export function TranslationBatchControls({ source, queue }: { source: Translatio
 
   function toggle() {
     setPlan(undefined);
+    setExportOpen(false);
     setOpen(value => !value);
   }
+
+  function toggleExport() {
+    setOpen(false);
+    setExportOpen(value => !value);
+  }
+
+  const exportRefreshKey = `${job?.phase ?? "none"}:${job?.progress.completedArticles ?? 0}:${job?.progress.translated ?? 0}`;
 
   return <div className="issue-translation-controls">
     <div className="issue-translation-actions">
@@ -172,6 +257,9 @@ export function TranslationBatchControls({ source, queue }: { source: Translatio
         : <button type="button" className="toolbar-button" aria-expanded={open} onClick={toggle}>
           {open ? `收起${scope}翻译` : job?.phase === "partial" ? "重试未完成" : job?.phase === "complete" ? `翻译${scope}…` : saved ? `继续翻译${scope}` : `翻译${scope}`}
         </button>}
+      {bookExport && <button type="button" className="toolbar-button" aria-expanded={exportOpen} onClick={toggleExport}>
+        {exportOpen ? "收起导出" : "导出译文 EPUB"}
+      </button>}
     </div>
     {job && <div className="issue-translation-progress">
       <strong role="status">
@@ -212,6 +300,7 @@ export function TranslationBatchControls({ source, queue }: { source: Translatio
       {plan && <small role="status">{plan.remainingArticles
         ? `待翻译 ${plan.remainingArticles} ${unit}、约 ${plan.remainingCharacters.toLocaleString("zh-CN")} 字符`
         : book ? "该模型的全书译文已齐全" : "该模型的本期译文已齐全"}</small>}
+      {book && <small>尚未生成中文目录时，将自动使用所选模型先生成中文目录。</small>}
       {occupied && <small role="status">已有翻译任务在运行，暂停或完成后可开始。</small>}
       <button
         type="button" className="primary-button" disabled={loading || occupied || !selected || !plan?.remainingArticles}
@@ -222,5 +311,11 @@ export function TranslationBatchControls({ source, queue }: { source: Translatio
         }}
       >{job?.phase === "partial" ? "重试缺失译文" : "开始翻译"}</button>
     </div>}
+    {exportOpen && bookExport && <BookExportPanel
+      book={bookExport.book}
+      collection={bookExport.collection}
+      tocTitles={bookExport.tocTitles}
+      refreshKey={exportRefreshKey}
+    />}
   </div>;
 }

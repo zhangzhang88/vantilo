@@ -42,19 +42,48 @@ export function resolveChineseListeningPosition(records: ChineseListeningPositio
 
 const standaloneDate = /^[·•・]?\s*[0-9]{4}年\s*[0-9]{1,2}月\s*[0-9]{1,2}日[。.]?$/u;
 const pageNumber = /^(?:第\s*[0-9]+\s*[页頁]|Page\s+[0-9]+)$/iu;
+const locatorCode = /^(?:[A-Z]{1,3}\d+(?:[-_.][A-Z]{0,3}\d+)+|pp?\.?\s*\d+(?:\s*[-–—]\s*\d+)?(?:ff\.?)?\.?)$/i;
 const sourceLabel = /^(?:[▲▼△▽]\s*)?(?:资料来源|資料來源|图表来源|圖表來源|Sources?)\s*:/iu;
+const numberedCitationPrefix = /^(?:\[\d{1,4}\]|\(\d{1,4}\)|\d{1,4}[.)、]?)\s+/u;
+const latinCitationSignal = /\b(?:ibid\.?|op\.\s*cit\.?|loc\.\s*cit\.?)\b|(?:,\s*|\s+)pp?\.?\s*\d+(?:\s*[-–—]\s*\d+|ff\.?)?[A-Z]?\.?\s*$|\bSec\.\s*\d+|\([^()]{2,60}:\s*[^()]{2,90},\s*(?:1[789]\d{2}|20\d{2})\s*\)/i;
+const chineseCitationSignal = /(?:第\s*\d+(?:\s*[-–—]\s*\d+)?\s*[页頁][。.]?\s*$|出版社[，,\s]*(?:19|20)\d{2})/u;
+const trailingReferenceHeading = /^(?:参考文献|參考文獻|章末注释|章末注釋|尾注|注释|注釋|Notes|Endnotes|References|Bibliography|Works\s+Cited)\s*[:：]?$/iu;
 
-export function narratableParagraphIndexes(article: Pick<ReaderDocumentView, "paragraphs" | "tables" | "visuals">): number[] {
+function isBibliographicReferenceLine(line: string): boolean {
+  if (line.length > 360 || !numberedCitationPrefix.test(line)) return false;
+  if (latinCitationSignal.test(line)) return true;
+  return chineseCitationSignal.test(line);
+}
+
+export function narratableParagraphIndexes(
+  article: Pick<ReaderDocumentView, "paragraphs" | "tables" | "visuals">,
+  options?: { skipTables?: boolean },
+): number[] {
   const excluded = new Set([
-    ...(article.tables ?? []).flatMap(table => table.captionParagraphIndexes),
-    ...(article.visuals ?? []).flatMap(visual => [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]),
+    ...(article.tables ?? []).flatMap(table => options?.skipTables
+      ? [...table.captionParagraphIndexes, ...table.rows.flatMap(row => row.cells.flatMap(cell => cell.paragraphIndexes))]
+      : table.captionParagraphIndexes),
+    ...(article.visuals ?? []).flatMap(visual =>
+      visual.kind === "original" && visual.reason === "complex-layout"
+        ? visual.captionParagraphIndexes
+        : [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]),
   ]);
   const playable: number[] = [];
+  let skippedReferenceOrCode = false;
   for (const [index, text] of article.paragraphs.entries()) {
     if (excluded.has(index) || !/\p{L}/u.test(text)) continue;
     const line = text.normalize("NFKC").trim();
-    if (pageNumber.test(line) || sourceLabel.test(line) || (!playable.length && standaloneDate.test(line))) continue;
+    if (pageNumber.test(line) || locatorCode.test(line) || sourceLabel.test(line) || isBibliographicReferenceLine(line)) {
+      skippedReferenceOrCode = true;
+      continue;
+    }
+    if (!playable.length && standaloneDate.test(line)) continue;
     playable.push(index);
+  }
+  while (skippedReferenceOrCode && playable.length > 0) {
+    const lastLine = article.paragraphs[playable[playable.length - 1]]?.normalize("NFKC").trim() ?? "";
+    if (!trailingReferenceHeading.test(lastLine)) break;
+    playable.pop();
   }
   return playable;
 }
@@ -101,9 +130,10 @@ export function splitChineseSpeech(text: string, limit = 130): string[] {
 
 /** Older split points can land inside a new chunk. Replay from its beginning
  * because the saved seconds refer to audio synthesized from different text. */
-export function resolveSpeechChunk(chunks: string[], position: { chunkIndex: number; chunkText?: string; seconds?: number }) {
-  const { chunkIndex, chunkText, seconds = 0 } = position;
-  if (!chunkText || chunks[chunkIndex] === chunkText) {
+export function resolveSpeechChunk(chunks: string[], position: { chunkIndex: number; chunkText?: string; speechOffset?: number; seconds?: number }) {
+  const { chunkIndex, chunkText, speechOffset = 0, seconds = 0 } = position;
+  if (!chunkText || chunks[chunkIndex] === chunkText
+    || (speechOffset > 0 && chunks[chunkIndex]?.slice(speechOffset) === chunkText)) {
     return { chunkIndex: Math.max(0, Math.min(chunkIndex, chunks.length - 1)), seconds };
   }
   const text = chunks.join("");

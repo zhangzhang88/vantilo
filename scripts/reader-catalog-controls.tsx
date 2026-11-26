@@ -51,8 +51,20 @@ function VantiloCatalogControl({kind,id,onResolved,hasBatchTitles=false}: {hasBa
   useEffect(()=>{
     const ctl=new AbortController();statusRequest.current=ctl;setRecord(null);setError('');
     vantiloCatalogRequest(url,{signal:ctl.signal}).then(value=>{if(!ctl.signal.aborted){setRecord(value);onResolved(value);}}).catch(e=>{if(!ctl.signal.aborted)setError(e.message);});
-    return ()=>{ctl.abort();request.current?.abort();};
-  },[url]);
+    const onUpdated=(event:Event)=>{
+      const detail=(event as CustomEvent).detail;
+      if(detail?.kind!==kind||detail?.id!==id||request.current)return;
+      if(detail.record){
+        setRecord(detail.record);
+        onResolved(detail.record);
+        setProgress(detail.record.state==='pending'?detail.record:null);
+        return;
+      }
+      vantiloCatalogRequest(url).then(value=>{setRecord(value);onResolved(value);setProgress(null);}).catch(()=>{});
+    };
+    window.addEventListener('vantilo-catalog-updated',onUpdated);
+    return ()=>{ctl.abort();request.current?.abort();window.removeEventListener('vantilo-catalog-updated',onUpdated);};
+  },[url,kind,id]);
   async function generate() {
     if(request.current||modelBusy||!engine)return;
     statusRequest.current?.abort();

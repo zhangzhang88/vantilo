@@ -278,6 +278,25 @@ describe("vocabulary-only backup and merge", () => {
     expect(storage.getItem("vantilo-vocabulary-restore-journal-v1")).toBe("not-json");
   });
 
+  it("accepts custom-api and native contextual meaning providers on restore while rejecting unknown providers", async () => {
+    for (const provider of ["easycliproxy", "custom-api", "vantilo-agent", "qwen-mlx", "qwen-gguf"] as const) {
+      const data: VocabularyBackupData = {
+        savedSelections: [selection()],
+        contextualMeanings: [contextual({ provider: provider as unknown as "easycliproxy" })],
+        reviewSchedules: [schedule()],
+      };
+      const doc = mainProcessBackup.createVocabularyBackupDocument({ snapshot: data, appVersion: "0.1.18", createdAt: "2026-10-30T00:00:00.000Z" });
+      const parsed = await parseVocabularyBackup(JSON.stringify(doc, null, 2) + "\n");
+      expect((parsed.data.contextualMeanings[0] as { provider: string }).provider).toBe(provider);
+    }
+    const invalidDoc = await createVocabularyBackupDocument({
+      savedSelections: [selection()],
+      contextualMeanings: [contextual({ provider: "unknown-provider" as unknown as "easycliproxy" })],
+      reviewSchedules: [schedule()],
+    }, "0.1.18", "2026-10-30T00:00:00.000Z");
+    await expect(parseVocabularyBackup(JSON.stringify(invalidDoc, null, 2) + "\n")).rejects.toThrow("无效或不兼容");
+  });
+
   it("completes an isolated localStorage backup and restore round trip on a fresh profile", async () => {
     const sourceDom = new JSDOM("", { url: "http://127.0.0.1:5175/source-profile" });
     const targetDom = new JSDOM("", { url: "http://127.0.0.1:5175/target-profile" });

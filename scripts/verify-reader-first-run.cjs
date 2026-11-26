@@ -64,7 +64,7 @@ app.whenReady().then(async()=>{
   if(!await until("!document.querySelector('.reader-onboarding-step-title small')?.textContent?.includes('检测中')"))throw Error('Dictionary probe stayed pending');
   const detected=await win.webContents.executeJavaScript("document.querySelector('.reader-onboarding-step-title small')?.textContent");
   if(!['已检测到中文释义','只有英文释义','未检测到可用词条'].includes(detected))throw Error('No actual Dictionary Services readiness status');
-  if(!await win.webContents.executeJavaScript("document.body.innerText.includes('自定义兼容 API')&&document.body.innerText.includes('已登录的 ChatGPT 模型')&&!document.body.innerText.includes('Qwen')"))throw Error('Reader translation setup guidance is missing or advertises an unavailable local model');
+  if(!await win.webContents.executeJavaScript("document.body.innerText.includes('AI 模型服务')&&!document.body.innerText.includes('Qwen')"))throw Error('Reader translation setup guidance is missing or advertises an unavailable local model');
   // Check that the dialog is neither clipped nor loses its action footer at compact Mac window dimensions.
   win.setSize(800,600);
   await delay(150);

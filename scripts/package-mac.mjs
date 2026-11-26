@@ -18,13 +18,13 @@ await fs.rm(stage, { recursive: true, force: true });
 await fs.mkdir(path.join(stage, 'electron'), { recursive: true });
 for (const name of ['dist', 'licenses', 'resources']) await fs.cp(path.join(repo, name), path.join(stage, name), { recursive: true });
 await fs.mkdir(path.join(stage,'reader'),{recursive:true});
-for(const name of ['web','native','api.cjs','codex','codex-code-mode-host','provenance.json','THIRD_PARTY_NOTICES.txt'])await fs.cp(path.join(repo,'build/reader',name),path.join(stage,'reader',name),{recursive:true});
+for(const name of ['web','native','api.cjs','provenance.json','THIRD_PARTY_NOTICES.txt'])await fs.cp(path.join(repo,'build/reader',name),path.join(stage,'reader',name),{recursive:true});
 await assertBundledOriginalGameSounds(path.join(stage,'reader/web'));
 await copyDefaultMagazines(path.join(stage,'reader/seed'));
 const metadata = JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8'));
 await fs.writeFile(path.join(stage, 'package.json'), JSON.stringify({ name: 'vantilo', version: metadata.version, main: 'electron/main.cjs', private: true }));
 // Explicit runtime allowlist; the separately validated seed is the only bundled reading content. No repository, tests, .env or private records are copied.
-for (const entry of ['main.cjs', 'preload.cjs', 'runtime-entry.cjs', 'portable-reader-entry.cjs', 'portable-reader-service.cjs']) {
+for (const entry of ['main.cjs', 'preload.cjs', 'portable-reader-entry.cjs', 'portable-reader-service.cjs']) {
   await build({ entryPoints: [path.join(repo, 'electron', entry)], outfile: path.join(stage, 'electron', entry),
     platform: 'node', target: 'node22', format: 'cjs', bundle: true, external: ['electron'], minify: true, legalComments: 'eof' });
 }

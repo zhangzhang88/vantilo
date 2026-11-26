@@ -29,7 +29,7 @@ app.whenReady().then(async () => {
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } });
   try {
     const readerCss = readFileSync(path.join(repo, 'src/ui/magazine-reader-module.css'), 'utf8');
-    const shellCss = ['src/style.css', 'src/ui/session-navigation.css', 'src/ui/agent-composer.css', 'src/ui/conversation.css']
+    const shellCss = ['src/ui/design-tokens.css', 'src/style.css', 'src/ui/macos-shell.css', 'src/ui/global-appearance.css']
       .map(file => readFileSync(path.join(repo, file), 'utf8')).join('\n');
     let count = 0;
     for (const reversed of [false, true]) {

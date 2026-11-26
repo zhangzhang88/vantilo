@@ -1,9 +1,9 @@
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 class PortableReaderSupervisor {
-  constructor({ utilityProcess, assetsDir, libraryRoot, userDataRoot, seedDir, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie }) {
+  constructor({ utilityProcess, assetsDir, libraryRoot, userDataRoot, seedDir, entryPath = path.join(__dirname, 'portable-reader-entry.cjs'), timeoutMs = 30000, enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, customApi, fetchImpl = globalThis.fetch, healthTimeoutMs = 1000, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, ttsInstaller, installSessionCookie, clearSessionCookie }) {
     if(typeof installSessionCookie!=='function'||typeof clearSessionCookie!=='function')throw new Error('Reader session authentication is not configured');
-    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, userDataRoot, seedDir, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, installSessionCookie, clearSessionCookie });
+    Object.assign(this, { utilityProcess, assetsDir, libraryRoot, userDataRoot, seedDir, entryPath, timeoutMs, enableLocalQwen, enableTranslation, enableReaderPreviews, customApi, fetchImpl, healthTimeoutMs, runAi, getAccountStatus, listModels, cancelAi, softwareUpdates, ttsInstaller, installSessionCookie, clearSessionCookie });
     this.webOrigin = 'http://127.0.0.1:5175';
     this.apiOrigin = 'http://127.0.0.1:5174';
     this.status = 'idle'; this.error = null; this.child = null; this.pending = null; this.stopping = false; this.failedHealthChecks = 0;
@@ -84,14 +84,19 @@ class PortableReaderSupervisor {
           const completionFields=Object.keys(message).filter(key=>key!=='expectedEngineId').sort().join(',');
           const validEngineIdentity=message.expectedEngineId===undefined ||
             (validProfileId(message.selectedProfileId) && typeof message.expectedEngineId==='string' && /^custom-api:[a-f0-9]{12}$/.test(message.expectedEngineId));
-          const validCompletion=validEngineIdentity && (
-            completionFields==='input,instruction,operation,requestId,type' ||
-            (completionFields==='input,instruction,operation,profileId,requestId,task,type' && message.task==='word-context' && validProfileId(message.profileId)) ||
-            ((completionFields==='input,instruction,operation,requestId,selectedProfileId,type' ||
-              (completionFields==='input,instruction,operation,requestId,selectedProfileId,task,type' && message.task==='word-context')) && validProfileId(message.selectedProfileId))
-          ) && typeof message.instruction==='string' && message.instruction.length>0 && message.instruction.length<=8000 &&
-            typeof message.input==='string' && message.input.length>0 && message.input.length<=18000 && message.instruction.length+message.input.length<=19000;
-          const valid=operation==='get'?fields==='operation,requestId,type':operation==='save'||operation==='test'?fields==='config,operation,requestId,type'&&validConfig(message.config):operation==='activate'||operation==='remove'?fields==='id,operation,requestId,type'&&validProfileId(message.id):operation==='complete'&&validCompletion;
+          const isWorkshopTask = message.task === 'practice-workshop';
+          const maxInput = isWorkshopTask ? 24000 : 18000;
+          const maxTotal = isWorkshopTask ? 26000 : 19000;
+          const validCompletion = validEngineIdentity && (
+            completionFields === 'input,instruction,operation,requestId,type' ||
+            (completionFields === 'input,instruction,operation,requestId,task,type' && isWorkshopTask) ||
+            (completionFields === 'input,instruction,operation,profileId,requestId,task,type' && message.task === 'word-context' && validProfileId(message.profileId)) ||
+            ((completionFields === 'input,instruction,operation,requestId,selectedProfileId,type' ||
+              (completionFields === 'input,instruction,operation,requestId,selectedProfileId,task,type' && (message.task === 'word-context' || isWorkshopTask))) && validProfileId(message.selectedProfileId))
+          ) && typeof message.instruction === 'string' && message.instruction.length > 0 && message.instruction.length <= 8000 &&
+            typeof message.input === 'string' && message.input.length > 0 && message.input.length <= maxInput && message.instruction.length + message.input.length <= maxTotal;
+          const validModelsConfig=config=>config&&typeof config==='object'&&!Array.isArray(config)&&Object.keys(config).every(key=>['id','name','baseUrl','model','apiKey'].includes(key))&&(config.id===undefined||typeof config.id==='string')&&(config.name===undefined||typeof config.name==='string')&&typeof config.baseUrl==='string'&&(config.model===undefined||typeof config.model==='string')&&(config.apiKey===undefined||typeof config.apiKey==='string');
+          const valid=operation==='get'?fields==='operation,requestId,type':operation==='save'||operation==='test'?fields==='config,operation,requestId,type'&&validConfig(message.config):operation==='models'?fields==='config,operation,requestId,type'&&validModelsConfig(message.config):operation==='activate'||operation==='remove'?fields==='id,operation,requestId,type'&&validProfileId(message.id):operation==='complete'&&validCompletion;
           if(!idOk||!valid||!this.customApi){if(idOk)send(false,null,'自定义 API 请求无效');return;}
           const controller=operation==='complete'?new AbortController():null;
           if(controller)this.customApiRequests.set(requestId,controller);
@@ -101,13 +106,29 @@ class PortableReaderSupervisor {
             ...(message.profileId?{profileId:message.profileId}:{}),
             ...(message.selectedProfileId?{selectedProfileId:message.selectedProfileId}:{}),
             ...(message.expectedEngineId?{expectedEngineId:message.expectedEngineId}:{}),
-          }:operation==='save'||operation==='test'?message.config:{id:message.id};
+          }:operation==='save'||operation==='test'||operation==='models'?message.config:{id:message.id};
           void Promise.resolve(this.customApi(operation,payload,controller?.signal)).then(result=>send(true,result),error=>send(false,null,error instanceof Error?error.message:'自定义 API 请求失败')).finally(()=>{if(this.customApiRequests.get(requestId)===controller)this.customApiRequests.delete(requestId);});
           return;
         }
         if (message?.type === 'ai-cancel' && typeof message.requestId === 'string' && /^[0-9a-f-]{36}$/i.test(message.requestId)) { void this.cancelAi?.(message.requestId).catch(()=>{}); return; }
         if (message?.type === 'ai') {
           const id = message.requestId;
+          if (['tts-status','tts-install','tts-cancel','tts-remove'].includes(message.operation) && typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)) {
+            const ttsOps = {
+              'tts-status': this.ttsInstaller ? () => this.ttsInstaller.getStatus() : null,
+              'tts-install': this.ttsInstaller && message.consent === true && (message.mirror === undefined || typeof message.mirror === 'boolean')
+                ? () => this.ttsInstaller.install({ consent: true, mirror: Boolean(message.mirror) }) : null,
+              'tts-cancel': this.ttsInstaller ? () => this.ttsInstaller.cancel() : null,
+              'tts-remove': this.ttsInstaller ? () => this.ttsInstaller.remove() : null,
+            };
+            const runTts = ttsOps[message.operation];
+            if (!runTts) { child.postMessage({ type: 'ai-result', requestId: id, ok: true, metadata: { __ttsError: '离线语音安装服务暂不可用' } }); return; }
+            void runTts().then(
+              metadata => { if (this.child === child && !this.stopping) child.postMessage({ type: 'ai-result', requestId: id, ok: true, metadata }); },
+              error => { if (this.child === child && !this.stopping) child.postMessage({ type: 'ai-result', requestId: id, ok: true, metadata: { __ttsError: error instanceof Error ? error.message : '离线语音操作失败' } }); },
+            );
+            return;
+          }
           if (['account-status','models','software-status','software-check','software-auto','software-open-release','software-download','software-cancel-download','software-reveal-download'].includes(message.operation) && typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)) {
             const operations={'account-status':this.getAccountStatus,models:this.listModels,
               'software-status':this.softwareUpdates?.status,'software-check':this.softwareUpdates?.check,
@@ -166,6 +187,11 @@ class PortableReaderSupervisor {
     if (this.status !== 'ready' || !this.child) throw new Error('请先打开阅读空间');
     this.child.postMessage({ type: 'sync' });
     return { accepted: true };
+  }
+  resetLocalSpeech() {
+    if (this.status === 'ready' && this.child && !this.stopping) {
+      try { this.child.postMessage({ type: 'tts-reset' }); } catch { /* ignore if exiting */ }
+    }
   }
   _requestReaderBackup(type, requestId, timeoutMs = 160000) {
     if (this.status !== 'ready' || !this.child || this.stopping) return Promise.reject(new Error('Reader 服务未运行，无法安全备份'));

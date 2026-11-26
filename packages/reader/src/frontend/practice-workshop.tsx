@@ -22,7 +22,8 @@ import { ensureVisibleWorkshopTitleRule } from "../shared/workshop-title";
 import "./practice-workshop.css";
 import "./practice-lab-native.css";
 
-type ProviderChoice = "codex" | "deepseek" | "profile";
+type ProviderChoice = "vantilo-custom-api" | "deepseek" | "profile";
+type VantiloCustomApiProfile = { id: string; name: string; model: string; hasApiKey?: boolean };
 type PracticeMode = "vocabulary" | "assembly";
 const MODE_KEY = "vantilo:practice-workshop-selected-mode:v1";
 
@@ -46,7 +47,11 @@ export function PracticeWorkshop() {
   const [currentVocabularyId,setCurrentVocabularyId] = useState<string|null>(null);
   const [prompt,setPrompt] = useState("");
   const [originalPrompt,setOriginalPrompt] = useState("");
-  const [provider,setProvider] = useState<ProviderChoice>("codex");
+  const [provider,setProvider] = useState<ProviderChoice>("vantilo-custom-api");
+  const [vantiloApiAvailable,setVantiloApiAvailable] = useState(false);
+  const [legacyAiAvailable,setLegacyAiAvailable] = useState(false);
+  const [vantiloProfiles,setVantiloProfiles] = useState<VantiloCustomApiProfile[]>([]);
+  const [vantiloProfileId,setVantiloProfileId] = useState("");
   const [profileId,setProfileId] = useState("");
   const [deepseekModel,setDeepseekModel] = useState("deepseek-chat");
   const [apiKey,setApiKey] = useState("");
@@ -63,9 +68,28 @@ export function PracticeWorkshop() {
   const [assemblyLoadError,setAssemblyLoadError]=useState("");
   const [vocabularyLoadError,setVocabularyLoadError]=useState("");
 
+  async function refreshVantiloProfiles() {
+    try {
+      const response = await fetch("/api/vantilo-custom-api/settings", { cache: "no-store" });
+      if (!response.ok) return false;
+      const data = await response.json() as { activeId?: string; profiles?: VantiloCustomApiProfile[] };
+      const list = Array.isArray(data.profiles) ? data.profiles : [];
+      setVantiloApiAvailable(true);
+      setVantiloProfiles(list);
+      setVantiloProfileId(current => list.some(item => item.id === current) ? current : (data.activeId && list.some(item => item.id === data.activeId) ? data.activeId : list[0]?.id ?? ""));
+      return true;
+    } catch { return false; }
+  }
   async function refreshProfiles() {
-    try { setProfiles(await fetchAiProviderSettings()); }
-    catch { setError("无法读取自定义 API 配置，请检查 Reader 服务"); }
+    const vantiloOk = await refreshVantiloProfiles();
+    if (!legacyAiAvailable && vantiloOk) return;
+    try {
+      const next = await fetchAiProviderSettings();
+      setLegacyAiAvailable(true);
+      setProfiles(next);
+    } catch {
+      if (!vantiloOk) setError("无法读取自定义 API 配置，请检查 Reader 服务");
+    }
   }
   useEffect(() => {
     let active = true;
@@ -90,8 +114,16 @@ export function PracticeWorkshop() {
       setOriginalPrompt(ensureVisibleWorkshopTitleRule(value.prompt));
       setPrompt(ensureVisibleWorkshopTitleRule(prior??value.prompt));
     }).catch(cause => { if (active) setAssemblyLoadError(cause instanceof Error?cause.message:"句子组装生成规则加载失败"); });
-    void fetchAiProviderSettings().then(value => { if (active) { setProfiles(value); setProfileId(value.activeProfileId ?? value.profiles[0]?.id ?? ""); } }).catch(() => {});
-    return () => { active = false; };
+    void refreshVantiloProfiles().then(available => { if (active && !available) setProvider("profile"); });
+    const onCustomApiUpdated = () => { void refreshVantiloProfiles(); };
+    window.addEventListener("vantilo-custom-api-updated", onCustomApiUpdated);
+    void fetchAiProviderSettings().then(value => {
+      if (!active) return;
+      setLegacyAiAvailable(true);
+      setProfiles(value);
+      setProfileId(value.activeProfileId ?? value.profiles[0]?.id ?? "");
+    }).catch(() => {});
+    return () => { active = false; window.removeEventListener("vantilo-custom-api-updated", onCustomApiUpdated); };
   }, []);
   useEffect(()=>{
     if(stage!=="vocabulary"||originalVocabularyPrompt)return;
@@ -139,13 +171,13 @@ export function PracticeWorkshop() {
   const currentResultCount=stage==="vocabulary"?vocabulary.length:stage==="assembly"?exercises.length:0;
   const sourceMismatch=!!(currentResultCount&&currentSource!==null&&article!==currentSource);
   const currentModeLabel=stage==="vocabulary"?"原文填词":stage==="assembly"?"句子组装":"";
-  const providerLabel=provider==="codex"?"Codex":provider==="deepseek"?"DeepSeek":profiles?.profiles.find(item=>item.id===profileId)?.name??"自定义 API";
+  const providerLabel=provider==="vantilo-custom-api"?(vantiloProfiles.find(item=>item.id===vantiloProfileId)?.name??"AI 模型服务"):provider==="deepseek"?"DeepSeek":profiles?.profiles.find(item=>item.id===profileId)?.name??"AI 模型服务";
 
   const resolveGeneratedTitle=(mode:PracticeMode,suggestion:unknown)=>{
     const fromAi=typeof suggestion==="string"&&suggestion.trim().length<=30&&/[\u3400-\u9fff]/.test(suggestion)?suggestion.trim():null;
     return manuallyNamed.current[mode]&&title.trim()?title.trim():fromAi??"我的英语练习";
   };
-  const activeProviderLabel=()=>provider==="deepseek"?`DeepSeek · ${deepseekModel}`:provider==="codex"?"Codex":profiles?.profiles.find(item=>item.id===profileId)?.name??"自定义 API";
+  const activeProviderLabel=()=>provider==="deepseek"?`DeepSeek · ${deepseekModel}`:provider==="vantilo-custom-api"?(vantiloProfiles.find(item=>item.id===vantiloProfileId)?.name??"AI 模型服务"):profiles?.profiles.find(item=>item.id===profileId)?.name??"AI 模型服务";
   function commitVocabulary(items:WorkshopVocabulary[],name:string,source:string,rule:string,id:string|null,label:string):string {
     const validated=parseWorkshopVocabulary(items,source);
     if(!name.trim()||name.length>200||!rule||rule.length>16000)throw new Error("标题或原文填词生成规则无效");
@@ -175,6 +207,7 @@ export function PracticeWorkshop() {
       const response = await fetch("/api/practice-workshop/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stage,article, prompt:stage==="vocabulary"?vocabularyPrompt:prompt, provider,
+          ...(provider === "vantilo-custom-api" ? { profileId: vantiloProfileId } : {}),
           ...(provider === "profile" ? { profileId } : {}),
           ...(provider === "deepseek" ? { apiKey,deepseekModel } : {}) }),
       });
@@ -367,139 +400,267 @@ export function PracticeWorkshop() {
   if (material && progress?.phase === "assembly") return <AssemblyTypingGame material={material} progress={progress} update={setProgress} exit={() => setProgress(null)} />;
   if (material && progress?.phase === "assembly-complete") return <LearningStageCompletion title={title} stage="assembly" total={exercises.length} progress={progress} exit={() => setProgress(null)} repeat={start} />;
 
+  const wordCount = article.trim() ? article.trim().split(/\s+/).length : 0;
+  const charCount = article.length;
+  const activeSavedId = stage === "vocabulary" ? currentVocabularyId : stage === "assembly" ? currentId : null;
+  const providerReady = provider === "vantilo-custom-api" ? !!vantiloProfileId : provider === "profile" ? !!profileId : !!apiKey.trim();
+
   return <section className="practice-workshop" aria-label="Practice Lab">
-    <header><h1>Practice Lab</h1><p>把英文文章变成互动练习，选择喜欢的方式开始。</p></header>
-    <div className="practice-workshop-mode-header">选择练习方式 <span>两种玩法可单独使用</span></div>
+    <header className="practice-lab-header">
+      <div className="practice-lab-header-main">
+        <div className="practice-lab-brand-row">
+          <span className="practice-lab-claude-mark" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2.5L13.7 8.8L19.2 5.4L15.8 10.9L22 12L15.8 13.1L19.2 18.6L13.7 15.2L12 21.5L10.3 15.2L4.8 18.6L8.2 13.1L2 12L8.2 10.9L4.8 5.4L10.3 8.8L12 2.5Z" fill="currentColor" />
+            </svg>
+          </span>
+          <h1>Practice Lab</h1>
+        </div>
+        <p>把英文文章变成互动练习，选择喜欢的方式开始。</p>
+      </div>
+      <div className="practice-lab-header-meta" aria-label="工坊状态">
+        <span className={`practice-lab-status-pill ${providerReady ? "is-ready" : "is-warn"}`}>
+          <span className="practice-lab-status-dot" aria-hidden="true" />
+          <span>{providerReady ? providerLabel : "待配置 AI 服务"}</span>
+        </span>
+        <span className="practice-lab-stat-pill">
+          词库 {savedVocabulary.length} · 句库 {saved.length}
+        </span>
+      </div>
+    </header>
+
+    <div className="practice-workshop-mode-header">
+      <span>选择练习方式</span>
+      <span className="practice-workshop-mode-sub">两种玩法可单独使用，文章草稿与练习存档彼此独立</span>
+    </div>
     <div className="practice-workshop-mode-cards" role="group" aria-label="选择练习方式">
       <button type="button" className={`practice-workshop-mode-card ${stage==="vocabulary"?"is-selected":""}`}
         aria-pressed={stage==="vocabulary"} disabled={busy} onClick={()=>chooseMode("vocabulary")}>
-        <span className="practice-workshop-mode-top"><span className="practice-workshop-mode-icon" aria-hidden="true">✎</span><strong>原文填词</strong><span className="practice-workshop-mode-check" aria-hidden="true">{stage==="vocabulary"?"✓":""}</span></span>
+        <span className="practice-workshop-mode-top">
+          <span className="practice-workshop-mode-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L6.2 12l-3.2.8.8-3.2 7.4-7.2Z" />
+              <path d="M9.6 4l2.4 2.4" />
+            </svg>
+          </span>
+          <strong>原文填词</strong>
+          <span className="practice-workshop-mode-count">{savedVocabulary.length} 份存档</span>
+          <span className="practice-workshop-mode-check" aria-hidden="true">{stage==="vocabulary"?"✓":""}</span>
+        </span>
         <span className="practice-workshop-mode-description">看原句，填关键词 · 练单词记忆与语境理解</span>
-        <span className="practice-workshop-mode-example" lang="en">The boy ____ the dog.</span>
-        <span className="practice-workshop-mode-caption">提示：注意到 → noticed</span>
+        <span className="practice-workshop-mode-preview">
+          <span className="practice-workshop-mode-example" lang="en">The boy <span className="practice-lab-blank-chip">____</span> the dog.</span>
+          <span className="practice-workshop-mode-caption">提示：注意到 → noticed</span>
+        </span>
       </button>
       <button type="button" className={`practice-workshop-mode-card ${stage==="assembly"?"is-selected":""}`}
         aria-pressed={stage==="assembly"} disabled={busy} onClick={()=>chooseMode("assembly")}>
-        <span className="practice-workshop-mode-top"><span className="practice-workshop-mode-icon" aria-hidden="true">▤</span><strong>句子组装</strong><span className="practice-workshop-mode-check" aria-hidden="true">{stage==="assembly"?"✓":""}</span></span>
+        <span className="practice-workshop-mode-top">
+          <span className="practice-workshop-mode-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="2.5" width="5" height="4" rx="1.2" />
+              <rect x="9" y="2.5" width="5" height="4" rx="1.2" />
+              <rect x="2" y="9.5" width="12" height="4" rx="1.2" />
+            </svg>
+          </span>
+          <strong>句子组装</strong>
+          <span className="practice-workshop-mode-count">{saved.length} 份存档</span>
+          <span className="practice-workshop-mode-check" aria-hidden="true">{stage==="assembly"?"✓":""}</span>
+        </span>
         <span className="practice-workshop-mode-description">从单词到完整句 · 逐词输入，练习英文表达</span>
-        <span className="practice-workshop-mode-example" lang="en">noticed → noticed the dog</span>
-        <span className="practice-workshop-mode-caption" lang="en">The boy noticed the dog.</span>
+        <span className="practice-workshop-mode-preview">
+          <span className="practice-workshop-mode-example" lang="en">noticed → noticed the dog</span>
+          <span className="practice-workshop-mode-caption" lang="en">The boy noticed the dog.</span>
+        </span>
       </button>
     </div>
+
     <div className="practice-workshop-grid">
-      <section className="practice-workshop-pane" aria-label="准备练习">
-        <h2>准备练习{stage? ` · ${currentModeLabel}`:""}</h2>
-        <label>练习标题<input value={title} maxLength={200} onChange={event => updateTitle(event.target.value)} /></label>
-        <label>英文文章<textarea rows={8} value={article} maxLength={2000} placeholder="粘贴英文文章，或请右侧 Codex 助手创作（最多 2000 字符）" onChange={event => updateArticle(event.target.value)} /></label>
-        <p className="practice-workshop-note">可以从「精选阅读」复制文章，也可以请右侧 Codex 助手创作。</p>
-        {stage && <details className="practice-workshop-advanced"><summary>高级设置 <span>AI 服务：{providerLabel} · 生成规则</span></summary>
-        <label>AI 服务<select value={provider} onChange={event => setProvider(event.target.value as ProviderChoice)}>
-          <option value="codex">Codex（当前阅读准备服务）</option>
-          <option value="deepseek">DeepSeek API（手动输入 Key）</option>
-          <option value="profile">已保存的自定义 API</option>
-        </select></label>
-        {provider === "deepseek" && <>
-          <label>DeepSeek 模型<select value={deepseekModel} onChange={event=>setDeepseekModel(event.target.value)}>
-            <option value="deepseek-chat">deepseek-chat</option><option value="deepseek-reasoner">deepseek-reasoner</option>
-          </select></label>
-          <label>DeepSeek API Key<input type="password" autoComplete="off" value={apiKey} onChange={event=>setApiKey(event.target.value)} placeholder="仅用于当前请求，不保存在练习或浏览器存储中" /></label>
-        </>}
-        {provider === "profile" && <>
-          <label>已保存的服务<select value={profileId} onChange={event => setProfileId(event.target.value)}>{profiles?.profiles.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}</select></label>
-          <button type="button" onClick={() => void refreshProfiles()}>刷新服务列表</button>
-          <details><summary>在本页管理自定义 API 服务</summary><AiProviderSettingsPanel /></details>
-        </>}
-        <label>AI 生成规则（可修改）<textarea className="practice-workshop-prompt" rows={8} value={stage==="vocabulary"?vocabularyPrompt:prompt} onChange={event => stage==="vocabulary"?setVocabularyPrompt(event.target.value):setPrompt(event.target.value)} /></label>
-        <p className="practice-workshop-note">此处显示实际发送给 AI 的完整生成规则，包含可修改的中文标题要求 <code>titleZh</code>，不会暗中追加第二份提示词。保留一次 <code>{"{{ARTICLE_JSON}}"}</code> 占位符。{stage==="vocabulary"?"只从原文选择单词并验证词位。":"从词到句生成有序练习。"}{!(stage==="vocabulary"?vocabularyPrompt:prompt).includes("titleZh") && <strong> 当前规则没有中文标题要求，AI 可能使用默认标题；可适当缩短旧提示词后加入标题要求。</strong>}</p>
-        <div className="practice-workshop-actions">
-          <button type="button" disabled={stage==="vocabulary"?!originalVocabularyPrompt:!originalPrompt} onClick={() => { if(stage==="vocabulary")setVocabularyPrompt(originalVocabularyPrompt);else setPrompt(originalPrompt);setNotice("已恢复本阶段内置提示词，尚未保存。"); }}>恢复默认提示词</button>
-          <button type="button" disabled={!storageReady} onClick={() => {try {if(stage==="vocabulary")saveVocabularyWorkshopPrompt(vocabularyPrompt);else saveWorkshopPrompt(prompt);setNotice("已独立保存当前阶段提示词。");setError("");} catch(cause){setError(cause instanceof Error?cause.message:"保存失败");}}}>保存当前提示词</button>
+      <section className="practice-workshop-pane practice-lab-compose-pane" aria-label="准备练习">
+        <div className="practice-lab-pane-head">
+          <h2>准备练习{stage? ` · ${currentModeLabel}`:""}</h2>
+          <span className="practice-lab-counter" aria-live="polite">{wordCount} 词 · {charCount}/2000 字符</span>
         </div>
-        </details>}
-        <button className="primary-button" type="button" disabled={busy || !stage || !(stage==="vocabulary"?vocabularyPrompt:prompt) || !article.trim() || !storageReady || (provider === "profile" && !profileId)} onClick={() => void generate()}>{busy?"正在生成…":stage==="vocabulary"?"生成原文填词练习":stage==="assembly"?"生成句子组装练习":"请先选择练习方式"}</button>
-      </section>
-      <section className="practice-workshop-pane" aria-label="练习内容">
-        {stage ? <>
-        <h2>{currentModeLabel} · 生成结果（{currentResultCount} {stage==="vocabulary"?"个单词":"条"}）</h2>
-        {stage==="vocabulary" && <>
-          <p className="practice-workshop-note">仅原文单词填空。程序验证原句、词形及出现位置；可编辑中文及 IPA，AI 解释和音标仍需人工核查。</p>
-          {vocabulary.length===0?<p>生成后可以预览、编辑原文填词练习。切换玩法不会清空原有内容。</p>:
-            <ol className="practice-workshop-results">{vocabulary.map((item,index)=><li key={index}>
-              <div className="practice-workshop-item-head"><span>第 {index+1} 个单词 · 原句 {item.sentenceIndex+1}</span>
-                <div><button aria-label={`上移词汇第 ${index+1} 项`} disabled={index===0} onClick={()=>swapVocabulary(index,-1)}>↑</button>
-                  <button aria-label={`下移词汇第 ${index+1} 项`} disabled={index===vocabulary.length-1} onClick={()=>swapVocabulary(index,1)}>↓</button>
-                  <button aria-label={`删除词汇第 ${index+1} 项`} onClick={()=>{setVocabulary(items=>items.filter((_,i)=>i!==index));markEdited();}}>删除</button></div>
+
+        <label className="practice-lab-field">
+          <span className="practice-lab-label">练习标题</span>
+          <input className="practice-lab-title-input" value={title} maxLength={200} onChange={event => updateTitle(event.target.value)} />
+        </label>
+
+        <label className="practice-lab-field">
+          <span className="practice-lab-label">英文文章</span>
+          <textarea className="practice-lab-article-input" rows={9} value={article} maxLength={2000} placeholder="粘贴英文文章（最多 2000 字符），可从书架或精选文章复制" onChange={event => updateArticle(event.target.value)} />
+        </label>
+
+        <p className="practice-workshop-note">支持使用「设置 → AI 模型服务」中已保存的 DeepSeek、Gemini 或局域网模型直接生成练习。</p>
+
+        {stage && <details className="practice-workshop-advanced">
+          <summary>
+            <span>高级设置</span>
+            <span className="practice-lab-advanced-summary">AI 服务：{providerLabel} · 生成规则</span>
+          </summary>
+          <div className="practice-lab-advanced-body">
+            <label>AI 服务<select value={provider} onChange={event => setProvider(event.target.value as ProviderChoice)}>
+              <option value="vantilo-custom-api">AI 模型服务（设置中已保存）</option>
+              <option value="deepseek">DeepSeek API（手动输入 Key）</option>
+              {(!vantiloApiAvailable || legacyAiAvailable) && <option value="profile">Reader 内置 AI 服务</option>}
+            </select></label>
+            {provider === "vantilo-custom-api" && <div className="practice-lab-inline-row">
+              <label>已保存的 AI 模型服务<select value={vantiloProfileId} onChange={event => setVantiloProfileId(event.target.value)}>
+                {vantiloProfiles.length === 0 ? <option value="">尚未配置，请先在顶部「设置」中添加 AI 模型服务</option> : vantiloProfiles.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}
+              </select></label>
+              <button type="button" className="practice-lab-ghost-btn" onClick={() => void refreshVantiloProfiles()}>刷新服务列表</button>
+            </div>}
+            {provider === "deepseek" && <div className="practice-lab-two-col">
+              <label>DeepSeek 模型<select value={deepseekModel} onChange={event=>setDeepseekModel(event.target.value)}>
+                <option value="deepseek-chat">deepseek-chat</option><option value="deepseek-reasoner">deepseek-reasoner</option>
+              </select></label>
+              <label>DeepSeek API Key<input type="password" autoComplete="off" value={apiKey} onChange={event=>setApiKey(event.target.value)} placeholder="仅用于当前请求，不保存在练习或浏览器存储中" /></label>
+            </div>}
+            {provider === "profile" && <>
+              <div className="practice-lab-inline-row">
+                <label>已保存的服务<select value={profileId} onChange={event => setProfileId(event.target.value)}>{profiles?.profiles.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}</select></label>
+                <button type="button" className="practice-lab-ghost-btn" onClick={() => void refreshProfiles()}>刷新服务列表</button>
               </div>
-              <p lang="en" className="practice-workshop-note">{item.sentence}</p>
-              <label>原文单词<input lang="en" value={item.word} maxLength={100} onChange={event=>editVocabulary(index,"word",event.target.value)}/></label>
-              <label>语境中文<input value={item.meaningZh} maxLength={300} onChange={event=>editVocabulary(index,"meaningZh",event.target.value)}/></label>
-              <label>整句中文<input value={item.sentenceMeaningZh} maxLength={750} onChange={event=>editVocabulary(index,"sentenceMeaningZh",event.target.value)}/></label>
-              <label>词形 IPA<input lang="en" value={item.pronunciation} maxLength={100} onChange={event=>editVocabulary(index,"pronunciation",event.target.value)}/></label>
-            </li>)}</ol>}
-        </>}
-        {stage==="assembly" && <>        <p className="practice-workshop-note">可修改英文、中文及音标，或调整顺序。不支持的符号、缺失的音标会在开始练习时提示；AI 音标未经过人工语音审核。</p>
-        {exercises.length===0?<p>生成后可在此预览。失败时不会清空之前成功的练习。</p>:
-          <ol className="practice-workshop-results">{exercises.map((item,index) =>
-            <li key={index}>
-              <div className="practice-workshop-item-head"><span>第 {index+1} 条</span>
-                <div><button aria-label={`上移第 ${index+1} 条`} disabled={index===0} onClick={()=>swap(index,-1)}>↑</button>
-                  <button aria-label={`下移第 ${index+1} 条`} disabled={index===exercises.length-1} onClick={()=>swap(index,1)}>↓</button>
-                  <button aria-label={`删除第 ${index+1} 条`} onClick={()=>{setExercises(items=>items.filter((_,i)=>i!==index));markEdited();}}>删除</button></div></div>
-              <label>英文<input lang="en" value={item.sentence} maxLength={250} onChange={event=>edit(index,"sentence",event.target.value)} /></label>
-              <label>中文<input value={item.chinese} maxLength={250} onChange={event=>edit(index,"chinese",event.target.value)} /></label>
-              <label>音标 IPA<input lang="en" value={item.pronunciation ?? ""} maxLength={750} onChange={event=>edit(index,"pronunciation",event.target.value)} /></label>
-            </li>)}</ol>}
-        </>}
-        {sourceMismatch && <div className="practice-workshop-source-warning" role="status">当前文章与这些练习的原文不同。可以恢复原文继续练习，也可以重新生成。<button type="button" onClick={()=>{if(currentSource!==null)updateArticle(currentSource);}}>恢复练习原文</button></div>}
-        {(stage==="vocabulary"?vocabularyLoadError:assemblyLoadError) && <p role="alert" className="practice-workshop-error">{stage==="vocabulary"?vocabularyLoadError:assemblyLoadError}</p>}
-        {error && <p role="alert" className="practice-workshop-error">{error}</p>}
-        {notice && <p role="status">{notice}</p>}
-        <div className="practice-workshop-actions">
-          {saveStatus==="error" && currentResultCount>0 && <button type="button" disabled={sourceMismatch || !storageReady || busy} onClick={persist}>重试保存</button>}
-          {saveStatus==="saved" && !sourceMismatch && <span className="practice-workshop-saved-status" role="status">✓ 已自动保存</span>}
-          {saveStatus==="saving" && !sourceMismatch && <span className="practice-workshop-saved-status" role="status">正在保存修改…</span>}
-          <button type="button" className="primary-button" disabled={!currentResultCount || sourceMismatch || busy} onClick={start}>{stage==="vocabulary"?"开始原文填词":"开始句子组装"}</button>
-        </div>
-        {stage==="vocabulary"?<>
-          <h2>已保存的原文填词（{savedVocabulary.length}）</h2>
-          <ul className="practice-workshop-saved">{savedVocabulary.map(item=><li key={item.id} className={pendingDeletion?.mode==="vocabulary"&&pendingDeletion.id===item.id?"is-confirming-delete":undefined}>
-            <div className="practice-workshop-saved-detail">
-              {renaming?.mode==="vocabulary"&&renaming.id===item.id?
-                <label>修改中文标题<input aria-label="修改中文标题" autoFocus maxLength={200} value={renaming.value} onChange={event=>setRenaming({...renaming,value:event.target.value})} onKeyDown={event=>{if(event.key==="Enter")saveRenamedTitle();if(event.key==="Escape")setRenaming(null);}} /></label>:
-                <><strong>{item.title}</strong><small>{item.vocabulary.length} 个单词 · {item.providerLabel}</small></>}
-            </div><div className="practice-workshop-saved-controls">
-              {renaming?.mode==="vocabulary"&&renaming.id===item.id?<><button onClick={saveRenamedTitle}>保存名称</button><button onClick={()=>setRenaming(null)}>取消</button></>:<>
-                <button onClick={()=>openSavedVocabulary(item)}>打开</button>
-                <button aria-label={`重命名 ${item.title}`} onClick={()=>setRenaming({mode:"vocabulary",id:item.id,value:item.title})}>改名</button>
-                <button type="button" onClick={()=>requestDeletion("vocabulary",item.id)}>删除</button></>}
+              <details className="practice-lab-nested-details"><summary>在本页管理自定义 API 服务</summary><AiProviderSettingsPanel /></details>
+            </>}
+            <label>AI 生成规则（可修改）<textarea className="practice-workshop-prompt" rows={8} value={stage==="vocabulary"?vocabularyPrompt:prompt} onChange={event => stage==="vocabulary"?setVocabularyPrompt(event.target.value):setPrompt(event.target.value)} /></label>
+            <p className="practice-workshop-note">此处显示实际发送给 AI 的完整生成规则，包含可修改的中文标题要求 <code>titleZh</code>，不会暗中追加第二份提示词。保留一次 <code>{"{{ARTICLE_JSON}}"}</code> 占位符。{stage==="vocabulary"?"只从原文选择单词并验证词位。":"从词到句生成有序练习。"}{!(stage==="vocabulary"?vocabularyPrompt:prompt).includes("titleZh") && <strong> 当前规则没有中文标题要求，AI 可能使用默认标题；可适当缩短旧提示词后加入标题要求。</strong>}</p>
+            <div className="practice-workshop-actions">
+              <button type="button" disabled={stage==="vocabulary"?!originalVocabularyPrompt:!originalPrompt} onClick={() => { if(stage==="vocabulary")setVocabularyPrompt(originalVocabularyPrompt);else setPrompt(originalPrompt);setNotice("已恢复本阶段内置提示词，尚未保存。"); }}>恢复默认提示词</button>
+              <button type="button" disabled={!storageReady} onClick={() => {try {if(stage==="vocabulary")saveVocabularyWorkshopPrompt(vocabularyPrompt);else saveWorkshopPrompt(prompt);setNotice("已独立保存当前阶段提示词。");setError("");} catch(cause){setError(cause instanceof Error?cause.message:"保存失败");}}}>保存当前提示词</button>
             </div>
-            {pendingDeletion?.mode==="vocabulary"&&pendingDeletion.id===item.id && <div className="practice-workshop-delete-confirm" role="group" aria-label={`确认删除 ${item.title}`}>
-              <span>确定删除「{item.title}」？删除后不可恢复，其他练习不受影响。</span>
-              <button type="button" onClick={()=>deleteSavedVocabulary(item.id)}>确认删除</button>
-              <button type="button" onClick={()=>setPendingDeletion(null)}>取消</button>
-            </div>}
-          </li>)}</ul>
-        </>:<>
-          <h2>已保存的句子组装（{saved.length}）</h2>
-          <ul className="practice-workshop-saved">{saved.map(item=><li key={item.id} className={pendingDeletion?.mode==="assembly"&&pendingDeletion.id===item.id?"is-confirming-delete":undefined}>
-            <div className="practice-workshop-saved-detail">
-              {renaming?.mode==="assembly"&&renaming.id===item.id?
-                <label>修改中文标题<input aria-label="修改中文标题" autoFocus maxLength={200} value={renaming.value} onChange={event=>setRenaming({...renaming,value:event.target.value})} onKeyDown={event=>{if(event.key==="Enter")saveRenamedTitle();if(event.key==="Escape")setRenaming(null);}} /></label>:
-                <><strong>{item.title}</strong><small>{item.exercises.length} 条 · {item.providerLabel}</small></>}
-            </div><div className="practice-workshop-saved-controls">
-              {renaming?.mode==="assembly"&&renaming.id===item.id?<><button onClick={saveRenamedTitle}>保存名称</button><button onClick={()=>setRenaming(null)}>取消</button></>:<>
-                <button onClick={()=>openSaved(item)}>打开</button>
-                <button aria-label={`重命名 ${item.title}`} onClick={()=>setRenaming({mode:"assembly",id:item.id,value:item.title})}>改名</button>
-                <button type="button" onClick={()=>requestDeletion("assembly",item.id)}>删除</button></>}
+          </div>
+        </details>}
+
+        <button className={`primary-button practice-lab-generate-btn ${busy ? "is-busy" : ""}`} type="button" disabled={busy || !stage || !(stage==="vocabulary"?vocabularyPrompt:prompt) || !article.trim() || !storageReady || (provider === "profile" && !profileId) || (provider === "vantilo-custom-api" && !vantiloProfileId)} onClick={() => void generate()}>
+          {busy?"正在生成…":stage==="vocabulary"?"生成原文填词练习":stage==="assembly"?"生成句子组装练习":"请先选择练习方式"}
+        </button>
+      </section>
+
+      <section className="practice-workshop-pane practice-lab-stage-pane" aria-label="练习内容">
+        {stage ? <>
+          <div className="practice-lab-stage-head">
+            <h2>{currentModeLabel} · 生成结果（{currentResultCount} {stage==="vocabulary"?"个单词":"条"}）</h2>
+            <div className="practice-workshop-actions practice-lab-launch-bar">
+              {saveStatus==="error" && currentResultCount>0 && <button type="button" disabled={sourceMismatch || !storageReady || busy} onClick={persist}>重试保存</button>}
+              {saveStatus==="saved" && !sourceMismatch && <span className="practice-workshop-saved-status is-saved" role="status">✓ 已自动保存</span>}
+              {saveStatus==="saving" && !sourceMismatch && <span className="practice-workshop-saved-status is-saving" role="status">正在保存修改…</span>}
+              <button type="button" className="primary-button practice-lab-start-btn" disabled={!currentResultCount || sourceMismatch || busy} onClick={start}>{stage==="vocabulary"?"开始原文填词":"开始句子组装"}</button>
             </div>
-            {pendingDeletion?.mode==="assembly"&&pendingDeletion.id===item.id && <div className="practice-workshop-delete-confirm" role="group" aria-label={`确认删除 ${item.title}`}>
-              <span>确定删除「{item.title}」？删除后不可恢复，其他练习不受影响。</span>
-              <button type="button" onClick={()=>deleteSaved(item.id)}>确认删除</button>
-              <button type="button" onClick={()=>setPendingDeletion(null)}>取消</button>
-            </div>}
-          </li>)}</ul>
-        </>}
-        </> : <div className="practice-workshop-empty"><strong>选一种玩法，开始制作练习</strong><p>选中上方卡片后，这里会显示相应的生成结果与已保存的练习。</p></div>}
+          </div>
+
+          {sourceMismatch && <div className="practice-workshop-source-warning" role="status">
+            <span>当前文章与这些练习的原文不同。可以恢复原文继续练习，也可以重新生成。</span>
+            <button type="button" onClick={()=>{if(currentSource!==null)updateArticle(currentSource);}}>恢复练习原文</button>
+          </div>}
+          {(stage==="vocabulary"?vocabularyLoadError:assemblyLoadError) && <p role="alert" className="practice-workshop-error practice-lab-banner">{stage==="vocabulary"?vocabularyLoadError:assemblyLoadError}</p>}
+          {error && <p role="alert" className="practice-workshop-error practice-lab-banner">{error}</p>}
+          {notice && <p role="status" className="practice-lab-notice practice-lab-banner">{notice}</p>}
+
+          {stage==="vocabulary" && <>
+            <p className="practice-workshop-note">仅原文单词填空。程序验证原句、词形及出现位置；可编辑中文及 IPA，AI 解释和音标仍需人工核查。</p>
+            {vocabulary.length===0 ? <div className="practice-lab-result-empty">
+              <div className="practice-lab-flow-steps" aria-hidden="true">
+                <span>1. 粘贴英文文章</span><span>→</span><span>2. AI 提取关键词</span><span>→</span><span>3. 进入原文填词</span>
+              </div>
+              <p>生成后可以预览、编辑原文填词练习。切换玩法不会清空原有内容。</p>
+            </div> :
+              <ol className="practice-workshop-results">{vocabulary.map((item,index)=><li key={index} className="practice-lab-item-card">
+                <div className="practice-workshop-item-head">
+                  <span className="practice-lab-item-badge">第 {index+1} 个单词 · 原句 {item.sentenceIndex+1}</span>
+                  <div className="practice-lab-item-controls">
+                    <button aria-label={`上移词汇第 ${index+1} 项`} disabled={index===0} onClick={()=>swapVocabulary(index,-1)}>↑</button>
+                    <button aria-label={`下移词汇第 ${index+1} 项`} disabled={index===vocabulary.length-1} onClick={()=>swapVocabulary(index,1)}>↓</button>
+                    <button className="is-danger" aria-label={`删除词汇第 ${index+1} 项`} onClick={()=>{setVocabulary(items=>items.filter((_,i)=>i!==index));markEdited();}}>删除</button>
+                  </div>
+                </div>
+                <p lang="en" className="practice-lab-quote">{item.sentence}</p>
+                <div className="practice-lab-item-grid">
+                  <label>原文单词<input lang="en" value={item.word} maxLength={100} onChange={event=>editVocabulary(index,"word",event.target.value)}/></label>
+                  <label>词形 IPA<input lang="en" value={item.pronunciation} maxLength={100} onChange={event=>editVocabulary(index,"pronunciation",event.target.value)}/></label>
+                  <label>语境中文<input value={item.meaningZh} maxLength={300} onChange={event=>editVocabulary(index,"meaningZh",event.target.value)}/></label>
+                  <label>整句中文<input value={item.sentenceMeaningZh} maxLength={750} onChange={event=>editVocabulary(index,"sentenceMeaningZh",event.target.value)}/></label>
+                </div>
+              </li>)}</ol>}
+          </>}
+
+          {stage==="assembly" && <>
+            <p className="practice-workshop-note">可修改英文、中文及音标，或调整顺序。不支持的符号、缺失的音标会在开始练习时提示；AI 音标未经过人工语音审核。</p>
+            {exercises.length===0 ? <div className="practice-lab-result-empty">
+              <div className="practice-lab-flow-steps" aria-hidden="true">
+                <span>1. 粘贴英文文章</span><span>→</span><span>2. AI 拆解词句阶梯</span><span>→</span><span>3. 进入句子组装</span>
+              </div>
+              <p>生成后可在此预览。失败时不会清空之前成功的练习。</p>
+            </div> :
+              <ol className="practice-workshop-results">{exercises.map((item,index) =>
+                <li key={index} className="practice-lab-item-card">
+                  <div className="practice-workshop-item-head">
+                    <span className="practice-lab-item-badge">第 {index+1} 条</span>
+                    <div className="practice-lab-item-controls">
+                      <button aria-label={`上移第 ${index+1} 条`} disabled={index===0} onClick={()=>swap(index,-1)}>↑</button>
+                      <button aria-label={`下移第 ${index+1} 条`} disabled={index===exercises.length-1} onClick={()=>swap(index,1)}>↓</button>
+                      <button className="is-danger" aria-label={`删除第 ${index+1} 条`} onClick={()=>{setExercises(items=>items.filter((_,i)=>i!==index));markEdited();}}>删除</button>
+                    </div>
+                  </div>
+                  <div className="practice-lab-item-grid practice-lab-assembly-grid">
+                    <label className="is-full">英文<input lang="en" value={item.sentence} maxLength={250} onChange={event=>edit(index,"sentence",event.target.value)} /></label>
+                    <label>中文<input value={item.chinese} maxLength={250} onChange={event=>edit(index,"chinese",event.target.value)} /></label>
+                    <label>音标 IPA<input lang="en" value={item.pronunciation ?? ""} maxLength={750} onChange={event=>edit(index,"pronunciation",event.target.value)} /></label>
+                  </div>
+                </li>)}</ol>}
+          </>}
+
+          <div className="practice-lab-library-section">
+            <div className="practice-lab-library-head">
+              <h2>{stage==="vocabulary" ? `已保存的原文填词（${savedVocabulary.length}）` : `已保存的句子组装（${saved.length}）`}</h2>
+              <span className="practice-workshop-note">点击「打开」直接进入复习，不消耗 AI 调用</span>
+            </div>
+            {stage==="vocabulary" ? (
+              savedVocabulary.length === 0 ? <p className="practice-lab-library-empty">还没有保存的原文填词练习，生成后会自动保存在这里。</p> :
+              <ul className="practice-workshop-saved">{savedVocabulary.map(item=><li key={item.id} className={`${pendingDeletion?.mode==="vocabulary"&&pendingDeletion.id===item.id?"is-confirming-delete":""} ${activeSavedId===item.id?"is-active-lesson":""}`.trim()}>
+                <div className="practice-workshop-saved-detail">
+                  {renaming?.mode==="vocabulary"&&renaming.id===item.id?
+                    <label>修改中文标题<input aria-label="修改中文标题" autoFocus maxLength={200} value={renaming.value} onChange={event=>setRenaming({...renaming,value:event.target.value})} onKeyDown={event=>{if(event.key==="Enter")saveRenamedTitle();if(event.key==="Escape")setRenaming(null);}} /></label>:
+                    <><strong>{item.title}</strong><small>{item.vocabulary.length} 个单词 · {item.providerLabel}</small></>}
+                </div><div className="practice-workshop-saved-controls">
+                  {renaming?.mode==="vocabulary"&&renaming.id===item.id?<><button className="is-accent" onClick={saveRenamedTitle}>保存名称</button><button onClick={()=>setRenaming(null)}>取消</button></>:<>
+                    <button className="is-accent" onClick={()=>openSavedVocabulary(item)}>打开</button>
+                    <button aria-label={`重命名 ${item.title}`} onClick={()=>setRenaming({mode:"vocabulary",id:item.id,value:item.title})}>改名</button>
+                    <button type="button" className="is-danger" onClick={()=>requestDeletion("vocabulary",item.id)}>删除</button></>}
+                </div>
+                {pendingDeletion?.mode==="vocabulary"&&pendingDeletion.id===item.id && <div className="practice-workshop-delete-confirm" role="group" aria-label={`确认删除 ${item.title}`}>
+                  <span>确定删除「{item.title}」？删除后不可恢复，其他练习不受影响。</span>
+                  <button type="button" onClick={()=>deleteSavedVocabulary(item.id)}>确认删除</button>
+                  <button type="button" onClick={()=>setPendingDeletion(null)}>取消</button>
+                </div>}
+              </li>)}</ul>
+            ) : (
+              saved.length === 0 ? <p className="practice-lab-library-empty">还没有保存的句子组装练习，生成后会自动保存在这里。</p> :
+              <ul className="practice-workshop-saved">{saved.map(item=><li key={item.id} className={`${pendingDeletion?.mode==="assembly"&&pendingDeletion.id===item.id?"is-confirming-delete":""} ${activeSavedId===item.id?"is-active-lesson":""}`.trim()}>
+                <div className="practice-workshop-saved-detail">
+                  {renaming?.mode==="assembly"&&renaming.id===item.id?
+                    <label>修改中文标题<input aria-label="修改中文标题" autoFocus maxLength={200} value={renaming.value} onChange={event=>setRenaming({...renaming,value:event.target.value})} onKeyDown={event=>{if(event.key==="Enter")saveRenamedTitle();if(event.key==="Escape")setRenaming(null);}} /></label>:
+                    <><strong>{item.title}</strong><small>{item.exercises.length} 条 · {item.providerLabel}</small></>}
+                </div><div className="practice-workshop-saved-controls">
+                  {renaming?.mode==="assembly"&&renaming.id===item.id?<><button className="is-accent" onClick={saveRenamedTitle}>保存名称</button><button onClick={()=>setRenaming(null)}>取消</button></>:<>
+                    <button className="is-accent" onClick={()=>openSaved(item)}>打开</button>
+                    <button aria-label={`重命名 ${item.title}`} onClick={()=>setRenaming({mode:"assembly",id:item.id,value:item.title})}>改名</button>
+                    <button type="button" className="is-danger" onClick={()=>requestDeletion("assembly",item.id)}>删除</button></>}
+                </div>
+                {pendingDeletion?.mode==="assembly"&&pendingDeletion.id===item.id && <div className="practice-workshop-delete-confirm" role="group" aria-label={`确认删除 ${item.title}`}>
+                  <span>确定删除「{item.title}」？删除后不可恢复，其他练习不受影响。</span>
+                  <button type="button" onClick={()=>deleteSaved(item.id)}>确认删除</button>
+                  <button type="button" onClick={()=>setPendingDeletion(null)}>取消</button>
+                </div>}
+              </li>)}</ul>
+            )}
+          </div>
+        </> : <div className="practice-workshop-empty">
+          <div className="practice-lab-empty-icon" aria-hidden="true">✦</div>
+          <strong>选一种玩法，开始制作练习</strong>
+          <p>选中上方卡片后，这里会显示相应的生成结果与已保存的练习。</p>
+        </div>}
       </section>
     </div>
   </section>;

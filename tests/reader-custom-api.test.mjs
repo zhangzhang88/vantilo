@@ -148,6 +148,26 @@ describe('custom OpenAI-compatible API provider',()=>{
    expect(fetchImpl).toHaveBeenCalledOnce();
   } finally { await rm(dir,{recursive:true,force:true}); }
  });
+  it('supports Practice Lab prompt and output budgets only for practice-workshop tasks', async () => {
+   const dir = await mkdtemp(path.join(os.tmpdir(), 'vantilo-custom-api-workshop-'));
+   const longPrompt = 'P'.repeat(21000);
+   const longReply = JSON.stringify({ titleZh: '长练习', exercises: Array.from({ length: 80 }, (_, index) => ({ sentence: `word ${index} ${'x'.repeat(240)}`, chinese: '中文提示', pronunciation: '/wɜːrd/' })) });
+   expect(longReply.length).toBeGreaterThan(20000);
+   let sentBody;
+   const fetchImpl = vi.fn(async (_url, options) => {
+    sentBody = JSON.parse(options.body);
+    return Response.json({ choices: [{ message: { content: longReply } }] });
+   });
+   try {
+    const service = createReaderCustomApi({ filePath: path.join(dir, 'provider.json'), safeStorage: safeStorage(), fetchImpl });
+    await service.save(config);
+    await expect(service.complete({ instruction: 'Return JSON', input: longPrompt })).rejects.toThrow('超出允许长度');
+    await expect(service.complete({ instruction: 'Return JSON', input: longPrompt, task: 'practice-workshop' })).resolves.toBe(longReply);
+    expect(sentBody.max_tokens).toBe(16000);
+   } finally {
+    await rm(dir, { recursive: true, force: true });
+   }
+  });
 });
 
 
@@ -187,5 +207,49 @@ describe('credential recovery and migration', () => {
   const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-invalid-'));const filePath=path.join(dir,'provider.json');const id='11111111-1111-1111-1111-111111111111';const storage=safeStorage();storage.decryptString=vi.fn(storage.decryptString);
   try {await writeFile(filePath,JSON.stringify({version:2,activeId:id,profiles:[{config:{id,name:'bad',baseUrl:'https://example.com',model:'m'},encryptedApiKey:'@@@'}]}));const service=createReaderCustomApi({filePath,safeStorage:storage});await expect(service.complete({instruction:'x',input:'y'})).rejects.toMatchObject({code:'invalid_ciphertext'});expect(storage.decryptString).not.toHaveBeenCalled();expect((await service.get()).credentialStatus).toBe('invalid_ciphertext');}
   finally{await rm(dir,{recursive:true,force:true});}
+ });
+ it('lists live chat models for Gemini and DeepSeek, strips models/ prefix, filters non-chat models, and reuses saved key',async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-models-'));const filePath=path.join(dir,'provider.json');
+  const seen=[];
+  const fetchImpl=vi.fn(async(url,init)=>{
+   seen.push({url,auth:init.headers.authorization});
+   if(url==='https://generativelanguage.googleapis.com/v1beta/openai/models'){
+    return new Response(JSON.stringify({data:[{id:'models/gemini-2.5-flash'},{id:'models/gemini-3-flash-preview'},{id:'models/text-embedding-004'},{id:'models/imagen-3.0-generate-002'}]}),{status:200});
+   }
+   if(url==='https://api.deepseek.com/v1/models'){
+    return new Response(JSON.stringify({data:[{id:'deepseek-chat'},{id:'deepseek-reasoner'},{id:'deepseek-v4'}]}),{status:200});
+   }
+   return new Response('not found',{status:404});
+  });
+  try{
+   const service=createReaderCustomApi({filePath,safeStorage:safeStorage(),fetchImpl});
+   const gemini=await service.listModels({baseUrl:'https://generativelanguage.googleapis.com/v1beta/openai',apiKey:'gem-key'});
+   expect(gemini.models).toEqual(['gemini-2.5-flash','gemini-3-flash-preview']);
+   const saved=await service.save({name:'DeepSeek',baseUrl:'https://api.deepseek.com/v1',model:'deepseek-chat',apiKey:'ds-saved-key'});
+   const deepseek=await service.listModels({id:saved.id,baseUrl:'https://api.deepseek.com/v1',apiKey:''});
+   expect(deepseek.models).toEqual(['deepseek-chat','deepseek-reasoner','deepseek-v4']);
+   expect(seen).toEqual([
+    {url:'https://generativelanguage.googleapis.com/v1beta/openai/models',auth:'Bearer gem-key'},
+    {url:'https://api.deepseek.com/v1/models',auth:'Bearer ds-saved-key'},
+   ]);
+   await expect(service.listModels({baseUrl:'http://example.com/v1',apiKey:'x'})).rejects.toThrow(/HTTPS/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
+ it('surfaces Google Gemini JSON-array error messages cleanly while redacting API keys', async () => {
+  const dir=await mkdtemp(path.join(os.tmpdir(),'vantilo-custom-api-err-'));
+  const filePath=path.join(dir,'custom-api.json');
+  const fetchImpl=vi.fn(async ()=>new Response(JSON.stringify([
+   {error:{code:404,message:'models/gemini-2.5-flash is not found for API version v1beta (key gem-secret)',status:'NOT_FOUND'}},
+  ]),{status:404,headers:{'content-type':'application/json'}}));
+  try{
+   const service=createReaderCustomApi({filePath,safeStorage:safeStorage(),fetchImpl});
+   await expect(service.test({
+    name:'Gemini',
+    baseUrl:'https://generativelanguage.googleapis.com/v1beta/openai',
+    model:'gemini-2.5-flash',
+    apiKey:'gem-secret',
+   })).rejects.toThrow(/API 返回 HTTP 404：models\/gemini-2\.5-flash is not found.*\[已隐藏\]/);
+  }finally{await rm(dir,{recursive:true,force:true});}
  });
 });

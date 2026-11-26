@@ -1,26 +1,28 @@
-/* Redesigned Apple Books / macOS minimalist theme system for Vantilo Reader.
- * Preserves all reading modes, familiarity colors, and user typography controls. */
+/* Claude-inspired warm editorial theme system for Vantilo Reader.
+ * Warm parchment light mode, warm obsidian dark mode, terracotta clay accents,
+ * serif editorial headings paired with crisp sans UI. Preserves all reading
+ * modes, familiarity colors, and user typography controls. */
 :root {
   color-scheme: light;
-  --theme-bg: #f5f5f7;
+  --theme-bg: #faf9f5;
   --theme-surface: #ffffff;
   --theme-raised: #ffffff;
-  --theme-soft: #eef0f4;
-  --theme-selected: rgba(0, 113, 227, 0.1);
-  --theme-ink: #1d1d1f;
-  --theme-secondary: #48484c;
-  --theme-muted: #76767c;
-  --theme-line: rgba(0, 0, 0, 0.1);
-  --theme-line-soft: rgba(0, 0, 0, 0.06);
-  --theme-accent: #0071e3;
+  --theme-soft: #f1efe7;
+  --theme-selected: rgba(201, 100, 66, 0.11);
+  --theme-ink: #141413;
+  --theme-secondary: #4a4842;
+  --theme-muted: #78756c;
+  --theme-line: rgba(61, 57, 41, 0.12);
+  --theme-line-soft: rgba(61, 57, 41, 0.08);
+  --theme-accent: #c96442;
   --theme-on-accent: #ffffff;
-  --theme-danger: #d93025;
-  --theme-danger-soft: rgba(217, 48, 37, 0.09);
-  --theme-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --theme-shadow: 0 10px 30px rgba(0, 0, 0, 0.07), 0 2px 8px rgba(0, 0, 0, 0.04);
-  --theme-shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.14), 0 4px 14px rgba(0, 0, 0, 0.06);
-  --control-radius: 9px;
-  --card-radius: 14px;
+  --theme-danger: #c0483e;
+  --theme-danger-soft: rgba(192, 72, 62, 0.09);
+  --theme-shadow-sm: 0 1px 3px rgba(20, 20, 19, 0.04), 0 0.5px 1px rgba(20, 20, 19, 0.04);
+  --theme-shadow: 0 8px 26px rgba(20, 20, 19, 0.055), 0 1.5px 4px rgba(20, 20, 19, 0.035);
+  --theme-shadow-lg: 0 20px 50px rgba(20, 20, 19, 0.12), 0 4px 12px rgba(20, 20, 19, 0.05);
+  --control-radius: 10px;
+  --card-radius: 16px;
   --accent: var(--theme-accent);
   --accent-soft: var(--theme-selected);
 }
@@ -67,23 +69,23 @@ html[data-color-mode="green"] {
 
 html[data-color-mode="dark"] {
   color-scheme: dark;
-  --theme-bg: #111113;
-  --theme-surface: #19191d;
-  --theme-raised: #222227;
-  --theme-soft: #26262c;
-  --theme-selected: rgba(10, 132, 255, 0.16);
-  --theme-ink: #f5f5f7;
-  --theme-secondary: #c4c4cc;
-  --theme-muted: #868690;
-  --theme-line: rgba(255, 255, 255, 0.1);
-  --theme-line-soft: rgba(255, 255, 255, 0.06);
-  --theme-accent: #4c9aff;
+  --theme-bg: #262624;
+  --theme-surface: #2e2e2b;
+  --theme-raised: #363632;
+  --theme-soft: #383834;
+  --theme-selected: rgba(217, 119, 87, 0.16);
+  --theme-ink: #ecebe4;
+  --theme-secondary: #c4c2b7;
+  --theme-muted: #8f8d82;
+  --theme-line: rgba(236, 235, 228, 0.11);
+  --theme-line-soft: rgba(236, 235, 228, 0.07);
+  --theme-accent: #d97757;
   --theme-on-accent: #ffffff;
-  --theme-danger: #f87171;
-  --theme-danger-soft: rgba(239, 68, 68, 0.14);
-  --theme-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
-  --theme-shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
-  --theme-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.62);
+  --theme-danger: #e2786f;
+  --theme-danger-soft: rgba(226, 120, 111, 0.14);
+  --theme-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --theme-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+  --theme-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.5);
 }
 
 html,
@@ -151,7 +153,9 @@ body {
 .app-shell .continue-copy h2,
 .app-shell .continue-title-zh {
   color: var(--theme-ink);
-  letter-spacing: -0.02em;
+  font-family: var(--vantilo-font-serif, "Iowan Old Style", Georgia, "Songti SC", serif);
+  font-weight: 550;
+  letter-spacing: -0.015em;
 }
 .app-shell .continue-copy > p,
 .app-shell .continue-meta,
@@ -163,23 +167,25 @@ body {
 .app-shell .toc-section-name,
 .app-shell .settings-card-heading > div > span {
   color: var(--theme-accent);
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
 }
 
 .app-shell .page-heading-row h1,
 .app-shell .settings-page > h1 {
-  font-size: clamp(26px, 3vw, 32px);
-  font-weight: 700;
-  letter-spacing: -0.028em;
-  line-height: 1.25;
+  font-family: var(--vantilo-font-serif, "Iowan Old Style", Georgia, "Songti SC", serif);
+  font-size: clamp(27px, 3vw, 33px);
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  line-height: 1.22;
 }
 .app-shell .settings-card-heading h2,
 .app-shell .section-title-row h2 {
+  font-family: var(--vantilo-font-serif, "Iowan Old Style", Georgia, "Songti SC", serif);
   font-size: 20px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.35;
+  font-weight: 550;
+  letter-spacing: -0.015em;
+  line-height: 1.32;
 }
 .app-shell .settings-card-heading small,
 .app-shell .settings-help,

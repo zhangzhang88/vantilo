@@ -170,7 +170,7 @@ describe('explicit preview translation engines',()=>{
   const c=setup({customApi});
   const list=await c.handlers['/api/vantilo-translation/engines']({}, {header:vi.fn()});
   const custom=list.engines.filter((engine:any)=>engine.engine==='custom-api');
-  expect(custom.map((engine:any)=>engine.label)).toEqual(['自定义 API · 同一服务 / model-two','自定义 API · 同一服务 / model-one']);
+  expect(custom.map((engine:any)=>engine.label)).toEqual(['同一服务 · model-two','同一服务 · model-one']);
   expect(custom[0].id).toBe(list.defaultId);
   expect(custom[0].id).not.toBe(custom[1].id);
   expect(custom[1]).not.toHaveProperty('selectedProfileId');

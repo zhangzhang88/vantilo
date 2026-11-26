@@ -3,6 +3,7 @@ export interface SpeechCursor {
   paragraphIndex: number;
   chunkIndex: number;
   chunkText?: string;
+  speechOffset?: number;
   seconds?: number;
 }
 export type SpeechPhase = "idle" | "loading" | "playing" | "paused" | "complete" | "error";

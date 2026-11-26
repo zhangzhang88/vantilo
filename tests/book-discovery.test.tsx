@@ -169,29 +169,31 @@ it('loads a cached Chinese introduction without regenerating', async () => {
   expect(api.requestGutenberg).not.toHaveBeenCalledWith({ operation: 'intro', id: 174 });
 });
 
-it('selects any Codex catalog model independently, remembers the selection, and isolates both engines', async () => {
+it('selects any saved custom API model independently, remembers the selection, and isolates caches', async () => {
+  const customCatalog = {
+    defaultId: 'custom-api:aaaaaaaaaaaa',
+    engines: [
+      { id: 'custom-api:aaaaaaaaaaaa', label: '自定义 API · Local Qwen / qwen3.5-4b', engine: 'custom', modelId: 'qwen3.5-4b', effort: null },
+      { id: 'custom-api:bbbbbbbbbbbb', label: '自定义 API · DeepSeek / deepseek-chat', engine: 'custom', modelId: 'deepseek-chat', effort: null },
+    ],
+  };
   const book = { id:174, title:'The Picture of Dorian Gray', authors:['Oscar Wilde'], subjects:[], bookshelves:[], languages:['en'], downloadCount:0, formats:[], epubUrl:null, coverUrl:null, sourceUrl:'https://www.gutenberg.org/ebooks/174' };
   const qwen = { id:174, titleZh:'道林·格雷的画像', introZh:'Qwen 的旧介绍', highlightsZh:'Qwen 看点', questionZh:'Qwen 问题', readingNoteZh:'Qwen 提醒', sourceUrl:'https://www.gutenberg.org/cache/epub/174/pg174.txt', sourceScope:'原著开头节选', model:'qwen3.5-4b', cached:true };
-  const codex = (modelId:string) => ({...qwen,introZh:'Codex '+modelId+' 的新介绍',model:modelId,engine:'codex',cached:false});
-  const api = { requestGutenberg:vi.fn(async (request:any) => request.operation==='introEngines'?introCatalog:request.operation==='search'?{count:1,next:null,previous:null,books:[book]}:request.operation==='detail'?book:request.operation==='introCached'?(request.engine==='codex'?null:qwen):request.operation==='intro'?codex(request.modelId):null) };
+  const deepseek = { ...qwen, introZh:'DeepSeek 的新介绍', model:'deepseek-chat', engine:'custom', cached:false };
+  const api = { requestGutenberg:vi.fn(async (request:any) => request.operation==='introEngines'?customCatalog:request.operation==='search'?{count:1,next:null,previous:null,books:[book]}:request.operation==='detail'?book:request.operation==='introCached'?(request.customEngineId==='custom-api:bbbbbbbbbbbb'?null:qwen):request.operation==='intro'?deepseek:null) };
   Object.defineProperty(window, 'vantilo', { value: api, configurable:true });
   render(<BookDiscovery onBack={()=>{}} onOpenShelf={()=>{}} />);
   fireEvent.click(screen.getByRole('button',{name:'搜索在线书目'}));
   fireEvent.click(await screen.findByRole('button',{name:/The Picture of Dorian Gray/}));
   expect(await screen.findByText('Qwen 的旧介绍')).toBeTruthy();
-  fireEvent.change(screen.getByRole('combobox',{name:'中文介绍模型'}),{target:{value:'codex:gpt-7-test'}});
+  fireEvent.change(screen.getByRole('combobox',{name:'中文介绍模型'}),{target:{value:'custom-api:bbbbbbbbbbbb'}});
   expect(await screen.findByRole('button',{name:'生成中文介绍'})).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'生成中文介绍'}));
-  expect(await screen.findByText('Codex gpt-7-test 的新介绍')).toBeTruthy();
-  expect(api.requestGutenberg).toHaveBeenCalledWith({ operation:'intro', id:174, engine:'codex', force:false, modelId:'gpt-7-test', reasoningEffort:'high' });
+  expect(await screen.findByText('DeepSeek 的新介绍')).toBeTruthy();
+  expect(api.requestGutenberg).toHaveBeenCalledWith({ operation:'intro', id:174, engine:'custom', force:false, customEngineId:'custom-api:bbbbbbbbbbbb' });
   fireEvent.click(screen.getByRole('button',{name:'用当前模型重新生成'}));
-  await waitFor(()=>expect(api.requestGutenberg).toHaveBeenCalledWith({operation:'intro',id:174,engine:'codex',force:true,modelId:'gpt-7-test',reasoningEffort:'high'}));
-  fireEvent.change(screen.getByRole('combobox',{name:'中文介绍模型'}),{target:{value:'codex:gpt-8-next'}});
-  expect(await screen.findByRole('button',{name:'生成中文介绍'})).toBeTruthy();
-  fireEvent.click(screen.getByRole('button',{name:'生成中文介绍'}));
-  expect(await screen.findByText('Codex gpt-8-next 的新介绍')).toBeTruthy();
-  expect(api.requestGutenberg).toHaveBeenCalledWith({operation:'intro',id:174,engine:'codex',force:false,modelId:'gpt-8-next',reasoningEffort:'medium'});
-  expect(window.localStorage.getItem('vantilo-book-intro-model-v1')).toBe('codex:gpt-8-next');
+  await waitFor(()=>expect(api.requestGutenberg).toHaveBeenCalledWith({operation:'intro',id:174,engine:'custom',force:true,customEngineId:'custom-api:bbbbbbbbbbbb'}));
+  expect(window.localStorage.getItem('vantilo-book-intro-model-v1')).toBe('custom-api:bbbbbbbbbbbb');
   fireEvent.change(screen.getByRole('combobox',{name:'中文介绍模型'}),{target:{value:'custom-api:aaaaaaaaaaaa'}});
   expect(await screen.findByText('Qwen 的旧介绍')).toBeTruthy();
 });

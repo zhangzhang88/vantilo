@@ -46,7 +46,8 @@ export function renderBookLayout({ paragraphs, tables = [], visuals = [], identi
       if (placement.kind === "visual") {
         const visual = placement.item;
         const first = visual.coveredParagraphIndexes[0] ?? visual.captionParagraphIndexes[0];
-        return identity ? <React.Fragment key={visual.id}>{first === undefined ? null : beforeParagraph?.(first)}<BookVisual visual={visual} identity={identity} renderCaption={renderCaption} /></React.Fragment> : null;
+        return identity ? <React.Fragment key={visual.id}>{first === undefined ? null : beforeParagraph?.(first)}<BookVisual visual={visual} identity={identity} renderCaption={renderCaption}
+          renderParagraph={paragraphIndex => <>{paragraphIndex !== first ? beforeParagraph?.(paragraphIndex) : null}{renderParagraph(paragraphIndex)}</>} /></React.Fragment> : null;
       }
       const table = placement.item, first = tableParagraphIndexes(table)[0];
       return <React.Fragment key={table.id}>{first === undefined ? null : beforeParagraph?.(first)}<BookTable table={table}

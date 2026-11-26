@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { applyAudiobookSmartSkip } from "./audiobook-smart-skip";
+import { resolveSpeechChunkForOffset } from "./audiobook-sync-highlight";
 import { adaptivePlaybackTarget, firstPlaybackTarget, ChineseStreamingAudioPlayer, WebAudioPcmSink, type ChineseAudioDiagnosticEvent, type PcmAudioSink } from "./chinese-streaming-audio-player";
 import type { SpeechCursor } from "./chinese-audio-types";
 import type { SpeechPcmChunk } from "./chinese-tts-stream";
@@ -543,5 +545,187 @@ describe("WebAudio pitch-safe PCM scheduling", () => {
       sink.stop();
       vi.unstubAllGlobals();
     }
+  });
+
+  it("serializes pause/resume and auto-recovers when AudioContext becomes suspended unexpectedly", async () => {
+    const events: string[] = [];
+    let activeContext!: {
+      state: "running" | "suspended" | "closed";
+      onstatechange: null | (() => void);
+      currentTime: number;
+    };
+    class RaceAudioContext {
+      state: "running" | "suspended" | "closed" = "suspended";
+      currentTime = 0;
+      destination = {};
+      onstatechange: null | (() => void) = null;
+      constructor() { activeContext = this; }
+      createGain() {
+        return {
+          gain: {
+            value: 1,
+            cancelScheduledValues: () => {},
+            setValueAtTime: () => {},
+            linearRampToValueAtTime: () => {},
+          },
+          connect: () => {},
+          disconnect: () => {},
+        };
+      }
+      createBuffer(_channels: number, length: number, rate: number) {
+        const samples = new Float32Array(length);
+        return { duration: length / rate, getChannelData: () => samples };
+      }
+      createBufferSource() {
+        return {
+          buffer: null as unknown,
+          playbackRate: { value: 1 },
+          onended: null as null | (() => void),
+          connect: () => {},
+          disconnect: () => {},
+          start: () => {},
+          stop: () => {},
+        };
+      }
+      async resume() {
+        events.push("resume");
+        this.state = "running";
+      }
+      async suspend() {
+        events.push("suspend");
+        await new Promise(resolve => setTimeout(resolve, 10));
+        this.state = "suspended";
+      }
+      async close() {
+        this.state = "closed";
+      }
+    }
+    vi.stubGlobal("AudioContext", RaceAudioContext);
+    const sink = new WebAudioPcmSink(() => {}, false);
+    try {
+      await flush();
+      expect(activeContext.state).toBe("running");
+
+      // Rapid pause -> resume must never end in a stuck "suspended" state.
+      sink.pause();
+      sink.resume();
+      await new Promise(resolve => setTimeout(resolve, 45));
+      expect(activeContext.state).toBe("running");
+
+      // Unexpected OS/browser suspension while playback wants to run triggers recovery.
+      activeContext.state = "suspended";
+      activeContext.onstatechange?.();
+      await flush();
+      expect(activeContext.state).toBe("running");
+      expect(events.filter(event => event === "resume").length).toBeGreaterThanOrEqual(2);
+    } finally {
+      sink.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("synthesizes from the exact speechOffset when listening from a selected text position", async () => {
+    const spoken: string[] = [];
+    const f = fixture(vi.fn(async function* (text: string) {
+      spoken.push(text);
+      yield { sampleRate: 24000, samples: new Int16Array(24000 * 4) };
+    }), {
+      getText: index => index === 0 ? "第一句在这里。第二句从这里开始。" : "下一段完整内容。",
+      splitText: text => [text],
+    });
+
+    const startOffset = "第一句在这里。".length;
+    await f.player.start({
+      paragraphIndex: 0,
+      chunkIndex: 0,
+      chunkText: "第二句从这里开始。",
+      speechOffset: startOffset,
+    });
+
+    expect(spoken).toEqual(["第二句从这里开始。", "下一段完整内容。"]);
+    expect(f.appends[0]?.cursor).toMatchObject({
+      paragraphIndex: 0,
+      chunkIndex: 0,
+      chunkText: "第二句从这里开始。",
+      speechOffset: startOffset,
+    });
+    expect(f.appends[1]?.cursor).toMatchObject({
+      paragraphIndex: 1,
+      chunkIndex: 0,
+      chunkText: "下一段完整内容。",
+    });
+  });
+
+  it("applies smart-skip transformText and skips paragraphs that become empty", async () => {
+    const spoken: string[] = [];
+    const phase = vi.fn();
+    const position = vi.fn();
+    const sink: PcmAudioSink = {
+      append() {},
+      position: () => null,
+      bufferedSeconds: () => 0,
+      finish: async () => {},
+      pause() {},
+      resume() {},
+      setRate() {},
+      stop() {},
+    };
+    const player = new ChineseStreamingAudioPlayer({
+      indices: [0, 1],
+      getText: async index => index === 0 ? "https://example.com/only-url" : "正文内容（跳过括号）继续。",
+      transformText: text => text
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/（[^（）]*）/g, "")
+        .trim(),
+      synthesize: vi.fn(async function* (text: string) {
+        spoken.push(text);
+        yield { sampleRate: 24000, samples: new Int16Array(24000 * 4) };
+      }),
+      phase,
+      position,
+      sink: () => sink,
+    });
+
+    await player.start({ paragraphIndex: 0, chunkIndex: 0 });
+    expect(spoken).toEqual(["正文内容继续。"]);
+    expect(phase.mock.calls.at(-1)?.[0]).toBe("complete");
+  });
+
+  it("starts from the selected second sentence after a skipped URL instead of restarting sentence one", async () => {
+    const paragraph = "参考 https://example.com/very/long/reference/url 第一句。第二句从这里开始。";
+    const smartSkip = { tables: true, urls: true, parentheses: false, brackets: false, braces: false };
+    const spoken: string[] = [];
+    const sink: PcmAudioSink = {
+      append() {},
+      position: () => null,
+      bufferedSeconds: () => 0,
+      finish: async () => {},
+      pause() {},
+      resume() {},
+      setRate() {},
+      stop() {},
+    };
+    const player = new ChineseStreamingAudioPlayer({
+      indices: [0],
+      getText: async () => paragraph,
+      transformText: text => applyAudiobookSmartSkip(text, smartSkip),
+      synthesize: vi.fn(async function* (text: string) {
+        spoken.push(text);
+        yield { sampleRate: 24000, samples: new Int16Array(24000 * 2) };
+      }),
+      phase: vi.fn(),
+      position: vi.fn(),
+      sink: () => sink,
+    });
+
+    const target = resolveSpeechChunkForOffset(paragraph, paragraph.indexOf("第二句"), "第二句", smartSkip);
+    expect(target).toBeDefined();
+    await player.start({
+      paragraphIndex: 0,
+      chunkIndex: target!.chunkIndex,
+      chunkText: target!.chunkText,
+      speechOffset: target!.speechOffset,
+    });
+    expect(spoken).toEqual(["第二句从这里开始。"]);
   });
 });

@@ -17,6 +17,7 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 
 export class GuidePreparationService {
   private readonly jobs = new Map<string, Promise<void>>();
+  private readonly starting = new Map<string, Promise<GuidePreparationStatus | null>>();
   private statusWriteQueue: Promise<void> = Promise.resolve();
   private readonly retryDelaysMs: number[];
   private readonly sleep: (ms: number) => Promise<void>;
@@ -35,12 +36,18 @@ export class GuidePreparationService {
   }
 
   isRunning(issueId: string): boolean {
-    return this.jobs.has(issueId);
+    return this.jobs.has(issueId) || this.starting.has(issueId);
   }
 
   async waitForIdle(): Promise<void> {
-    while (this.jobs.size) await Promise.allSettled([...this.jobs.values()]);
-    await this.statusWriteQueue.catch(() => undefined);
+    while (true) {
+      while (this.starting.size || this.jobs.size) {
+        await Promise.allSettled([...this.starting.values(), ...this.jobs.values()]);
+      }
+      const pendingWrite = this.statusWriteQueue;
+      await pendingWrite.catch(() => undefined);
+      if (!this.starting.size && !this.jobs.size && this.statusWriteQueue === pendingWrite) break;
+    }
   }
 
   async removeStatus(issueId: string): Promise<void> {
@@ -62,10 +69,22 @@ export class GuidePreparationService {
     return this.statusFromIssue(issue, cache.issues[issueId]);
   }
 
-  async start(issueId: string): Promise<GuidePreparationStatus | null> {
-    const existing = this.jobs.get(issueId);
-    if (existing) return this.getStatus(issueId);
+  start(issueId: string): Promise<GuidePreparationStatus | null> {
+    const existingStart = this.starting.get(issueId);
+    if (existingStart) return existingStart;
+    if (this.jobs.has(issueId)) return this.getStatus(issueId);
 
+    // Register synchronously before any await so concurrent start() calls share one startup.
+    const startPromise = this.startOnce(issueId).finally(() => {
+      if (this.starting.get(issueId) === startPromise) {
+        this.starting.delete(issueId);
+      }
+    });
+    this.starting.set(issueId, startPromise);
+    return startPromise;
+  }
+
+  private async startOnce(issueId: string): Promise<GuidePreparationStatus | null> {
     const status = await this.getStatus(issueId);
     if (!status) return null;
     if (status.remaining === 0 && status.sectionRemaining === 0) {
@@ -88,7 +107,9 @@ export class GuidePreparationService {
         await this.finishWithError(issueId, error instanceof Error ? error.message : "中文导读后台准备失败", []);
       })
       .finally(() => {
-        this.jobs.delete(issueId);
+        if (this.jobs.get(issueId) === job) {
+          this.jobs.delete(issueId);
+        }
       });
     this.jobs.set(issueId, job);
     void job;

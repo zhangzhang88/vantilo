@@ -9,17 +9,23 @@ import { isChapterNumberParagraph, isTranslatableText } from "../shared/translat
 import type { SpeechCursor, SpeechPhase } from "./chinese-audio-types";
 import { ChineseStreamingAudioPlayer } from "./chinese-streaming-audio-player";
 import { recordChineseAudioDiagnostic } from "./chinese-audio-diagnostics";
+import { HighlightedSpeechText } from "./highlighted-speech-text";
+import type { SpeechChunkTarget } from "./audiobook-sync-highlight";
 import { DEFAULT_QWEN_TTS_VOICE, isChineseAudiobookVoice, isQwenTtsVoice, CHINESE_AUDIOBOOK_VOICES, saveQwenTtsVoice, type ChineseAudiobookVoice } from "../shared/qwen-tts-voices";
 import { loadChineseListeningRecords, narratableParagraphIndexes, resolveChineseListeningPosition, resolveSpeechChunk, saveChineseListeningPosition, splitChineseSpeech, type ChineseListeningPosition } from "./chinese-listening-state";
 import { loadChineseAudiobookPreferences, saveChineseAudiobookPreferences } from "./chinese-audiobook-preferences";
-import type { AudiobookControlsState, AudiobookMode } from "../shared/audiobook-bridge";
+import { applyAudiobookSmartSkip, loadAudiobookSmartSkip } from "./audiobook-smart-skip";
+import type { AudiobookControlsState, AudiobookMode, AudiobookSmartSkip } from "../shared/audiobook-bridge";
 import { ChineseListeningPrebuffer, MAX_PREFETCHED_CHUNKS } from "./chinese-listening-prebuffer";
 
 interface Entry { target: ParagraphTranslationTarget; kind: "title" | "heading" | "paragraph"; index: number; level?: number; }
 function entriesFor(article: ReaderDocumentView): Entry[] {
   const entries: Entry[] = [];
   const inTable = new Set((article.tables ?? []).flatMap(tableParagraphIndexes));
-  const originalOnly = new Set((article.visuals ?? []).flatMap(visual => [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]));
+  const originalOnly = new Set((article.visuals ?? []).flatMap(visual =>
+    visual.kind === "original" && visual.reason === "complex-layout"
+      ? visual.captionParagraphIndexes
+      : [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]));
   let headingIndex = 0;
   const titleTarget = titleTranslationTarget({ document: article.identity, sourceText: article.title });
   const before = new Map<number, Entry[]>();
@@ -54,10 +60,11 @@ function stopOtherAudio() {
 
 export interface ChineseReaderControls {
   toggle: () => void;
-  playFrom: (paragraphIndex: number) => void;
+  playFrom: (paragraphIndex: number, chunk?: SpeechChunkTarget) => void;
   jumpBy: (seconds: number) => void;
   changeRate: (rate: number) => void;
   changeVoice: (voice: string) => void;
+  changeSmartSkip: (settings: AudiobookSmartSkip) => void;
   paragraphIndex: () => number;
 }
 
@@ -76,6 +83,8 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     onTexts?: (paragraphs: Readonly<Record<number, string>>) => void;
     storageKey: string;
     startAt?: number;
+    startChunk?: SpeechChunkTarget;
+    smartSkip?: AudiobookSmartSkip;
     autoplay: boolean;
     sleepAt: number | null;
     onSleep: () => void;
@@ -90,7 +99,16 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
   const original = audiobook?.mode === "original";
   const storageKey = audiobook?.storageKey;
   const startAt = audiobook?.startAt;
-  const playable = useMemo(() => new Set(narratableParagraphIndexes(article)), [article]);
+  const [smartSkip, setSmartSkip] = useState<AudiobookSmartSkip>(() => audiobook?.smartSkip ?? loadAudiobookSmartSkip(getReaderStorage()));
+  const smartSkipRef = useRef(smartSkip);
+  smartSkipRef.current = smartSkip;
+  useEffect(() => {
+    if (audiobook?.smartSkip) {
+      smartSkipRef.current = audiobook.smartSkip;
+      setSmartSkip(audiobook.smartSkip);
+    }
+  }, [audiobook?.smartSkip]);
+  const playable = useMemo(() => new Set(narratableParagraphIndexes(article, { skipTables: smartSkip.tables })), [article, smartSkip.tables]);
   const paragraphs = useMemo(() => entries.filter(entry => entry.kind === "paragraph" && playable.has(entry.index)), [entries, playable]);
   function savePosition(position: ChineseListeningPosition) {
     try { saveChineseListeningPosition(getReaderStorage(), audiobook ? { ...position, updatedAt: audiobook.activityAt() } : position, storageKey); }
@@ -125,7 +143,14 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [phase, setPhase] = useState<SpeechPhase>("idle");
   const [audioError, setAudioError] = useState("");
+  const startChunk = startAt !== undefined ? audiobook?.startChunk : undefined;
   const [selected, setSelected] = useState(initialIndex);
+  const [activeChunk, setActiveChunk] = useState<{ index: number; text: string; seconds: number; duration?: number }>(() => ({
+    index: startChunk?.chunkIndex ?? saved?.chunkIndex ?? 0,
+    text: startChunk?.chunkText ?? saved?.chunkText ?? "",
+    seconds: startChunk ? 0 : (saved?.seconds ?? 0),
+    duration: undefined,
+  }));
   const [rate, setRate] = useState(() => loadChineseAudiobookPreferences(getReaderStorage()).rate);
   const [voice, setVoice] = useState<ChineseAudiobookVoice>(() => {
     const saved = loadChineseAudiobookPreferences(getReaderStorage()).voice;
@@ -137,7 +162,12 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
   const rateRef = useRef(rate); rateRef.current = rate;
   const voiceRef = useRef(voice); voiceRef.current = voice;
   const phaseRef = useRef(phase); phaseRef.current = phase;
-  const cursor = useRef<SpeechCursor>(saved ?? { paragraphIndex: initialIndex, chunkIndex: 0 });
+  const cursor = useRef<SpeechCursor>(saved ?? {
+    paragraphIndex: initialIndex,
+    chunkIndex: startChunk?.chunkIndex ?? 0,
+    chunkText: startChunk?.chunkText,
+    speechOffset: startChunk?.speechOffset,
+  });
   const player = useRef<ChineseStreamingAudioPlayer | null>(null);
   const root = useRef<HTMLElement>(null);
   const ensureText = useRef<(entry: Entry) => Promise<string>>(async () => "");
@@ -165,22 +195,26 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
       setTexts(textsRef.current);
     }).catch(() => { /* On-demand lookup reports the error to the player. */ });
     const pending = new Map<string, Promise<string>>();
+    const failedKeys = new Set<string>();
     let translationQueue: Promise<unknown> = Promise.resolve();
-    const ensure = async (entry: Entry): Promise<string> => {
+    const ensure = async (entry: Entry, { allowRetry = true }: { allowRetry?: boolean } = {}): Promise<string> => {
       if (original) return entry.target.sourceText;
       const key = entry.target.key;
       if (textsRef.current[key]) return Promise.resolve(textsRef.current[key]);
+      if (!allowRetry && failedKeys.has(key)) return Promise.reject(new Error("该段译文上次准备失败，等待手动重试。"));
       const contextBefore = entry.kind === "paragraph" ? article.paragraphs[entry.index - 1] : undefined;
       const contextAfter = entry.kind === "paragraph" ? article.paragraphs[entry.index + 1] : undefined;
       const config = translationEngineId ? undefined : await activeProfile;
       const cacheContext = { ...config, provider: "easycliproxy", targetLanguage: "zh-CN", promptVersion: "paragraph-translation-v1", contextBefore, contextAfter };
       if (pending.has(key)) return pending.get(key)!;
+      if (!allowRetry && failedKeys.has(key)) return Promise.reject(new Error("该段译文上次准备失败，等待手动重试。"));
+      if (allowRetry) failedKeys.delete(key);
       const translate = async () => {
         try {
           lifetime.signal.throwIfAborted();
           const cached = await lookupDocumentTranslation(getReaderStorage(), entry.target, cacheContext, translationEngineId);
           lifetime.signal.throwIfAborted();
-          if (cached) { textsRef.current = { ...textsRef.current, [key]: cached.translationZh }; setTexts(textsRef.current); return cached.translationZh; }
+          if (cached) { failedKeys.delete(key); textsRef.current = { ...textsRef.current, [key]: cached.translationZh }; setTexts(textsRef.current); return cached.translationZh; }
           setErrors(current => { const next = { ...current }; delete next[key]; return next; });
           const result = translationEngineId
             ? await translateMissingListeningText(entry.target.sourceText, translationEngineId, lifetime.signal)
@@ -197,11 +231,15 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
             generatedAt: new Date().toISOString() };
           await saveDocumentTranslation(getReaderStorage(), record, translationEngineId);
           lifetime.signal.throwIfAborted();
+          failedKeys.delete(key);
           textsRef.current = { ...textsRef.current, [key]: record.translationZh }; setTexts(textsRef.current);
           callbacks.current.onTranslation?.(record);
           return record.translationZh;
         } catch (error) {
-          if (!lifetime.signal.aborted) setErrors(current => ({ ...current, [key]: message(error) }));
+          if (!lifetime.signal.aborted) {
+            failedKeys.add(key);
+            setErrors(current => ({ ...current, [key]: message(error) }));
+          }
           throw error;
         }
       };
@@ -212,7 +250,7 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     };
     ensureText.current = ensure;
     let lastWarmRefillAt = 0;
-    const publish = (position: SpeechCursor, seconds: number, finished: boolean) => {
+    const publish = (position: SpeechCursor, seconds: number, finished: boolean, durationSeconds?: number) => {
       if (lifetime.signal.aborted) return;
       const changed = cursor.current.paragraphIndex !== position.paragraphIndex || cursor.current.chunkIndex !== position.chunkIndex;
       cursor.current = { ...position, seconds };
@@ -221,6 +259,14 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
       completed.current = finished; persisted.current = record;
       if (changed || finished || Date.now() - lastWrite.current > 1000) { savePosition(record); lastWrite.current = Date.now(); }
       setSelected(position.paragraphIndex);
+      setActiveChunk(current =>
+        current.index === position.chunkIndex
+        && current.text === (position.chunkText ?? "")
+        && Math.abs(current.seconds - seconds) < 0.04
+        && current.duration === durationSeconds
+          ? current
+          : { index: position.chunkIndex, text: position.chunkText ?? "", seconds, duration: durationSeconds },
+      );
       if (changed) callbacks.current.onPosition?.(position.paragraphIndex);
       const now = performance.now();
       if (!finished && phaseRef.current === "playing" && (changed || now - lastWarmRefillAt >= 3000)) {
@@ -254,14 +300,20 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
         if (!translated) {
           // Fetch a missing paragraph without blocking already translated
           // chunks. A successful translation triggers a new full-window pass.
-          if (queue.length < 2 || remainingSeconds < targetSeconds) void ensure(entry).catch(() => {});
+          if (queue.length < 2 || remainingSeconds < targetSeconds) void ensure(entry, { allowRetry: false }).catch(() => {});
           break;
         }
-        const chunks = splitChineseSpeech(translated);
+        const speechText = applyAudiobookSmartSkip(translated, smartSkipRef.current);
+        const chunks = splitChineseSpeech(speechText);
+        if (!chunks.length) continue;
         const resume = i === start ? resolveSpeechChunk(chunks, selected) : undefined;
         const from = resume?.chunkIndex ?? 0;
         if (resume) { resumeSeconds = resume.seconds; remainingSeconds = -resumeSeconds; }
-        for (const text of chunks.slice(from)) {
+        for (const [offsetIndex, rawText] of chunks.slice(from).entries()) {
+          const sliceOffset = i === start && offsetIndex === 0 ? (selected.speechOffset ?? 0) : 0;
+          const text = sliceOffset > 0 && sliceOffset < rawText.length && rawText.slice(sliceOffset).trim()
+            ? rawText.slice(sliceOffset)
+            : rawText;
           queue.push({ text, voice: chosenVoice });
           remainingSeconds += warm.availableSeconds(text, chosenVoice);
           if (queue.length === MAX_PREFETCHED_CHUNKS) break;
@@ -289,6 +341,7 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     const audio = new ChineseStreamingAudioPlayer({ indices: paragraphs.map(entry => entry.index),
       balanceLoudness: true,
       getText: index => ensure(paragraphs.find(entry => entry.index === index)!),
+      transformText: text => applyAudiobookSmartSkip(text, smartSkipRef.current),
       synthesize: (text, signal) => warm.stream(text, signal, voiceRef.current),
       generationRtf: text => warm.generationRtf(text, voiceRef.current),
       generationFirstFrameMs: text => warm.firstFrameMs(text, voiceRef.current),
@@ -303,7 +356,7 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     if (!docked) void Promise.resolve().then(async () => {
       for (const entry of entries) {
         if (lifetime.signal.aborted) return;
-        try { await ensure(entry); } catch { if (lifetime.signal.aborted) return; }
+        try { await ensure(entry, { allowRetry: false }); } catch { if (lifetime.signal.aborted) return; }
       }
     });
     callbacks.current.onPosition?.(entryIndex);
@@ -405,14 +458,26 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     void player.current?.start(cursor.current);
   }
 
-  function seek(index: number, play = phaseRef.current === "playing" || phaseRef.current === "loading") {
+  function seek(index: number, play = phaseRef.current === "playing" || phaseRef.current === "loading", chunk?: SpeechChunkTarget) {
     player.current?.stop();
     prebuffer.current?.reset();
     explicitParagraph.current = index;
-    cursor.current = { paragraphIndex: index, chunkIndex: 0, seconds: 0 }; completed.current = false; setSelected(index);
+    const chunkIndex = chunk?.chunkIndex ?? 0;
+    const chunkText = chunk?.chunkText ?? "";
+    const speechOffset = chunk?.speechOffset && chunk.speechOffset > 0 ? chunk.speechOffset : undefined;
+    cursor.current = {
+      paragraphIndex: index,
+      chunkIndex,
+      ...(chunkText ? { chunkText } : {}),
+      ...(speechOffset !== undefined ? { speechOffset } : {}),
+      seconds: 0,
+    };
+    completed.current = false;
+    setSelected(index);
+    setActiveChunk({ index: chunkIndex, text: chunkText, seconds: 0, duration: undefined });
     callbacks.current.onPosition?.(index);
     void warmAheadRef.current().catch(() => {});
-    persisted.current = { documentId: article.identity.documentId, paragraphIndex: index, sourceText: article.paragraphs[index], chunkIndex: 0, chunkText: "", seconds: 0, rate, completed: false };
+    persisted.current = { documentId: article.identity.documentId, paragraphIndex: index, sourceText: article.paragraphs[index], chunkIndex, chunkText, seconds: 0, rate, completed: false };
     savePosition(persisted.current);
     root.current?.querySelector(`[data-chinese-paragraph="${index}"]`)?.scrollIntoView({ block: "center", behavior: "auto" });
     if (play && (docked || hasTranslatedParagraph(index))) {
@@ -428,6 +493,7 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     audio.stop();
     cursor.current = target;
     setSelected(target.paragraphIndex);
+    setActiveChunk({ index: target.chunkIndex, text: target.chunkText ?? "", seconds: target.seconds ?? 0, duration: undefined });
     persistCursor();
     if (play) startPlayback();
     else { setPhase("idle"); phaseRef.current = "idle"; }
@@ -478,17 +544,27 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
     const position = persisted.current ?? { documentId: article.identity.documentId, paragraphIndex: selected, sourceText: article.paragraphs[selected], chunkIndex: 0, chunkText: "", seconds: 0, rate: value, completed: false };
     if (position.sourceText !== undefined) { persisted.current = { ...position, rate: value }; savePosition(persisted.current); }
   }
+  function changeSmartSkip(next: AudiobookSmartSkip) {
+    smartSkipRef.current = next;
+    setSmartSkip(next);
+    prebuffer.current?.reset();
+    if (phaseRef.current === "playing" || phaseRef.current === "loading") {
+      void warmAheadRef.current().catch(() => {});
+    }
+  }
   useImperativeHandle(audiobook?.controlsRef, () => ({
-    toggle, jumpBy, changeRate, changeVoice,
-    playFrom: index => seek(index, true),
+    toggle, jumpBy, changeRate, changeVoice, changeSmartSkip,
+    playFrom: (index, chunk) => seek(index, true, chunk),
     paragraphIndex: () => player.current?.currentCursor()?.paragraphIndex ?? cursor.current.paragraphIndex,
   }));
   const ordinal = paragraphs.findIndex(entry => entry.index === selected);
   const reportState = audiobook?.onState;
   useEffect(() => {
     reportState?.({ phase, error: audioError, rate, voice, paragraphIndex: selected,
-      paragraphNumber: ordinal + 1, paragraphCount: paragraphs.length });
-  }, [reportState, phase, audioError, rate, voice, selected, ordinal, paragraphs.length]);
+      paragraphNumber: ordinal + 1, paragraphCount: paragraphs.length,
+      chunkIndex: activeChunk.index, chunkText: activeChunk.text.slice(0, 1024),
+      chunkSeconds: activeChunk.seconds, chunkDuration: activeChunk.duration });
+  }, [reportState, phase, audioError, rate, voice, selected, ordinal, paragraphs.length, activeChunk]);
 
   if (docked) return null;
 
@@ -511,10 +587,17 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
   const renderEntry = (entry: Entry) => {
     const text = texts[entry.target.key], error = errors[entry.target.key];
     if (entry.kind === "heading") return <h2 className={`chinese-reading-subheading level-${entry.level}`} key={entry.target.key}>{text || (error ? "标题翻译暂不可用" : "正在准备标题…")}{error && <button onClick={() => void ensureText.current(entry).catch(() => {})}>重试</button>}</h2>;
+    const isSpeaking = (phase === "playing" || phase === "loading") && selected === entry.index;
     return <div className={`chinese-reading-paragraph ${selected === entry.index ? "is-current" : ""} ${phase === "playing" && selected === entry.index ? "is-speaking" : ""}`} data-chinese-paragraph={entry.index} data-paragraph-index={entry.index} key={entry.target.key}>
       {playable.has(entry.index) && <button className="chinese-paragraph-play" aria-label={`从第 ${entry.index + 1} 段开始朗读`}
         disabled={!Boolean(text?.trim() && splitChineseSpeech(text).length)} onClick={() => seek(entry.index, true)}>▶</button>}
-      {text ? <p onClick={playable.has(entry.index) ? () => seek(entry.index) : undefined}>{text}</p> : error ? <div className="chinese-reading-error" role="alert">这一段暂未译出：{error}<button onClick={() => void ensureText.current(entry).catch(() => {})}>重试本段</button></div> : <p className="chinese-reading-placeholder">正在准备这一段的中文…</p>}
+      {text ? <p onClick={playable.has(entry.index) ? () => seek(entry.index) : undefined}>
+        <HighlightedSpeechText
+          text={text}
+          active={isSpeaking}
+          cursor={{ chunkIndex: activeChunk.index, chunkText: activeChunk.text, chunkSeconds: activeChunk.seconds, chunkDuration: activeChunk.duration }}
+        />
+      </p> : error ? <div className="chinese-reading-error" role="alert">这一段暂未译出：{error}<button onClick={() => void ensureText.current(entry).catch(() => {})}>重试本段</button></div> : <p className="chinese-reading-placeholder">正在准备这一段的中文…</p>}
     </div>;
   };
   const body = <>
@@ -544,7 +627,7 @@ export function ChineseReader({ article, initialParagraph, onPosition, onTransla
         {CHINESE_AUDIOBOOK_VOICES.map(item =>
           <option key={item.id} value={item.id}>{item.name} · {item.description.split(" · ")[0]}</option>)}
       </select></label>
-      <small>本地 Qwen3-TTS · {CHINESE_AUDIOBOOK_VOICES.find(item => item.id === voice)?.name ?? DEFAULT_QWEN_TTS_VOICE}<br />「我的声音」使用独立 bf16 API；切换时从当前句重新播放。</small></div></details>
+      <small>本地 Qwen3-TTS · {CHINESE_AUDIOBOOK_VOICES.find(item => item.id === voice)?.name ?? DEFAULT_QWEN_TTS_VOICE} · 切换时从当前句重新播放。</small></div></details>
     </div>
     {translationError && startEntry && <div className="chinese-reading-error" role="alert">
       当前段译文准备失败：{translationError}

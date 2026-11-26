@@ -141,7 +141,7 @@ app.whenReady().then(async () => {
   await wait(300);
   const articleTimer = await inspectToolbar();
   if (!articleTimer?.visible || articleTimer.timerCount !== 1 || articleTimer.text !== '04:45 / 30:00') throw new Error('Article-mode toolbar timer check failed: ' + JSON.stringify(articleTimer));
-  const nav = await frame.executeJavaScript(`(()=>{const b=document.querySelector('[aria-label="我的阅读成长"]');return Boolean(b&&getComputedStyle(b).display!=='none')})()`);
+  const nav = await frame.executeJavaScript(`(()=>{let b=document.querySelector('[aria-label="我的阅读成长"]');if(!b){document.querySelector('[aria-label="主菜单"]')?.click();b=document.querySelector('[aria-label="我的阅读成长"]');}return Boolean(b&&getComputedStyle(b).display!=='none')})()`);
   if (!nav) throw new Error('Reader navigation does not expose 我的阅读成长 in ordinary reading mode.');
   await frame.executeJavaScript('document.querySelector("[aria-label=\\"我的阅读成长\\"]").click()');
   let navRequest = false;

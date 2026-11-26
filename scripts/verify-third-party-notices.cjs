@@ -22,7 +22,7 @@ for (const record of all) {
   const heading = `===== ${record.name}@${record.version} — ${record.license} =====`;
   assert.ok(notice.includes(heading), `Merged notices omit ${record.name}@${record.version}`);
 }
-for (const name of ['react-markdown', 'remark-gfm', 'remark-cjk-friendly']) {
+for (const name of ['react', 'react-dom', '@react-spectrum/s2']) {
   assert.ok(main.some(record => record.name === name), `Main renderer's bundled runtime inventory omits ${name}`);
 }
 assert.ok(all.some(record => record.name === '@xmldom/xmldom'), 'Electron runtime dependency @xmldom/xmldom is missing from merged notices');
@@ -53,6 +53,4 @@ assert.ok(chromiumFiles.length > 0, 'Packaged Electron Chromium license catalog 
 assert.ok(chromiumFiles.some(filename => notice.includes(fs.readFileSync(filename, 'utf8').trim())), 'Merged notices do not preserve the packaged Chromium catalog text');
 const electronLicense = fs.readFileSync(path.join(appResources, 'licenses/Electron-LICENSE.txt'), 'utf8').trim();
 assert.ok(notice.includes(electronLicense), 'Merged notices omit the Electron distribution license');
-const codexLicense = fs.readFileSync(path.join(appResources, 'licenses/OpenAI-Codex/LICENSE'), 'utf8').trim();
-assert.ok(notice.includes(codexLicense), 'Merged notices omit the Codex license text');
 console.log(JSON.stringify({app: realApp, packages: all.length, mainRendererPackages: main.length, readerPackages: reader.length, electronMainPackages: electron.length, chromiumCatalogs: chromiumFiles.length, noticeBytes: Buffer.byteLength(notice)}, null, 2));

@@ -50,23 +50,53 @@ export function BookSourceButton({ identity, fragment = "", children, className 
     {open && <OriginalDialog key={`${identity.documentId}:${fragment}`} bookId={identity.bookId} chapterId={identity.chapterId} fragment={fragment} enlarge={enlarge} close={close} />}</>;
 }
 
-export function BookVisual({ visual, identity, renderCaption }: { visual: ReadingDocumentVisual; identity: ReadingDocumentIdentity; renderCaption: (index: number) => ReactNode }) {
+export function BookVisual({
+  visual,
+  identity,
+  renderCaption,
+  renderParagraph,
+}: {
+  visual: ReadingDocumentVisual;
+  identity: ReadingDocumentIdentity;
+  renderCaption: (index: number) => ReactNode;
+  renderParagraph?: (index: number) => ReactNode;
+}) {
   const [failed, setFailed] = useState(false);
   if (identity.kind !== "book-chapter") return null;
   const fallback = visual.kind === "original" || failed;
+  const bodyParagraphIndexes = visual.coveredParagraphIndexes.filter(index => !visual.captionParagraphIndexes.includes(index));
+  const renderBodyInline = fallback && Boolean(renderParagraph) && bodyParagraphIndexes.length > 0;
+  const suppressComplexLayoutBanner = renderBodyInline && visual.kind === "original" && visual.reason === "complex-layout" && !failed;
   const caption = (visual.captionText || visual.captionParagraphIndexes.length > 0) ? <figcaption lang="en">
     {visual.captionParagraphIndexes.map(index => <React.Fragment key={index}>{renderCaption(index)}</React.Fragment>)}
     {visual.captionText && <p>{visual.captionText}</p>}
   </figcaption> : null;
+  if (suppressComplexLayoutBanner) {
+    return <>
+      {visual.captionPlacement === "before" && caption}
+      {bodyParagraphIndexes.map(index => <React.Fragment key={index}>{renderParagraph!(index)}</React.Fragment>)}
+      {visual.captionPlacement !== "before" && caption}
+    </>;
+  }
+  const fallbackLabel = visual.reason === "unavailable-image" || failed
+    ? "原书图片暂无法显示"
+    : visual.reason === "formula"
+      ? "原书公式"
+      : visual.reason === "svg"
+        ? "原书矢量图表"
+        : "原书图表";
   return <figure className={`book-visual ${fallback ? "book-visual-original" : ""}`} data-book-visual={visual.id}>
-    {visual.coveredParagraphIndexes.filter(index => !visual.captionParagraphIndexes.includes(index)).map(index => <span key={index} className="reading-paragraph-block book-visual-anchor" data-paragraph-index={index} aria-hidden="true" />)}
+    {!renderBodyInline && bodyParagraphIndexes.map(index => <span key={index} className="reading-paragraph-block book-visual-anchor" data-paragraph-index={index} aria-hidden="true" />)}
     {visual.captionPlacement === "before" && caption}
-    {fallback ? <div className="book-visual-fallback"><span>{visual.reason === "unavailable-image" || failed ? "原书图片暂无法显示" : visual.reason === "formula" ? "原书公式" : "原书图形与排版"}</span>
+    {fallback ? <div className="book-visual-fallback"><span>{fallbackLabel}</span>
       <BookSourceButton identity={identity} fragment={visual.originalFragment}>查看原书内容</BookSourceButton></div>
       : visual.images.map((image, index) => <div className="book-visual-image" key={index}>
           <img src={bookResourceUrl(identity.bookId, image.entryPath)} alt={image.alt} loading="lazy" onError={() => setFailed(true)} />
           <BookSourceButton identity={identity} fragment={visual.originalFragment} enlarge className="book-visual-enlarge">放大查看原图</BookSourceButton>
         </div>)}
+    {renderBodyInline && <div className="book-visual-covered-paragraphs">
+      {bodyParagraphIndexes.map(index => <React.Fragment key={index}>{renderParagraph!(index)}</React.Fragment>)}
+    </div>}
     {visual.captionPlacement !== "before" && caption}
   </figure>;
 }

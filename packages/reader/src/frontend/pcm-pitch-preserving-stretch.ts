@@ -25,7 +25,10 @@ export class PcmPitchPreservingStretch {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0) throw new Error("不支持的采样率");
     this.hop = Math.round(sampleRate * 0.02);
     this.windowSamples = this.hop * 2;
-    this.radius = Math.round(sampleRate * 0.0075);
+    // 15 ms search radius covers male fundamental pitch periods down to ~67 Hz
+    // (typical male voices at 90–125 Hz have 8–11 ms periods; a shorter 7.5 ms
+    // radius could fail to span one full pitch cycle and introduce splice buzz).
+    this.radius = Math.round(sampleRate * 0.015);
   }
 
   push(samples: Float32Array): Float32Array {
@@ -79,15 +82,24 @@ export class PcmPitchPreservingStretch {
       if (tailEnergy > 1e-8) {
         // Cross-correlation aligns pitch periods rather than splicing arbitrary
         // waveform phases, avoiding the metallic/doubled voices of naive OLA.
-        for (let candidate = earliest; candidate <= latest; candidate += 3) {
+        const scoreCandidate = (candidate: number) => {
           let dot = 0, energy = 0;
           const local = candidate - this.base;
           for (let j = 0; j < hop; j += 3) {
             const value = this.input[local + j];
-            dot += this.tail[j] * value;
+            dot += this.tail![j] * value;
             energy += value * value;
           }
-          const score = dot / Math.sqrt(tailEnergy * energy + 1e-12);
+          return dot / Math.sqrt(tailEnergy * energy + 1e-12);
+        };
+        for (let candidate = earliest; candidate <= latest; candidate += 3) {
+          const score = scoreCandidate(candidate);
+          if (score > bestScore) { bestScore = score; best = candidate; }
+        }
+        const fineStart = Math.max(earliest, best - 2);
+        const fineEnd = Math.min(latest, best + 2);
+        for (let candidate = fineStart; candidate <= fineEnd; candidate++) {
+          const score = scoreCandidate(candidate);
           if (score > bestScore) { bestScore = score; best = candidate; }
         }
       }
@@ -95,7 +107,8 @@ export class PcmPitchPreservingStretch {
       const segment = new Float32Array(hop);
       for (let j = 0; j < hop; j++) {
         const fraction = j / hop;
-        segment[j] = this.tail[j] * (1 - fraction) + this.input[local + j] * fraction;
+        const fadeIn = 0.5 - 0.5 * Math.cos(Math.PI * fraction);
+        segment[j] = this.tail[j] * (1 - fadeIn) + this.input[local + j] * fadeIn;
       }
       parts.push(segment);
       this.tail = this.input.slice(local + hop, local + window);

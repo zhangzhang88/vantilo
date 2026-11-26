@@ -12,7 +12,7 @@ describe('Reader growth UI bridge',()=>{
   render(<MagazineReaderModule status="ready" error={null} onRetry={()=>{}} onBack={()=>{}} visible/>);
   const frame=screen.getByTitle('Magazine Reader') as HTMLIFrameElement;
   let sent:any[]=[];vi.spyOn(frame.contentWindow!,'postMessage').mockImplementation((...args:any[])=>{sent.push(args);});
-  fireEvent.load(frame);const token=sent.find(item=>item[0]?.type==='vantilo:growth-init')?.[0]?.token as string;expect(token).toBeTruthy();
+  fireEvent.load(frame);const initCall=sent.find(item=>item[0]?.type==='vantilo:growth-init');const token=initCall?.[0]?.token as string;expect(token).toBeTruthy();expect(initCall?.[1]).toBe('http://127.0.0.1:5175');
   const send=(data:unknown)=>window.dispatchEvent(new MessageEvent('message',{data,origin:'http://127.0.0.1:5175',source:frame.contentWindow}));
   act(()=>send({type:'vantilo:growth-state',token,bookId:'book:actual',documentId:'document:actual',pageId:'page:actual',mode:'sentence',english:true}));
   act(()=>vi.advanceTimersByTime(5000));

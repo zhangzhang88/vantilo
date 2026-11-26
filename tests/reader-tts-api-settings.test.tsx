@@ -45,31 +45,86 @@ it("loads a saved LAN TTS endpoint without ever fetching the saved API Key", asy
   expect((screen.getByLabelText("TTS API Key") as HTMLInputElement).value).toBe("");
   expect((screen.getByLabelText("TTS API Key") as HTMLInputElement).placeholder).toBe("已保存（留空保持不变）");
   expect(fetcher).toHaveBeenCalledWith("/api/tts-settings", expect.anything());
+  expect(screen.queryByText(/我的声音/)).toBeNull();
 });
 
-it("keeps my_voice bf16 API settings independent and never reflects its saved secret into inputs", async () => {
-  const savedMy = { mode: "worker", baseUrl: "", model: "qwen3-tts-0.6b-base-bf16", hasApiKey: false };
-  const savedOriginal = { mode: "api", baseUrl: "http://127.0.0.1:18439/v1", model: "qwen3-tts-0.6b", hasApiKey: true };
-  const calls: Array<{ url: string; method: string; body?: Record<string, string> }> = [];
+it("renders local Qwen3-TTS one-click installer card in settings and supports install with mirror and confirmed removal", async () => {
+  const baseInstaller = {
+    state: "not-installed",
+    hardware: { supported: true, appleSilicon: true, memoryGiB: 16, reason: null },
+    mirror: false,
+    model: { id: "qwen3-tts-0.6b-q8-metal", displayName: "Qwen3-TTS 0.6B", totalDownloadBytes: 1219622221, installedDiskBytes: 1225123176, runtimeVersion: "v0.10.1", modelLicense: "Apache-2.0" },
+    disk: { availableBytes: 50 * 1024 ** 3, requiredBytes: 1.7 * 1024 ** 3, sufficient: true },
+    progress: { downloadedBytes: 0, totalBytes: 1219622221, percent: 0, bytesPerSecond: 0, phaseLabel: "" },
+    paths: null as { binaryPath: string; modelPath: string } | null,
+    error: null as string | null,
+  };
+  let current = baseInstaller;
+  const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
-    const body = init?.body ? JSON.parse(String(init.body)) as Record<string, string> : undefined;
+    const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ url, method, body });
-    if (method === "POST") return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    if (method === "PUT") return new Response(JSON.stringify({ ...savedMy, mode: "api", baseUrl: body?.baseUrl, hasApiKey: true }), { status: 200 });
-    return new Response(JSON.stringify(url.endsWith("/my-voice") ? savedMy : savedOriginal), { status: 200 });
+    if (url === "/api/vantilo-tts-installer/status") return new Response(JSON.stringify(current), { status: 200 });
+    if (url === "/api/vantilo-tts-installer/install") {
+      current = { ...baseInstaller, state: "installed", mirror: Boolean(body?.mirror), paths: { binaryPath: "/u/speech", modelPath: "/u/model.gguf" } };
+      return new Response(JSON.stringify(current), { status: 200 });
+    }
+    if (url === "/api/vantilo-tts-installer/remove") {
+      current = baseInstaller;
+      return new Response(JSON.stringify(current), { status: 200 });
+    }
+    return new Response(JSON.stringify({ mode: "worker", baseUrl: "", model: "qwen3-tts-0.6b", hasApiKey: false }), { status: 200 });
   }));
+
   render(<TtsApiSettingsPanel />);
-  await waitFor(() => expect(screen.getByText("我的声音：待配置")).toBeTruthy());
-  expect((screen.getByLabelText("TTS API 地址") as HTMLInputElement).value).toBe(savedOriginal.baseUrl);
-  expect((screen.getByLabelText("我的声音 API 地址") as HTMLInputElement).value).toBe("http://127.0.0.1:18441/v1");
-  fireEvent.change(screen.getByLabelText("我的声音 API Key"), { target: { value: "isolated-test-secret" } });
-  fireEvent.click(screen.getByRole("button", { name: "测试我的声音连接" }));
-  await waitFor(() => expect(screen.getByText(/bf16 API 连接成功/)).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "保存我的声音服务" }));
-  await waitFor(() => expect(screen.getByText("我的声音：已配置")).toBeTruthy());
-  expect((screen.getByLabelText("我的声音 API Key") as HTMLInputElement).value).toBe("");
-  expect(calls.find(item => item.url === "/api/tts-settings/my-voice" && item.method === "PUT")?.body)
-    .toMatchObject({ model: "qwen3-tts-0.6b-base-bf16", baseUrl: "http://127.0.0.1:18441/v1", apiKey: "isolated-test-secret" });
-  expect(calls.filter(item => item.url === "/api/tts-settings" && item.method === "PUT")).toHaveLength(0);
+  await waitFor(() => expect(screen.getByTestId("local-tts-installer-card")).toBeTruthy());
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "一键下载并启用" }));
+  await waitFor(() => expect(screen.getByText("已安装并就绪")).toBeTruthy());
+  expect(calls.find(c => c.url === "/api/vantilo-tts-installer/install")?.body).toEqual({ consent: true, mirror: true });
+  expect(screen.getByText("当前：本机离线 Qwen3-TTS")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "卸载模型释放空间" }));
+  fireEvent.click(screen.getByRole("button", { name: /确认卸载/ }));
+  await waitFor(() => expect(screen.getByText("未安装")).toBeTruthy());
+
+  // Updating in the host onboarding modal immediately refreshes an already-mounted settings panel.
+  current = { ...baseInstaller, state: "installed", paths: { binaryPath: "/u/speech", modelPath: "/u/model.gguf" } };
+  window.dispatchEvent(new MessageEvent("message", { source: window.parent, data: { type: "vantilo:tts-installer-updated", installed: true } }));
+  await waitFor(() => expect(screen.getByText("已安装并就绪")).toBeTruthy());
+  expect((screen.getByTestId("tts-advanced-details") as HTMLDetailsElement).open).toBe(false);
+});
+
+it("folds advanced LAN TTS settings by default on Apple Silicon and lets users switch back to local offline model", async () => {
+  const installer = {
+    state: "installed",
+    hardware: { supported: true, appleSilicon: true, memoryGiB: 16, reason: null },
+    mirror: false,
+    model: { id: "qwen3-tts-0.6b-q8-metal", displayName: "Qwen3-TTS 0.6B", totalDownloadBytes: 1219622221, installedDiskBytes: 1225123176, runtimeVersion: "v0.10.1", modelLicense: "Apache-2.0" },
+    disk: { availableBytes: 50 * 1024 ** 3, requiredBytes: 1.7 * 1024 ** 3, sufficient: true },
+    progress: { downloadedBytes: 1219622221, totalBytes: 1219622221, percent: 100, bytesPerSecond: 0, phaseLabel: "已安装并就绪" },
+    paths: { binaryPath: "/u/speech", modelPath: "/u/model.gguf" },
+    error: null,
+  };
+  let ttsConfig = { mode: "api", baseUrl: "http://127.0.0.1:18439/v1", model: "qwen3-tts-0.6b", hasApiKey: true };
+  const calls: Array<{ url: string; method: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push({ url, method });
+    if (url === "/api/vantilo-tts-installer/status") return new Response(JSON.stringify(installer), { status: 200 });
+    if (url === "/api/tts-settings" && method === "DELETE") {
+      ttsConfig = { mode: "worker", baseUrl: "", model: "qwen3-tts-0.6b", hasApiKey: false };
+      return new Response(JSON.stringify(ttsConfig), { status: 200 });
+    }
+    if (url === "/api/tts-settings") return new Response(JSON.stringify(ttsConfig), { status: 200 });
+    return new Response(JSON.stringify({ mode: "worker", baseUrl: "", model: "qwen3-tts-0.6b", hasApiKey: false }), { status: 200 });
+  }));
+
+  render(<TtsApiSettingsPanel />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "切回本机离线模型" })).toBeTruthy());
+  expect((screen.getByTestId("tts-advanced-details") as HTMLDetailsElement).open).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "切回本机离线模型" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "切回本机离线模型" })).toBeNull());
+  expect(calls).toContainEqual({ url: "/api/tts-settings", method: "DELETE" });
 });

@@ -61,7 +61,8 @@ function createReaderAiClient(parent) {
       return new Promise((resolve,reject)=>{
         const cleanup=()=>signal?.removeEventListener('abort',abort);
         const abort=()=>{try{parent.postMessage({type:'custom-api-cancel',requestId});}catch{}customPending.delete(requestId);clearTimeout(timer);cleanup();reject(new Error('自定义 API 请求已取消'));};
-        const timer=setTimeout(()=>{customPending.delete(requestId);cleanup();try{parent.postMessage({type:'custom-api-cancel',requestId});}catch{}reject(new Error('自定义 API 请求超时'));},70000);
+        const timeoutMs = operation === 'complete' && payload?.task === 'practice-workshop' ? 195000 : 70000;
+        const timer=setTimeout(()=>{customPending.delete(requestId);cleanup();try{parent.postMessage({type:'custom-api-cancel',requestId});}catch{}reject(new Error('自定义 API 请求超时'));},timeoutMs);
         customPending.set(requestId,{resolve:value=>{cleanup();resolve(value);},reject:error=>{cleanup();reject(error);},timer});
         signal?.addEventListener('abort',abort,{once:true});
         try {parent.postMessage({type:'custom-api',requestId,operation,...payload});}

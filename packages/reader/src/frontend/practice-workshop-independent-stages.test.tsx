@@ -24,12 +24,14 @@ beforeEach(()=>{
   Object.defineProperty(window,"localStorage",{configurable:true,value:store});
   vi.stubGlobal("localStorage",store);
   vi.stubGlobal("fetch",vi.fn(async(url:string,request?:RequestInit)=>{
+    if(url==="/api/vantilo-custom-api/settings")return {ok:true,json:async()=>({activeProfileId:"v-1",profiles:[{id:"v-1",name:"Vantilo API",model:"gpt-4o",hasApiKey:true}]})};
     if(url==="/api/ai-settings")return {ok:true,json:async()=>({version:1,activeProfileId:null,profiles:[]})};
     if(url==="/api/practice-workshop/prompt")return {ok:true,json:async()=>({prompt:"Please generate ordered sentence practice ".repeat(5)+"{{ARTICLE_JSON}}"})};
     if(url==="/api/practice-workshop/vocabulary-prompt")return {ok:true,json:async()=>({prompt:"Please generate only exact original word practice ".repeat(5)+"{{ARTICLE_JSON}}"})};
     if(url==="/api/practice-workshop/generate"){
       const body=JSON.parse(String(request?.body));
       expect(body.article).toBe(article);
+      expect(body.provider).toBe("vantilo-custom-api");
       return {ok:true,json:async()=>body.stage==="vocabulary"?{vocabulary:[vocabulary]}:{exercises:[assembly]}};
     }
     throw Error("Unexpected request: "+url);

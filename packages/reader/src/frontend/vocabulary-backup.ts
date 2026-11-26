@@ -25,6 +25,7 @@ export const MAX_VOCABULARY_BACKUP_BYTES = 25 * 1024 * 1024;
 export const VOCABULARY_RESTORE_JOURNAL_KEY = "vantilo-vocabulary-restore-journal-v1";
 export const VOCABULARY_STORAGE_KEYS = [SAVED_SELECTIONS_KEY, WORD_CONTEXT_MEANINGS_KEY, VOCABULARY_REVIEW_SCHEDULE_KEY] as const;
 export const MAX_CONTEXT_SNIPPET_LENGTH = 320;
+const ALLOWED_CONTEXT_PROVIDERS = new Set(["easycliproxy", "custom-api", "vantilo-agent", "qwen-mlx", "qwen-gguf"]);
 
 export interface VocabularyBackupData {
   savedSelections: SavedSelection[];
@@ -306,7 +307,7 @@ function validateContext(value: unknown): value is WordContextMeaningRecord {
     || !isString(item.paragraph, MAX_CONTEXT_SNIPPET_LENGTH) || !isString(item.sentence, MAX_CONTEXT_SNIPPET_LENGTH) || !isString(item.generatedAt, 100) || !item.text.trim() || !Number.isFinite(Date.parse(item.generatedAt))
     || !isString(item.meaningZh, 20_000) || !isString(item.explanationZh, 20_000) || !isString(item.meaningEn, 20_000) || !isString(item.explanationEn, 20_000)
     || !Array.isArray(item.examplesEn) || item.examplesEn.length > 20 || !item.examplesEn.every(example => isString(example, 1000))
-    || !isString(item.partOfSpeech, 120) || !isString(item.model, 200) || item.provider !== "easycliproxy") return false;
+    || !isString(item.partOfSpeech, 120) || !isString(item.model, 200) || !ALLOWED_CONTEXT_PROVIDERS.has(String(item.provider))) return false;
   if (item.meaningSource !== undefined && item.meaningSource !== "ai" && item.meaningSource !== "user") return false;
   if (item.editedAt !== undefined && !isString(item.editedAt, 100)) return false;
   if (item.meaningVersion !== undefined && item.meaningVersion !== 2) return false;

@@ -4,6 +4,7 @@ import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {readerSourceRoot} from '../scripts/reader-source-path.mjs';
+import {ensureBookChineseCatalog} from '../packages/reader/src/frontend/issue-translation.ts';
 const require=createRequire(import.meta.url);
 const readerRequire=createRequire(path.join(readerSourceRoot,'package.json'));
 const Fastify=readerRequire('fastify');
@@ -59,7 +60,52 @@ describe('explicit independent catalog generation',()=>{
   await c.call('POST','/api/vantilo-catalog/book/fixture',generation());
   expect(c.runAi).toHaveBeenCalledTimes(2);
   expect((await c.call('GET','/api/vantilo-catalog/book/fixture')).body).toMatchObject({model:'model-a',state:'ready',legacy:false});
+  expect((await c.call('PUT','/api/vantilo-catalog/settings',{engineId:'codex:model-b'})).code).toBe(200);
+  expect((await c.call('POST','/api/vantilo-catalog/book/fixture',{engineId:'codex:model-a',regenerate:false,preserveSetting:true})).code).toBe(200);
+  expect((await c.call('GET','/api/vantilo-catalog/settings')).body.engineId).toBe('codex:model-b');
  }));
+ it('exposes unavailable saved catalog engine separately from default and skips auto-catalog without POSTing to fallback cloud model',()=>{
+  let profiles=[
+   {id:'lan-profile',name:'LAN',model:'qwen-lan'},
+   {id:'cloud-profile',name:'Cloud',model:'gpt-cloud'},
+  ];
+  const complete=vi.fn(async({input})=>JSON.stringify(JSON.parse(input).map(row=>({id:row.id,titleZh:'中文 '+row.title}))));
+  return fixture(async c=>{
+   const initial=(await c.call('GET','/api/vantilo-catalog/settings')).body;
+   const lanEngine=initial.engines.find(engine=>engine.modelId==='qwen-lan');
+   const cloudEngine=initial.engines.find(engine=>engine.modelId==='gpt-cloud');
+   expect(initial.savedEngineId).toBeNull();
+   expect(initial.defaultEngineId).toBe(lanEngine.id);
+   expect((await c.call('PUT','/api/vantilo-catalog/settings',{engineId:lanEngine.id})).code).toBe(200);
+
+   // Remove the saved LAN catalog profile, leaving only the cloud profile as default.
+   profiles=[{id:'cloud-profile',name:'Cloud',model:'gpt-cloud'}];
+   const afterRemoval=(await c.call('GET','/api/vantilo-catalog/settings')).body;
+   expect(afterRemoval.savedEngineId).toBe(lanEngine.id);
+   expect(afterRemoval.defaultEngineId).toBe(cloudEngine.id);
+   expect(afterRemoval.engineId).toBe(lanEngine.id);
+
+   // Wire real ensureBookChineseCatalog directly to the real Fastify catalog routes.
+   const posted=[];
+   vi.stubGlobal('fetch', vi.fn(async(input, init)=>{
+    const url=String(input);
+    const method=init?.method||'GET';
+    if(method==='POST')posted.push({url,body:init?.body?JSON.parse(String(init.body)):undefined});
+    const payload=init?.body?JSON.parse(String(init.body)):undefined;
+    const res=await c.call(method, url, payload);
+    return new Response(JSON.stringify(res.body), {status:res.code, headers:{'Content-Type':'application/json'}});
+   }));
+   try{
+    const result=await ensureBookChineseCatalog('fixture', cloudEngine.id, new AbortController().signal);
+    expect(result).toBeUndefined();
+    expect(posted).toEqual([]);
+    expect(complete).not.toHaveBeenCalled();
+    expect(c.runAi).not.toHaveBeenCalled();
+   }finally{
+    vi.unstubAllGlobals();
+   }
+  },{get:async()=>({configured:true,...profiles[0],activeId:profiles[0].id,profiles}),complete});
+ });
  it('translates only magazine section and article titles',()=>fixture(async c=>{
   const r=await c.call('POST','/api/vantilo-catalog/issue/fixture',generation());
   expect(r.body.titles).toMatchObject({sections:{Ideas:'中文 Ideas'},articles:{a1:'中文 Clear writing'}});

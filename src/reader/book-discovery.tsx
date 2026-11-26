@@ -4,13 +4,13 @@ import type { GutenbergBook, GutenbergPage } from './gutenberg-adapter';
 import './book-discovery.css';
 
 type GeneratedIntro = {
-  id: number; engine?:'custom'|'codex'; titleZh: string; introZh: string; highlightsZh: string;
+  id: number; engine?:'custom'; titleZh: string; introZh: string; highlightsZh: string;
   questionZh: string; readingNoteZh: string; evidenceQuote: string;
   sourceUrl: string; sourceScope: string; model: string; cached: boolean;
 };
 
 type IntroEngineChoice = {
-  id:string; label:string; engine:'custom'|'codex'; modelId:string; effort:string|null;
+  id:string; label:string; engine:'custom'; modelId:string; effort:string|null;
 };
 const BOOK_INTRO_MODEL_KEY = 'vantilo-book-intro-model-v1';
 
@@ -34,7 +34,8 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
 
   React.useEffect(()=>{
     void refreshIntroOptions(null);
-    return ()=>{++modelsRevision.current;++cacheRevision.current;++generationRevision.current;};
+    const unsubscribe=window.vantilo?.onCustomApiUpdated?.(()=>{void refreshIntroOptions();});
+    return ()=>{unsubscribe?.();++modelsRevision.current;++cacheRevision.current;++generationRevision.current;};
   },[]);
 
   async function refreshIntroOptions(bookId=activeBookId.current){
@@ -45,16 +46,16 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
       if(revision!==modelsRevision.current)return;
       const choices=(Array.isArray(response.engines)?response.engines:[]).filter(
         item=>item&&typeof item.id==='string'&&typeof item.label==='string'&&
-          (item.engine==='custom'||item.engine==='codex')&&typeof item.modelId==='string'
+          item.engine==='custom'&&typeof item.modelId==='string'
       );
       const previous=preferredIntroId.current;
       let saved='';try{saved=window.localStorage.getItem(BOOK_INTRO_MODEL_KEY)||'';}catch{}
       const remembered=previous||saved;
-      const candidate=remembered||response.defaultId||choices[0]?.id;
-      const option=choices.find(item=>item.id===candidate)||null;
+      const option=choices.find(item=>item.id===remembered)||choices.find(item=>item.id===response.defaultId)||choices[0]||null;
       setIntroOptions(choices);currentIntroOption.current=option;
-      preferredIntroId.current=option?.id||remembered||'';setIntroEngineId(preferredIntroId.current);
-      if(remembered&&!option)setIntroModelsError('原选模型已变更或不可用，请重新选择。');
+      preferredIntroId.current=option?.id||'';setIntroEngineId(preferredIntroId.current);
+      if(option&&remembered&&option.id!==remembered){try{window.localStorage.setItem(BOOK_INTRO_MODEL_KEY,option.id);}catch{}}
+      if(remembered&&!option)setIntroModelsError('原选模型已变更或不可用，请在阅读设置中重新配置。');
       if(previous!==option?.id){++cacheRevision.current;setIntro(null);}
       if(bookId!==null&&option)void loadIntroCache(bookId,option);
     }catch(error){
@@ -63,9 +64,9 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
   }
   async function loadIntroCache(id:number,option:IntroEngineChoice){
     const revision=++cacheRevision.current;
-    const model=option.engine==='codex'?{modelId:option.modelId,reasoningEffort:option.effort}:{customEngineId:option.id};
+    const model={customEngineId:option.id};
     try{
-      const cached:GeneratedIntro|null=await window.vantilo!.requestGutenberg({operation:'introCached',id,engine:option.engine,...model});
+      const cached:GeneratedIntro|null=await window.vantilo!.requestGutenberg({operation:'introCached',id,engine:'custom',...model});
       if(activeBookId.current===id&&currentIntroOption.current?.id===option.id&&revision===cacheRevision.current)setIntro(cached);
     }catch(error){
       if(activeBookId.current===id&&currentIntroOption.current?.id===option.id&&revision===cacheRevision.current)
@@ -103,9 +104,9 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
     if(!option){setIntroError('请先选择可用的中文介绍模型');return;}
     const id=selected.id;const revision=++generationRevision.current;++cacheRevision.current;
     setIntroBusy(true);setIntroError('');
-    const model=option.engine==='codex'?{modelId:option.modelId,reasoningEffort:option.effort}:{customEngineId:option.id};
+    const model={customEngineId:option.id};
     try{
-      const result=await window.vantilo!.requestGutenberg({operation:'intro',id,engine:option.engine,force,...model});
+      const result=await window.vantilo!.requestGutenberg({operation:'intro',id,engine:'custom',force,...model});
       if(activeBookId.current===id&&currentIntroOption.current?.id===option.id&&revision===generationRevision.current)setIntro(result);
     }catch(error){
       if(activeBookId.current===id&&currentIntroOption.current?.id===option.id&&revision===generationRevision.current)
@@ -147,7 +148,7 @@ export function BookDiscovery({ onBack, onOpenShelf }: { onBack: () => void; onO
           <label className="discovery-model-select"><span>中文介绍模型</span>
             <select aria-label="中文介绍模型" value={introEngineId} disabled={introBusy||introModelsBusy||!introOptions.length} onChange={event=>changeIntroEngine(event.target.value)}>
               {introEngineId&&!introOptions.some(option=>option.id===introEngineId)&&<option value={introEngineId} disabled>原选模型不可用</option>}
-              {!introEngineId&&!introOptions.length&&<option value="">{introModelsBusy?'正在加载模型…':'暂无可用模型，请在设置中配置 API 或登录 ChatGPT'}</option>}
+              {!introEngineId&&!introOptions.length&&<option value="">{introModelsBusy?'正在加载模型…':'暂无可用模型，请在阅读设置中配置 AI 模型服务'}</option>}
               {introOptions.map(option=><option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </label>

@@ -1,23 +1,27 @@
-/* Single source of truth for Vantilo's macOS minimalist design tokens.
+/* Single source of truth for Vantilo's Claude-inspired warm editorial design tokens.
  * Consumed by both the Electron shell (src/) and the embedded Reader
  * (packages/reader/src/frontend/) to keep typography, radii, motion,
- * translucency, and AI conversation surfaces 100% consistent. */
+ * translucency, and warm parchment/obsidian surfaces 100% consistent. */
 :root {
   --vantilo-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  --vantilo-font-serif: "Iowan Old Style", "New York", "Palatino Linotype", Georgia, "Songti SC", "STSong", serif;
   --vantilo-font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
+  --vantilo-clay: #c96442;
+  --vantilo-clay-dark: #d97757;
+
   --vantilo-radius-xs: 6px;
-  --vantilo-radius-sm: 9px;
-  --vantilo-radius-md: 12px;
-  --vantilo-radius-lg: 14px;
-  --vantilo-radius-xl: 16px;
+  --vantilo-radius-sm: 10px;
+  --vantilo-radius-md: 14px;
+  --vantilo-radius-lg: 18px;
+  --vantilo-radius-xl: 20px;
   --vantilo-radius-pill: 999px;
 
   --vantilo-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --vantilo-duration-fast: 140ms;
   --vantilo-duration-base: 180ms;
 
-  --vantilo-blur: blur(20px) saturate(160%);
+  --vantilo-blur: blur(20px) saturate(150%);
 
   /* Shared AI conversation typography & bubble geometry */
   --vantilo-chat-font-size: 14.5px;

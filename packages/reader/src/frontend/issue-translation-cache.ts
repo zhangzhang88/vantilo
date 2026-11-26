@@ -54,6 +54,29 @@ export async function readIssueTranslation(engineId: string, key: string) {
   return entry?.record;
 }
 
+export async function listCachedTranslationEngines(): Promise<string[]> {
+  if (typeof indexedDB === "undefined") return [];
+  return readCache<string[]>(store => new Promise((resolve, reject) => {
+    const engines: string[] = [];
+    const request = store.openKeyCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve(engines);
+        return;
+      }
+      const key = cursor.key;
+      if (Array.isArray(key) && typeof key[0] === "string") {
+        engines.push(key[0]);
+        cursor.continue([key[0], "\uffff"]);
+      } else {
+        cursor.continue();
+      }
+    };
+    request.onerror = () => reject(request.error);
+  }));
+}
+
 export async function saveIssueTranslation(engineId: string, record: ParagraphTranslationRecord) {
   const database = await openCache();
   try {

@@ -51,6 +51,30 @@ describe("Qwen PCM streaming pitch-preserving speed", () => {
     });
   }
 
+  it("preserves low-pitched male vocal fundamental (~100 Hz / 10 ms period) across speed changes without splice distortion", () => {
+    const maleFreq = 100;
+    const original = new Float32Array(Math.round(3 * sampleRate));
+    for (let i = 0; i < original.length; i++) {
+      const at = i / sampleRate;
+      const envelope = Math.min(1, i / (0.02 * sampleRate), (original.length - i) / (0.02 * sampleRate));
+      original[i] = envelope * (0.65 * Math.sin(2 * Math.PI * maleFreq * at)
+        + 0.25 * Math.sin(2 * Math.PI * maleFreq * 2 * at));
+    }
+    for (const rate of [0.75, 1.25, 1.5]) {
+      const stretch = new PcmPitchPreservingStretch(rate, sampleRate);
+      const parts: Float32Array[] = [];
+      for (let at = 0; at < original.length; at += 4096) parts.push(stretch.push(original.subarray(at, at + 4096)));
+      parts.push(stretch.finish());
+      const output = join(parts);
+      expect(output.length / sampleRate).toBeCloseTo(3 / rate, 1);
+      expect(Math.abs(fundamentalFrequency(output) - maleFreq)).toBeLessThan(8);
+      // Sample-to-sample step on a smooth 100 Hz voice must not contain hard splice clicks.
+      let maxDelta = 0;
+      for (let i = 1; i < output.length; i++) maxDelta = Math.max(maxDelta, Math.abs(output[i] - output[i - 1]));
+      expect(maxDelta).toBeLessThan(0.12);
+    }
+  });
+
   it("finishes short PCM streams without losing audio and remains bounded over long input", () => {
     const few = new PcmPitchPreservingStretch(1.25);
     const small = new Float32Array(280).fill(0.125);

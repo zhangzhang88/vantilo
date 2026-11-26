@@ -4,9 +4,9 @@
 .book-prep-layout--single { max-width: 1180px; }
 .book-prep-layout .codex-prep-panel { margin-inline: 0; }
 .book-prep-layout .book-detail-content { padding-inline: 0; }
-.global-header { position: sticky; top: 0; z-index: 60; height: 44px; background: color-mix(in oklab, var(--theme-surface) 90%, transparent); backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); border-bottom: 1px solid var(--theme-line); }
+.global-header { position: sticky; top: 0; z-index: 60; height: 44px; background: color-mix(in srgb, var(--theme-bg) 92%, transparent); backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); border-bottom: 1px solid var(--theme-line); }
 .global-navigation { position: relative; display: flex; align-items: center; gap: 24px; height: 100%; width: min(1440px,100%); margin: 0 auto; padding: 0 24px; color: var(--theme-ink); font: 13.5px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif; }
-.global-nav-logo { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 9px; background: var(--theme-accent); color: var(--theme-on-accent); font: 750 13px/1 -apple-system,BlinkMacSystemFont,sans-serif; box-shadow: 0 2px 8px color-mix(in oklab, var(--theme-accent) 30%, transparent); cursor: pointer; }
+.global-nav-logo { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 9px; background: var(--theme-accent); color: var(--theme-on-accent); font: 600 15px/1 var(--vantilo-font-serif, Georgia, serif); box-shadow: 0 2px 8px color-mix(in oklab, var(--theme-accent) 26%, transparent); cursor: pointer; }
 .global-nav-primary,.global-nav-utilities { display: flex; align-items: center; gap: 6px; }
 .global-nav-utilities { margin-left: auto; }
 .global-nav-link { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 5px 12px; border: 0; border-radius: 9px; background: transparent; color: var(--theme-secondary); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }

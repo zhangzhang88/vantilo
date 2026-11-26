@@ -100,7 +100,7 @@ function registerContextualGloss(api, { model, customApi, lifetime, listModels, 
           return reply.code(503).send({ error: '本地 Qwen 尚未就绪' });
         result = await model.gloss({ word: request.body.word, sentence: request.body.sentence, signal: controller.signal });
       } else {
-        return reply.code(503).send({ error: '请在阅读设置中配置自定义 API，或启用本地 Qwen' });
+        return reply.code(503).send({ error: '请在阅读设置中配置 AI 模型服务，或启用本地 Qwen' });
       }
       controller.signal.throwIfAborted();
       const meaningZh = normalizeMeaning(result?.meaningZh);

@@ -44,8 +44,12 @@ async function waitReaderFrame(win) {
 }
 
 async function ensureReader(win, { settings = false } = {}) {
-  await until(() => win.webContents.executeJavaScript(`Boolean(document.querySelector('button[aria-label="阅读"]'))`), Boolean, '宿主阅读入口');
-  await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="阅读"]').click()`);
+  await until(
+    () => win.webContents.executeJavaScript(`Boolean(document.querySelector('button[aria-label="阅读"]')||document.querySelector('.workspace-sheet-reader')||document.querySelector('button[aria-label="设置"]'))`),
+    Boolean,
+    '宿主阅读入口',
+  );
+  await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="阅读"]')?.click()`);
   let frame = await waitReaderFrame(win);
   await until(() => frame.executeJavaScript(`Boolean(document.querySelector('.global-nav-primary')||document.querySelector('.global-nav-assistant'))`), Boolean, 'Reader 页面');
   if (settings) {

@@ -190,11 +190,11 @@ it("requires the saved listening-position paragraph, not merely any other transl
   expect((screen.getByRole("button", { name: "播放中文" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
-it("shows five original voices and the private clone, preserving the chosen preset across remounts", () => {
+it("shows the five official Chinese voices and preserves the chosen preset across remounts", () => {
   const fetcher = mount(translatedRecords());
   const select = screen.getByRole("combobox", { name: "朗读音色" }) as HTMLSelectElement;
-  expect(select.options).toHaveLength(6);
-  expect([...select.options].map(option => option.value)).toEqual(["serena", "vivian", "uncle_fu", "dylan", "eric", "my_voice"]);
+  expect(select.options).toHaveLength(5);
+  expect([...select.options].map(option => option.value)).toEqual(["serena", "vivian", "uncle_fu", "dylan", "eric"]);
   expect(select.value).toBe("serena");
   fireEvent.change(select, { target: { value: "uncle_fu" } });
   expect(select.value).toBe("uncle_fu");
@@ -205,24 +205,19 @@ it("shows five original voices and the private clone, preserving the chosen pres
   expect(fetcher.mock.calls.filter(call => (call as unknown[])[0] === "/api/vantilo-translation/translate")).toHaveLength(0);
 });
 
-it("offers the five original Chinese voices plus my_voice, defaulting to Serena if the saved voice is non-Chinese", () => {
+it("offers the five official Chinese voices, defaulting to Serena if the saved voice is non-Chinese or retired", () => {
   localStorage.setItem(QWEN_TTS_VOICE_STORAGE_KEY, "ryan");
   mount(translatedRecords());
   const select = screen.getByRole("combobox", { name: "朗读音色" }) as HTMLSelectElement;
-  expect(select.options).toHaveLength(6);
+  expect(select.options).toHaveLength(5);
   expect(select.value).toBe("serena");
-  expect([...select.options].map(item => item.value)).toEqual(["serena", "vivian", "uncle_fu", "dylan", "eric", "my_voice"]);
+  expect([...select.options].map(item => item.value)).toEqual(["serena", "vivian", "uncle_fu", "dylan", "eric"]);
 });
 
-it("restores my_voice and its preferred speed across articles without changing the other TTS voice preference", () => {
+it("falls back to Serena while keeping saved speed if a retired my_voice preference existed", () => {
+  localStorage.setItem(CHINESE_AUDIOBOOK_PREFERENCES_KEY, JSON.stringify({ version: 1, voice: "my_voice", rate: 1.25 }));
   mount(translatedRecords());
-  fireEvent.change(screen.getByRole("combobox", { name: "朗读音色" }), { target: { value: "my_voice" } });
-  fireEvent.change(screen.getByRole("combobox", { name: "朗读语速" }), { target: { value: "1.25" } });
-  expect(JSON.parse(localStorage.getItem(CHINESE_AUDIOBOOK_PREFERENCES_KEY)!)).toMatchObject({ voice: "my_voice", rate: 1.25 });
-  expect(localStorage.getItem(QWEN_TTS_VOICE_STORAGE_KEY)).not.toBe("my_voice");
-  cleanup();
-  mount(translatedRecords());
-  expect((screen.getByRole("combobox", { name: "朗读音色" }) as HTMLSelectElement).value).toBe("my_voice");
+  expect((screen.getByRole("combobox", { name: "朗读音色" }) as HTMLSelectElement).value).toBe("serena");
   expect((screen.getByRole("combobox", { name: "朗读语速" }) as HTMLSelectElement).value).toBe("1.25");
 });
 

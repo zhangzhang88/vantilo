@@ -34,7 +34,10 @@ export function chapterTranslationTargets(chapter: ReaderDocumentView): Paragrap
     }
     headingIndex++;
   }
-  const visuals = new Set((chapter.visuals ?? []).flatMap(visual => [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]));
+  const visuals = new Set((chapter.visuals ?? []).flatMap(visual =>
+    visual.kind === "original" && visual.reason === "complex-layout"
+      ? visual.captionParagraphIndexes
+      : [...visual.coveredParagraphIndexes, ...visual.captionParagraphIndexes]));
   for (const [paragraphIndex, sourceText] of chapter.paragraphs.entries()) {
     if (visuals.has(paragraphIndex) || !isTranslatableText(sourceText)
       || isChapterNumberParagraph(sourceText, paragraphIndex, chapter.title, chapter.paragraphs[paragraphIndex + 1])) continue;
@@ -116,15 +119,151 @@ export function issueWithTranslationTitles(issue: ReaderIssue, batchTitles: Reco
 
 type IssueTranslationDocument = Awaited<ReturnType<typeof planIssueTranslation>>["documents"][number];
 
+export interface BookChapterTranslationStatus {
+  translated: number;
+  total: number;
+}
+
+export async function loadBookChapterTranslationStatus(
+  collection: ReaderCollectionView,
+  engineId: string,
+): Promise<Record<string, BookChapterTranslationStatus>> {
+  const persisted = await loadBookTranslations(
+    engineId,
+    collection.documents.map(document => document.identity.documentId),
+  );
+  const storage = getReaderStorage();
+  const cached = indexRecords([...persisted, ...loadListeningTranslations(storage, engineId)]);
+  const status: Record<string, BookChapterTranslationStatus> = Object.create(null);
+  for (const chapter of collection.documents) {
+    const targets = chapterTranslationTargets(chapter);
+    let translated = 0;
+    for (const target of targets) {
+      const context = {
+        contextBefore: target.targetKind ? undefined : chapter.paragraphs[target.paragraphIndex - 1],
+        contextAfter: target.targetKind ? undefined : chapter.paragraphs[target.paragraphIndex + 1],
+      };
+      if (findListeningTranslation(cached.get(target.key) ?? [], target, context, true)) {
+        translated++;
+      }
+    }
+    status[chapter.id] = { translated, total: targets.length };
+  }
+  return status;
+}
+
+export async function ensureBookChineseCatalog(
+  bookId: string,
+  engineId: string,
+  signal: AbortSignal,
+  onProgress?: (done: number, total: number) => void,
+): Promise<Record<string, string> | undefined> {
+  const url = `/api/vantilo-catalog/book/${encodeURIComponent(bookId)}`;
+  try {
+    const statusResponse = await fetch(url, { cache: "no-store", signal });
+    if (!statusResponse.ok) return undefined;
+    const status = await statusResponse.json() as {
+      state?: string;
+      titles?: { chapters?: Record<string, string> };
+    };
+    if (status?.state === "ready") return status.titles?.chapters;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return undefined;
+  }
+
+  let catalogEngineId: string | undefined;
+  try {
+    const settingsResponse = await fetch("/api/vantilo-catalog/settings", { cache: "no-store", signal });
+    if (!settingsResponse.ok) return undefined;
+    const settings = await settingsResponse.json() as {
+      engineId?: string;
+      savedEngineId?: string | null;
+      defaultEngineId?: string | null;
+      engines?: Array<{ id?: string }>;
+    };
+    if (!settings || typeof settings !== "object" || !Array.isArray(settings.engines)) {
+      return undefined;
+    }
+    const available = (id: unknown): id is string =>
+      typeof id === "string" && Boolean(id.trim()) && settings.engines!.some(item => item?.id === id.trim());
+    const savedCatalogEngine = typeof settings.savedEngineId === "string" ? settings.savedEngineId.trim() : "";
+    const legacyEngineId = typeof settings.engineId === "string" ? settings.engineId.trim() : "";
+    const requestedBodyEngine = typeof engineId === "string" ? engineId.trim() : "";
+    if (savedCatalogEngine) {
+      if (!available(savedCatalogEngine)) return undefined;
+      catalogEngineId = savedCatalogEngine;
+    } else if (settings.savedEngineId === null) {
+      if (requestedBodyEngine) {
+        if (!available(requestedBodyEngine)) return undefined;
+        catalogEngineId = requestedBodyEngine;
+      } else if (available(settings.defaultEngineId)) {
+        catalogEngineId = settings.defaultEngineId.trim();
+      } else {
+        return undefined;
+      }
+    } else if (legacyEngineId) {
+      if (!available(legacyEngineId)) return undefined;
+      catalogEngineId = legacyEngineId;
+    } else if (requestedBodyEngine) {
+      if (!available(requestedBodyEngine)) return undefined;
+      catalogEngineId = requestedBodyEngine;
+    } else {
+      return undefined;
+    }
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return undefined;
+  }
+
+  onProgress?.(0, 0);
+  while (true) {
+    signal.throwIfAborted();
+    let value: {
+      state?: string;
+      done?: number;
+      total?: number;
+      titles?: { chapters?: Record<string, string> };
+    };
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engineId: catalogEngineId, regenerate: false, preserveSetting: true }),
+        signal,
+      });
+      if (!response.ok) return undefined;
+      value = await response.json();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      return undefined;
+    }
+    if (signal.aborted) signal.throwIfAborted();
+    if (value?.state === "pending") {
+      onProgress?.(Number(value.done ?? 0), Number(value.total ?? 0));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("vantilo-catalog-updated", { detail: { kind: "book", id: bookId, record: value } }));
+      }
+      continue;
+    }
+    if (value?.state === "ready") {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("vantilo-catalog-updated", { detail: { kind: "book", id: bookId, record: value } }));
+      }
+      return value.titles?.chapters;
+    }
+    return undefined;
+  }
+}
+
 export async function planIssueTranslation(source: TranslationBatchSource, engineId: string) {
   const persisted = await (source.kind === "issue"
     ? loadIssueTranslations(engineId, source.issue.id)
     : loadBookTranslations(engineId, source.collection.documents.map(document => document.identity.documentId)));
   const collection = source.kind === "issue" ? magazineReaderCollection(source.issue) : source.collection;
-  const start = source.kind === "book" ? collection.documents.findIndex(chapter => chapter.id === source.startChapterId) : -1;
-  const ordered = start > 0
-    ? [...collection.documents.slice(start), ...collection.documents.slice(0, start)]
-    : collection.documents;
+  // Always translate in original TOC/reading order from the first document so early chapters
+  // are cached first and can be read immediately without waiting for the entire book to finish.
+  const ordered = collection.documents;
   const storage = getReaderStorage();
   const cached = indexRecords([...persisted, ...loadListeningTranslations(storage, engineId)]);
   const documents = ordered.map(article => {
@@ -154,6 +293,7 @@ export interface IssueTranslationProgress {
   completedArticles: number;
   failedArticles: Array<{ title: string; error: string }>;
   currentTitle?: string;
+  currentDocumentId?: string;
   waiting?: boolean;
   retrying?: boolean;
   timings?: TranslationTimings & { count: number };
@@ -276,7 +416,7 @@ export async function runIssueTranslation(
   for (const { article, missing } of plan.documents) {
     if (!missing.length) continue;
     signal.throwIfAborted();
-    update({ currentTitle: article.title, waiting: false, retrying: false });
+    update({ currentTitle: article.title, currentDocumentId: article.identity.documentId, waiting: false, retrying: false });
     let failure: string | undefined;
     for (const group of groupEntries(missing, plan.useBatches)) {
       const pending: TranslationEntry[] = [];
@@ -336,5 +476,6 @@ export async function runIssueTranslation(
       ? { failedArticles: [...progress.failedArticles, { title: article.title, error: failure }] }
       : { completedArticles: progress.completedArticles + 1 });
   }
+  update({ currentTitle: undefined, currentDocumentId: undefined, waiting: false, retrying: false });
   return progress;
 }

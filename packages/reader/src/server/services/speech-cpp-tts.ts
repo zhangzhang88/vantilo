@@ -29,13 +29,36 @@ const sampleRate = 24000;
 const fixtureRoot = "/Volumes/Workspace/Development/Vantilo/tts-benchmarks/run-20261106-122508";
 const defaultBinary = path.join(fixtureRoot, "extracted", "speech");
 const defaultModel = path.join(fixtureRoot, "model", "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q8_0.gguf");
+const MANAGED_DIR_NAME = "qwen3-tts-0.6b";
+const MANAGED_BINARY_NAME = "speech";
+const MANAGED_MODEL_NAME = "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q8_0.gguf";
+const MANAGED_INSTALL_MARKER = ".vantilo-tts-install.json";
+export const LOCAL_TTS_NOT_INSTALLED_MESSAGE = "本地离线语音模型（Qwen3-TTS 0.6B）尚未安装，请前往「设置」或「阅读环境设置」一键下载。";
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-/** Explicit paths take precedence; the verified M4 benchmark artifacts support the owner's development checkout. */
-export function speechCppPaths(env: NodeJS.ProcessEnv = process.env) {
-  const binary = env.VANTILO_SPEECH_CPP_BIN || defaultBinary;
-  const model = env.VANTILO_SPEECH_CPP_MODEL || defaultModel;
-  return { binary, model };
+export type SpeechCppPathPair = { binary: string; model: string };
+
+/** Explicit env paths take precedence; next is the in-app installed userData copy; last is the dev Workspace fallback. */
+export function speechCppPaths(env: NodeJS.ProcessEnv = process.env, userDataRoot?: string): SpeechCppPathPair {
+  if (env.VANTILO_SPEECH_CPP_BIN || env.VANTILO_SPEECH_CPP_MODEL) {
+    return {
+      binary: env.VANTILO_SPEECH_CPP_BIN || defaultBinary,
+      model: env.VANTILO_SPEECH_CPP_MODEL || defaultModel,
+    };
+  }
+  if (userDataRoot && path.isAbsolute(userDataRoot)) {
+    const managedDir = path.join(userDataRoot, "tts", MANAGED_DIR_NAME);
+    const managedMarker = path.join(managedDir, MANAGED_INSTALL_MARKER);
+    const managedBinary = path.join(managedDir, MANAGED_BINARY_NAME);
+    const managedModel = path.join(managedDir, MANAGED_MODEL_NAME);
+    if (existsSync(managedMarker) && existsSync(managedBinary) && existsSync(managedModel)) {
+      return { binary: managedBinary, model: managedModel };
+    }
+  }
+  if (existsSync(defaultBinary) && existsSync(defaultModel)) {
+    return { binary: defaultBinary, model: defaultModel };
+  }
+  return { binary: "", model: "" };
 }
 
 export class SpeechCppTts implements ChineseSpeechSource {
@@ -47,15 +70,18 @@ export class SpeechCppTts implements ChineseSpeechSource {
   private active?: SpeechJob;
   private nextId = 0;
   private closing = false;
+  private readonly resolvePaths: () => SpeechCppPathPair;
 
-  constructor(private paths = speechCppPaths()) {}
+  constructor(paths: SpeechCppPathPair | (() => SpeechCppPathPair) = () => speechCppPaths()) {
+    this.resolvePaths = typeof paths === "function" ? paths : () => paths;
+  }
 
   warm(): Promise<void> {
     if (this.closing) return Promise.reject(new Error("朗读服务已关闭"));
     if (this.ready) return this.ready;
-    const { binary, model } = this.paths;
+    const { binary, model } = this.resolvePaths();
     if (!path.isAbsolute(binary) || !path.isAbsolute(model) || !existsSync(binary) || !existsSync(model)) {
-      return Promise.reject(new Error("本地 Qwen3-TTS 尚未配置，请确认 speech.cpp 和 GGUF 模型位于 Workspace，或设置 VANTILO_SPEECH_CPP_BIN / VANTILO_SPEECH_CPP_MODEL。"));
+      return Promise.reject(new Error(LOCAL_TTS_NOT_INSTALLED_MESSAGE));
     }
     this.ready = new Promise<void>((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     const startup = this.ready;
@@ -178,6 +204,10 @@ export class SpeechCppTts implements ChineseSpeechSource {
       job.signal.removeEventListener("abort", job.onAbort);
       if (!job.aborted) job.stream.end(JSON.stringify({ type: "error", message: reason }) + "\n");
     }
+  }
+  reset(reason = "本地离线语音模型状态已变更，请重新播放") {
+    if (this.closing) return;
+    this.fail(reason);
   }
   close() {
     if (this.closing) return;

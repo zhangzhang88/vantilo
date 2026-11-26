@@ -77,7 +77,7 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
     // Keep old reader records readable during a migration and allow native records.
     const seam = '&& item.provider === "easycliproxy"';
     if (!source.includes(seam)) throw new Error('Word-context storage seam changed; review Vantilo cache compatibility');
-    return source.replace(seam, '&& (item.provider === "easycliproxy" || (item.provider as string) === "vantilo-agent" || (item.provider as string) === "qwen-mlx" || (item.provider as string) === "custom-api")');
+    return source.replace(seam, '&& (item.provider === "easycliproxy" || (item.provider as string) === "vantilo-agent" || (item.provider as string) === "qwen-mlx" || (item.provider as string) === "qwen-gguf" || (item.provider as string) === "custom-api")');
   }
 
   if (filename.endsWith('.css')) {
@@ -266,7 +266,7 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
     source = source.replace(readerPreferenceType, '  preferences: ReaderPreferences;\n  onPreferencesChange: (patch: Partial<ReaderPreferences>) => void;\n  onBack: () => void;');
     if (source.split('preferences={effectiveReaderPreferences}').length !== 4) throw new Error('Reader preference binding seam changed');
     source = source.replaceAll('preferences={effectiveReaderPreferences}', 'preferences={effectiveReaderPreferences} onPreferencesChange={updateReaderPreferences}');
-    const readerModeSwitch = '          <div className="reader-mode-switch" aria-label="阅读模式">';
+    const readerModeSwitch = '          {audiobookMode !== "original" && (<div className="reader-mode-switch" aria-label="阅读模式">';
     if (source.split(readerModeSwitch).length !== 2) throw new Error('Sentence appearance toolbar seam changed');
     source = source.replace(readerModeSwitch, '          {readerMode === "sentence" && <VantiloSentenceAppearanceMenu value={preferences} onChange={onPreferencesChange} />}\n' + readerModeSwitch);
     const sentenceCount = '<span>第 {sentenceIndex + 1} / {articleSentences.length} 句</span>';
@@ -418,11 +418,27 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
       partOfSpeech:latest?.partOfSpeech ?? '',
       model:modelName,provider:provider as WordContextMeaningRecord['provider'],
       generatedAt:new Date().toISOString(),meaningSource:'ai',
-    };
+      ...(typeof localStorage!=='undefined' && localStorage.getItem('vantilo-translation-engine-v1') ? {engineId:localStorage.getItem('vantilo-translation-engine-v1')!} : {}),
+    } as WordContextMeaningRecord;
     const next=upsertWordContextMeaning(wordContextMeaningsRef.current,record);
     wordContextMeaningsRef.current=next;
     saveWordContextMeanings(getReaderStorage(),next);
     setWordContextMeanings(next);
+    setSavedSelections((current)=>{
+      let changed=false;
+      const normalized=lookup.text.trim().toLocaleLowerCase('en-US');
+      const updated=current.map((item)=>{
+        if(!savedSelectionBelongsToDocument(item,article.identity)
+          || item.text.trim().toLocaleLowerCase('en-US')!==normalized
+          || item.paragraphIndex!==lookup.paragraphIndex
+          || item.translationSource==='user'
+          || !needsContextualMeaningRepair(item)) return item;
+        changed=true;
+        return {...item,translationZh:meaningZh,translationSource:'auto' as const};
+      });
+      if(changed)saveSavedSelections(getReaderStorage(),updated);
+      return changed?updated:current;
+    });
     const update=(current:ActiveWordLookup|null):ActiveWordLookup|null=>
       current?.key===lookup.key?{...current,contextMeaning:record,contextStatus:'ready'}:current;
     setActiveWordLookup(update);setWordDetailLookup(update);
@@ -437,11 +453,20 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
       .replace("import { dictionaryPreviewMeanings } from '../packages/reader/src/frontend/dictionary-preview';", '');
   }
 
-  source = source.replaceAll('\"Dictionary\"','\"Agent 释义\"').replaceAll('\"AI fallback\"','\"Agent 语境释义\"').replaceAll('Dictionary · base form','Agent · 词形').replaceAll('请配置 AI 服务', '请登录 ChatGPT').replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。', '阅读辅助与工作台共用 ChatGPT 登录；Reader 独立保存对话与模型选择。这里管理外观、阅读偏好和本机数据备份。').replaceAll('阅读偏好在浏览器 · AI 配置在本机', '阅读偏好保存在本机 · AI 使用统一 Agent').replaceAll('词典：有道 / Free Dictionary API · 语境：EasyCLIProxy', '释义与语境：统一 Agent · AI 生成，请结合原文核对');
+  source = source.replaceAll('\"Dictionary\"','\"词典释义\"').replaceAll('\"AI fallback\"','\"语境释义\"').replaceAll('Dictionary · base form','词典 · 词形').replaceAll('请配置 AI 服务', '请配置 AI 模型服务').replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。', '阅读翻译、点词释义与 Practice Lab 共用阅读设置中已保存的 AI 模型服务。这里管理外观、阅读偏好和本机词汇备份。').replaceAll('阅读偏好在浏览器 · AI 配置在本机', '阅读偏好保存在本机 · AI 模型服务配置在本机').replaceAll('词典：有道 / Free Dictionary API · 语境：EasyCLIProxy', '词典：macOS 系统词典 · 语境：AI 模型服务，请结合原文核对');
   if (filename.endsWith('/frontend/App.tsx') && source.includes('reader-toolbar-actions')) {
-    const toolbar = '        <div className="reader-toolbar-actions">';
-    if (source.split(toolbar).length !== 2) throw new Error('Reader toolbar discovery insertion seam changed');
-    source = source.replace(toolbar, toolbar + `\n          <button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}>▧ <span>发现好书</span></button>`);
+    const discoveryButton = `<button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}>▧ <span>发现好书</span></button>`;
+    const embeddedPanel = '<div className="reader-toolbar-menu-panel is-embedded" aria-label="更多阅读操作">';
+    const morePanel = '<div className="reader-toolbar-menu-panel" aria-label="更多阅读操作">';
+    if (source.includes(embeddedPanel)) {
+      source = source.replace(embeddedPanel, embeddedPanel + discoveryButton);
+    } else if (source.includes(morePanel)) {
+      source = source.replace(morePanel, morePanel + discoveryButton);
+    } else {
+      const toolbar = '        <div className="reader-toolbar-actions">';
+      if (source.split(toolbar).length !== 2) throw new Error('Reader toolbar discovery insertion seam changed');
+      source = source.replace(toolbar, toolbar + `\n          ${discoveryButton}`);
+    }
   }
   if (filename.endsWith('/frontend/App.tsx') && source.includes('continueCard={magazineContinue ? <GlobalContinueCard')) {
     const card = '<GlobalContinueCard item={magazineContinue} onOpen={openReadingEntry}';

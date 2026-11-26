@@ -4,6 +4,33 @@ export const AUDIOBOOK_RATES = [.75, 1, 1.25, 1.5] as const;
 export const AUDIOBOOK_SLEEP_MINUTES = [0, 15, 30, 45, 60] as const;
 export type AudiobookMode = "original" | "translation";
 export type AudiobookPhase = "idle" | "loading" | "playing" | "paused" | "complete" | "error";
+export type AudiobookProgressScope = "book" | "article";
+
+export interface AudiobookSmartSkip {
+  tables: boolean;
+  urls: boolean;
+  parentheses: boolean;
+  brackets: boolean;
+  braces: boolean;
+}
+
+export const DEFAULT_AUDIOBOOK_SMART_SKIP: AudiobookSmartSkip = {
+  tables: true,
+  urls: true,
+  parentheses: false,
+  brackets: false,
+  braces: false,
+};
+
+export function isAudiobookSmartSkip(value: unknown): value is AudiobookSmartSkip {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.tables === "boolean"
+    && typeof item.urls === "boolean"
+    && typeof item.parentheses === "boolean"
+    && typeof item.brackets === "boolean"
+    && typeof item.braces === "boolean";
+}
 
 export interface AudiobookControlsState {
   phase: AudiobookPhase;
@@ -13,6 +40,10 @@ export interface AudiobookControlsState {
   paragraphIndex: number;
   paragraphNumber: number;
   paragraphCount: number;
+  chunkIndex?: number;
+  chunkText?: string;
+  chunkSeconds?: number;
+  chunkDuration?: number;
 }
 
 export interface AudiobookSnapshot extends AudiobookControlsState {
@@ -26,6 +57,9 @@ export interface AudiobookSnapshot extends AudiobookControlsState {
   chapterId: string;
   chapters: { id: string; title: string }[];
   sleepMinutes: number;
+  smartSkip?: AudiobookSmartSkip;
+  progressPercent?: number;
+  progressScope?: AudiobookProgressScope;
 }
 
 export type AudiobookAction =
@@ -34,7 +68,8 @@ export type AudiobookAction =
   | { type: "rate"; value: number }
   | { type: "voice"; value: ChineseAudiobookVoice }
   | { type: "chapter"; id: string }
-  | { type: "sleep"; minutes: number };
+  | { type: "sleep"; minutes: number }
+  | { type: "smart-skip"; settings: AudiobookSmartSkip };
 
 function boundedText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length <= max;
@@ -50,6 +85,7 @@ export function isAudiobookAction(value: unknown): value is AudiobookAction {
     case "voice": return isChineseAudiobookVoice(item.value);
     case "chapter": return boundedText(item.id, 512) && item.id.length > 0;
     case "sleep": return AUDIOBOOK_SLEEP_MINUTES.some(minutes => minutes === item.minutes);
+    case "smart-skip": return isAudiobookSmartSkip(item.settings);
     default: return false;
   }
 }
@@ -67,9 +103,18 @@ export function isAudiobookSnapshot(value: unknown): value is AudiobookSnapshot 
     && ["idle", "loading", "playing", "paused", "complete", "error"].includes(item.phase)
     && boundedText(item.error, 512) && isChineseAudiobookVoice(item.voice)
     && AUDIOBOOK_RATES.some(rate => rate === item.rate) && AUDIOBOOK_SLEEP_MINUTES.some(minutes => minutes === item.sleepMinutes)
+    && (item.smartSkip === undefined || isAudiobookSmartSkip(item.smartSkip))
     && Number.isSafeInteger(item.paragraphIndex) && item.paragraphIndex >= 0
     && Number.isSafeInteger(item.paragraphNumber) && item.paragraphNumber >= 0
     && Number.isSafeInteger(item.paragraphCount) && item.paragraphCount >= item.paragraphNumber
+    && (item.chunkIndex === undefined || (Number.isSafeInteger(item.chunkIndex) && item.chunkIndex >= 0))
+    && (item.chunkText === undefined || boundedText(item.chunkText, 1024))
+    && (item.chunkSeconds === undefined || (typeof item.chunkSeconds === "number" && Number.isFinite(item.chunkSeconds) && item.chunkSeconds >= 0 && item.chunkSeconds <= 86_400))
+    && (item.chunkDuration === undefined || (typeof item.chunkDuration === "number" && Number.isFinite(item.chunkDuration) && item.chunkDuration >= 0 && item.chunkDuration <= 86_400))
+    && (item.progressPercent === undefined
+      || (Number.isSafeInteger(item.progressPercent) && item.progressPercent >= 0 && item.progressPercent <= 100))
+    && (item.progressScope === undefined
+      || (item.progressPercent !== undefined && (item.progressScope === "book" || item.progressScope === "article")))
     && Array.isArray(item.chapters) && item.chapters.length <= 10_000
     && item.chapters.every(chapter => chapter && boundedText(chapter.id, 512) && boundedText(chapter.title, 1024))
     && (item.chapters.some(chapter => chapter.id === item.chapterId)

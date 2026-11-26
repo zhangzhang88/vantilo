@@ -23,7 +23,7 @@ function readerCustomApiEngines(settings) {
     return {
       id: customApiEngineId(profile),
       engine: 'custom-api',
-      label: `自定义 API · ${profile.name} / ${profile.model}`,
+      label: `${profile.name} · ${profile.model}`,
       modelId: profile.model,
       selectedProfileId: profile.id,
     };

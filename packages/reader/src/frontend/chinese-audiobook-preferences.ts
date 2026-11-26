@@ -14,21 +14,30 @@ export function validChineseAudiobookPreferences(value: unknown): value is Chine
 }
 
 export function loadChineseAudiobookPreferences(storage: Pick<Storage, "getItem">): ChineseAudiobookPreferences {
+  let savedRate: number | undefined;
   try {
     const value = storage.getItem(CHINESE_AUDIOBOOK_PREFERENCES_KEY);
     if (value !== null) {
       const parsed: unknown = JSON.parse(value);
       if (validChineseAudiobookPreferences(parsed)) return parsed;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const candidate = parsed as Partial<ChineseAudiobookPreferences>;
+        if (candidate.version === 1 && CHINESE_AUDIOBOOK_RATES.some(rate => rate === candidate.rate)) {
+          savedRate = candidate.rate;
+        }
+      }
     }
   } catch { /* Preserve usable defaults when storage is unavailable or malformed. */ }
   // Upgrade existing users without overwriting a previously selected voice or rate.
   let legacyVoice = DEFAULT_QWEN_TTS_VOICE;
-  let legacyRate = 1;
+  let legacyRate = savedRate ?? 1;
   try {
     const voice = loadQwenTtsVoice(storage);
     if (CHINESE_AUDIOBOOK_VOICES.some(item => item.id === voice)) legacyVoice = voice;
-    const records = loadChineseListeningRecords(storage);
-    if (records.length && CHINESE_AUDIOBOOK_RATES.some(rate => rate === records[0].rate)) legacyRate = records[0].rate;
+    if (savedRate === undefined) {
+      const records = loadChineseListeningRecords(storage);
+      if (records.length && CHINESE_AUDIOBOOK_RATES.some(rate => rate === records[0].rate)) legacyRate = records[0].rate;
+    }
   } catch { /* Ignore unavailable legacy data. */ }
   return { version: 1, voice: legacyVoice, rate: legacyRate };
 }

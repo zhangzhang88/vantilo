@@ -34,17 +34,6 @@ describe("Chinese audiobook stable seed transport", () => {
     expect(a).not.toBe(b);
     expect(a).not.toBe(c);
   });
-  it("uses a distinct stable seed and dedicated my_voice identifier", async () => {
-    const generate = vi.fn(async function* () {
-      yield { sampleRate: 24000, samples: new Int16Array([1]) };
-    }) as typeof streamChineseTts;
-    const signal = new AbortController().signal;
-    for await (const _ of streamChineseListeningTts("新的声音。", signal, "my_voice", generate)) {}
-    for await (const _ of streamChineseListeningTts("新的声音。", signal, "my_voice", generate)) {}
-    expect(generate.mock.calls[0]).toEqual(["新的声音。", signal, "zh-CN", "my_voice", qwenTtsSeed("新的声音。", "my_voice")]);
-    expect(generate.mock.calls[1][4]).toBe(generate.mock.calls[0][4]);
-    expect(qwenTtsSeed("新的声音。", "my_voice")).not.toBe(qwenTtsSeed("新的声音。", "serena"));
-  });
 
   it("retains the original streaming and abort behavior, rather than buffering a whole paragraph", async () => {
     const controller = new AbortController();

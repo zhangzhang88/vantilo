@@ -1,120 +1,756 @@
-/* macOS-native styling pilot. Theme tokens follow Reader's selected appearance.
- * No gameplay, generation, storage or button semantics are changed here. */
+/* Practice Lab — Claude-inspired warm editorial design.
+ * Warm parchment surfaces, refined serif headlines paired with clean sans UI,
+ * signature terracotta clay accent (#C96442 / #D97757), generous breathing room,
+ * and automatic adaptation across all 5 Reader themes (light/sepia/green/blue/dark). */
 .practice-workshop {
-  --lab-surface:var(--theme-surface);
-  --lab-bg:var(--theme-bg);
-  --lab-soft:var(--theme-soft);
-  --lab-ink:var(--theme-ink);
-  --lab-muted:var(--theme-muted);
-  --lab-line:var(--theme-line-soft);
-  --lab-accent:var(--theme-accent);
-  color:var(--lab-ink);
-  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;
+  --claude-serif: "Iowan Old Style", "New York", "Palatino Linotype", Georgia, "Songti SC", "STSong", serif;
+  --claude-sans: var(--vantilo-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif);
+  --claude-clay: #c96442;
+  --claude-clay-hover: #b65535;
+  --claude-clay-soft: rgba(201, 100, 66, 0.1);
+  --claude-clay-ring: rgba(201, 100, 66, 0.22);
+
+  --lab-canvas: color-mix(in srgb, #faf9f5 68%, var(--theme-bg, #faf9f5));
+  --lab-surface: color-mix(in srgb, #ffffff 80%, var(--theme-surface, #ffffff));
+  --lab-paper: color-mix(in srgb, #f5f4ef 74%, var(--theme-bg, #f5f4ef));
+  --lab-raised: color-mix(in srgb, #ffffff 92%, var(--theme-raised, #ffffff));
+  --lab-soft: color-mix(in srgb, #eceae2 65%, var(--theme-soft, #eceae2));
+  --lab-ink: var(--theme-ink, #141413);
+  --lab-muted: var(--theme-muted, #6b6860);
+  --lab-line: color-mix(in srgb, #3d3929 11%, transparent);
+  --lab-line-strong: color-mix(in srgb, #3d3929 18%, transparent);
+  --lab-accent: var(--claude-clay);
+  --lab-danger: #c0483e;
+  --lab-shadow: 0 2px 10px rgba(20, 20, 19, 0.035), 0 0.5px 1px rgba(20, 20, 19, 0.04);
+
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 36px 36px 72px;
+  color: var(--lab-ink);
+  font-family: var(--claude-sans);
 }
-.practice-workshop > header { margin-bottom:24px; }
-.practice-workshop h1 { letter-spacing:-.025em; font-size:27px; font-weight:700; }
-.practice-workshop h2 { font-size:17px; font-weight:650; letter-spacing:-.012em; }
-.practice-workshop-mode-cards { gap:11px; margin-bottom:20px; }
+
+/* Warm Obsidian Dark Mode (Claude Desktop Dark) */
+.app-shell[data-theme="dark"] .practice-workshop,
+.app-shell[data-theme="night"] .practice-workshop {
+  --claude-clay: #d97757;
+  --claude-clay-hover: #e28668;
+  --claude-clay-soft: rgba(217, 119, 87, 0.14);
+  --claude-clay-ring: rgba(217, 119, 87, 0.28);
+
+  --lab-canvas: color-mix(in srgb, #262624 72%, var(--theme-bg, #262624));
+  --lab-surface: color-mix(in srgb, #2e2e2b 78%, var(--theme-surface, #2e2e2b));
+  --lab-paper: color-mix(in srgb, #242422 76%, var(--theme-bg, #242422));
+  --lab-raised: color-mix(in srgb, #353531 82%, var(--theme-raised, #353531));
+  --lab-soft: rgba(236, 235, 228, 0.07);
+  --lab-line: rgba(236, 235, 228, 0.1);
+  --lab-line-strong: rgba(236, 235, 228, 0.17);
+  --lab-danger: #e2786f;
+  --lab-shadow: 0 2px 14px rgba(0, 0, 0, 0.24);
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.practice-lab-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+.practice-lab-header-main {
+  display: grid;
+  gap: 6px;
+}
+.practice-lab-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.practice-lab-claude-mark {
+  display: inline-grid;
+  place-items: center;
+  color: var(--claude-clay);
+  flex: none;
+}
+.practice-workshop h1 {
+  margin: 0;
+  font-family: var(--claude-serif);
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--lab-ink);
+}
+.practice-lab-header-main p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--lab-muted);
+  line-height: 1.5;
+}
+.practice-lab-header-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.practice-lab-status-pill,
+.practice-lab-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--lab-line);
+  background: var(--lab-surface);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lab-muted);
+}
+.practice-lab-status-pill.is-ready {
+  color: var(--lab-ink);
+}
+.practice-lab-status-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: var(--claude-clay);
+  flex: none;
+}
+.practice-lab-status-pill.is-warn .practice-lab-status-dot {
+  background: #b9893d;
+}
+
+/* ── Mode Selector ───────────────────────────────────────── */
+.practice-workshop-mode-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--lab-muted);
+}
+.practice-workshop-mode-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--lab-muted);
+  opacity: 0.85;
+}
+.practice-workshop-mode-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 26px;
+}
 .practice-workshop-mode-card {
-  background:var(--lab-surface);
-  border:1px solid var(--lab-line);
-  border-radius:11px;
-  padding:15px 17px;
-  box-shadow:none;
+  position: relative;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--lab-line);
+  border-radius: 18px;
+  background: var(--lab-surface);
+  color: var(--lab-ink);
+  box-shadow: var(--lab-shadow);
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 .practice-workshop-mode-card:hover:not(:disabled) {
-  background:color-mix(in srgb,var(--lab-accent) 4%,var(--lab-surface));
-  border-color:var(--theme-line);
+  border-color: var(--lab-line-strong);
+  transform: translateY(-1px);
 }
 .practice-workshop-mode-card.is-selected {
-  border-color:var(--lab-accent);
-  background:color-mix(in srgb,var(--lab-accent) 7%,var(--lab-surface));
-  box-shadow:inset 0 0 0 .5px var(--lab-accent);
+  border-color: var(--claude-clay);
+  background: color-mix(in srgb, var(--claude-clay) 4.5%, var(--lab-surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--claude-clay) 55%, transparent), var(--lab-shadow);
 }
-.practice-workshop-mode-top { font-size:15px; }
+.practice-workshop-mode-top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.practice-workshop-mode-top strong {
+  font-family: var(--claude-serif);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 .practice-workshop-mode-icon {
-  width:27px;
-  height:27px;
-  border-radius:7px;
-  background:var(--lab-soft);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--lab-paper);
+  border: 1px solid var(--lab-line);
+  color: var(--lab-muted);
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
-.practice-workshop-mode-example { font-size:13px; font-weight:550; border-color:var(--lab-line); }
-.practice-workshop-mode-caption,.practice-workshop-mode-description { color:var(--lab-muted); opacity:1; }
-.practice-workshop-grid { gap:16px; }
+.practice-workshop-mode-card.is-selected .practice-workshop-mode-icon {
+  background: var(--claude-clay-soft);
+  border-color: color-mix(in srgb, var(--claude-clay) 25%, transparent);
+  color: var(--claude-clay);
+}
+.practice-workshop-mode-count {
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--lab-soft);
+  color: var(--lab-muted);
+}
+.practice-workshop-mode-check {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #fff;
+  background: transparent;
+  border: 1px solid var(--lab-line-strong);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.practice-workshop-mode-card.is-selected .practice-workshop-mode-check {
+  background: var(--claude-clay);
+  border-color: var(--claude-clay);
+}
+.practice-workshop-mode-description {
+  font-size: 13px;
+  color: var(--lab-muted);
+  opacity: 1;
+}
+.practice-workshop-mode-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--lab-paper);
+  border: 1px solid var(--lab-line);
+}
+.practice-workshop-mode-example {
+  padding: 0;
+  border: 0;
+  font-family: var(--claude-serif);
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--lab-ink);
+}
+.practice-lab-blank-chip {
+  display: inline-block;
+  padding: 0 7px;
+  margin: 0 2px;
+  border-radius: 6px;
+  background: var(--claude-clay-soft);
+  color: var(--claude-clay);
+  font-family: var(--claude-sans);
+  font-size: 13px;
+  font-weight: 600;
+}
+.practice-workshop-mode-caption {
+  font-size: 12px;
+  color: var(--lab-muted);
+  opacity: 1;
+}
+
+/* ── Main Two-Column Editorial Workspace ─────────────────── */
+.practice-workshop-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.18fr);
+  gap: 20px;
+  align-items: start;
+}
 .practice-workshop-pane {
-  background:var(--lab-surface);
-  border:1px solid var(--lab-line);
-  border-radius:12px;
-  box-shadow:none;
-  padding:20px;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 24px 26px;
+  border: 1px solid var(--lab-line);
+  border-radius: 20px;
+  background: var(--lab-surface);
+  box-shadow: var(--lab-shadow);
+}
+.practice-lab-pane-head,
+.practice-lab-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.practice-workshop h2 {
+  margin: 0;
+  font-family: var(--claude-serif);
+  font-size: 19px;
+  font-weight: 550;
+  letter-spacing: -0.015em;
+  color: var(--lab-ink);
+}
+.practice-lab-counter {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--lab-muted);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--lab-paper);
+  border: 1px solid var(--lab-line);
+}
+
+/* ── Claude-style Composer Inputs ────────────────────────── */
+.practice-workshop label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--lab-muted);
+}
+.practice-lab-label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--lab-muted);
 }
 .practice-workshop input,
 .practice-workshop textarea,
 .practice-workshop select {
-  min-height:36px;
-  background:var(--theme-raised);
-  border:1px solid var(--theme-line);
-  border-radius:8px;
-  color:var(--lab-ink);
-  font-size:13px;
-  line-height:1.5;
-  box-shadow:none;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 9px 13px;
+  background: var(--lab-raised);
+  border: 1px solid var(--lab-line-strong);
+  border-radius: 12px;
+  color: var(--lab-ink);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  box-shadow: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
-.practice-workshop :is(input,textarea,select,button):focus-visible {
-  outline:2px solid var(--lab-accent);
-  outline-offset:2px;
+.practice-lab-title-input {
+  font-family: var(--claude-serif) !important;
+  font-size: 16.5px !important;
+  font-weight: 550;
+  min-height: 42px !important;
 }
+.practice-lab-article-input {
+  font-family: var(--claude-serif) !important;
+  font-size: 15.5px !important;
+  line-height: 1.75 !important;
+  padding: 14px 16px !important;
+  min-height: 205px;
+  background: var(--lab-paper) !important;
+}
+.practice-lab-article-input:focus {
+  background: var(--lab-raised) !important;
+}
+.practice-workshop :is(input, textarea, select):focus {
+  outline: none;
+  border-color: var(--claude-clay);
+  box-shadow: 0 0 0 3px var(--claude-clay-ring);
+}
+.practice-workshop :is(input, textarea, select, button):focus-visible {
+  outline: 2px solid var(--claude-clay);
+  outline-offset: 2px;
+}
+
+/* ── Advanced Settings Disclosure ────────────────────────── */
 .practice-workshop-advanced {
-  border:1px solid var(--lab-line);
-  border-radius:9px;
-  background:var(--lab-bg);
+  border: 1px solid var(--lab-line);
+  border-radius: 14px;
+  background: var(--lab-paper);
+  padding: 0 15px;
 }
-.practice-workshop-advanced > summary { font-size:13px; }
-.practice-workshop-results { gap:0; }
-.practice-workshop-results li {
-  border:0;
-  border-top:1px solid var(--lab-line);
-  border-radius:0;
-  padding:15px 2px;
-  background:transparent;
+.practice-workshop-advanced > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--lab-ink);
+  list-style: none;
 }
-.practice-workshop-results li:first-child { border-top:0; }
-.practice-workshop-saved { gap:0; }
-.practice-workshop-saved li > .practice-workshop-saved-detail { display:grid; }
-.practice-workshop-saved li { border-color:var(--lab-line); padding:12px 2px; }
-.practice-workshop-saved-detail strong { font-size:13px; font-weight:600; }
-.practice-workshop-saved-detail small { color:var(--lab-muted); opacity:1; font-size:11px; }
+.practice-workshop-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.practice-lab-advanced-summary {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 450;
+  color: var(--lab-muted);
+  opacity: 1;
+}
+.practice-lab-advanced-body {
+  display: grid;
+  gap: 13px;
+  padding: 12px 0 16px;
+  border-top: 1px solid var(--lab-line);
+}
+.practice-lab-inline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.practice-lab-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.practice-lab-nested-details {
+  border: 1px solid var(--lab-line);
+  border-radius: 11px;
+  padding: 9px 12px;
+  background: var(--lab-surface);
+}
+.practice-lab-nested-details > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.practice-workshop-prompt {
+  min-height: 150px;
+  font-size: 12.5px !important;
+  line-height: 1.6 !important;
+}
+
+/* ── Signature Terracotta Buttons & Warm Controls ────────── */
+.practice-workshop .primary-button {
+  background: var(--claude-clay);
+  color: #fff;
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px rgba(20, 20, 19, 0.12);
+  transition: background-color 150ms ease, transform 150ms ease, opacity 150ms ease;
+}
+.practice-workshop .primary-button:hover:not(:disabled) {
+  background: var(--claude-clay-hover);
+}
+.practice-workshop .primary-button:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.practice-lab-generate-btn {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+.practice-lab-start-btn {
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.practice-lab-launch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.practice-workshop-saved-status {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--lab-paper);
+  color: var(--lab-muted);
+  opacity: 1;
+}
+.practice-workshop-saved-status.is-saved {
+  color: var(--claude-clay);
+  background: var(--claude-clay-soft);
+}
 .practice-workshop-saved-controls button,
 .practice-workshop-delete-confirm button,
 .practice-workshop-item-head button,
-.practice-workshop-actions button:not(.primary-button) {
-  min-height:29px;
-  padding:4px 9px;
-  border:1px solid var(--theme-line);
-  border-radius:7px;
-  background:var(--lab-bg);
-  color:var(--lab-ink);
-  font-size:12px;
-  font-weight:500;
+.practice-workshop-actions button:not(.primary-button),
+.practice-lab-ghost-btn {
+  min-height: 31px;
+  padding: 4px 11px;
+  border: 1px solid var(--lab-line-strong);
+  border-radius: 9px;
+  background: var(--lab-raised);
+  color: var(--lab-ink);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 .practice-workshop-saved-controls button:hover:not(:disabled),
 .practice-workshop-item-head button:hover:not(:disabled),
-.practice-workshop-actions button:not(.primary-button):hover:not(:disabled) {
-  background:var(--lab-soft);
+.practice-workshop-actions button:not(.primary-button):hover:not(:disabled),
+.practice-lab-ghost-btn:hover:not(:disabled) {
+  background: var(--lab-soft);
 }
-.practice-workshop-delete-confirm button:first-of-type { color:var(--theme-danger); }
-.practice-workshop-delete-confirm {
-  border-color:var(--theme-line);
-  background:var(--lab-bg);
-  border-radius:9px;
+.practice-workshop-saved-controls button.is-accent {
+  border-color: color-mix(in srgb, var(--claude-clay) 32%, transparent);
+  background: var(--claude-clay-soft);
+  color: var(--claude-clay);
+  font-weight: 550;
+}
+.practice-workshop-saved-controls button.is-accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--claude-clay) 18%, transparent);
+}
+.practice-workshop-saved-controls button.is-danger:hover:not(:disabled),
+.practice-lab-item-controls button.is-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--lab-danger) 42%, transparent);
+  color: var(--lab-danger);
+  background: color-mix(in srgb, var(--lab-danger) 9%, transparent);
+}
+
+/* ── Notes, Banners & Empty States ───────────────────────── */
+.practice-workshop-note {
+  color: var(--lab-muted);
+  opacity: 1;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.practice-lab-banner {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.practice-workshop-error {
+  color: var(--lab-danger);
+  background: color-mix(in srgb, var(--lab-danger) 8%, var(--lab-surface));
+  border: 1px solid color-mix(in srgb, var(--lab-danger) 24%, transparent);
+}
+.practice-lab-notice {
+  color: var(--lab-ink);
+  background: var(--claude-clay-soft);
+  border: 1px solid color-mix(in srgb, var(--claude-clay) 24%, transparent);
 }
 .practice-workshop-source-warning {
-  border-color:var(--theme-line);
-  background:var(--lab-bg);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #b9893d 35%, var(--lab-line));
+  background: color-mix(in srgb, #b9893d 9%, var(--lab-surface));
+  font-size: 12.5px;
+  justify-content: space-between;
 }
-.practice-workshop-note { color:var(--lab-muted); opacity:1; }
-.practice-workshop-error { color:var(--theme-danger); }
-@container (max-width:580px) {
-  .practice-workshop-pane { padding:15px; }
-  .practice-workshop-saved-controls { justify-content:flex-start; }
+.practice-workshop-source-warning button {
+  min-height: 30px;
+  padding: 4px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--lab-line-strong);
+  background: var(--lab-surface);
+  color: var(--lab-ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+.practice-lab-result-empty {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 34px 22px;
+  border-radius: 16px;
+  border: 1px dashed var(--lab-line-strong);
+  background: var(--lab-paper);
+}
+.practice-lab-result-empty p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--lab-muted);
+}
+.practice-lab-flow-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lab-muted);
+}
+.practice-lab-flow-steps span:nth-child(odd) {
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--lab-surface);
+  border: 1px solid var(--lab-line);
+  color: var(--lab-ink);
+}
+.practice-workshop-empty {
+  min-height: 260px;
+  opacity: 1;
+}
+.practice-lab-empty-icon {
+  font-size: 24px;
+  color: var(--claude-clay);
+}
+.practice-workshop-empty strong {
+  font-family: var(--claude-serif);
+  font-size: 18px;
+  font-weight: 550;
+}
+.practice-workshop-empty p {
+  color: var(--lab-muted);
+  font-size: 13.5px;
+}
+
+/* ── Study Index Cards (Results Editor) ──────────────────── */
+.practice-workshop-results {
+  max-height: 50vh;
+  overflow: auto;
+  display: grid;
+  gap: 11px;
+  padding-right: 4px;
+}
+.practice-workshop-results li.practice-lab-item-card {
+  border: 1px solid var(--lab-line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--lab-paper);
+  display: grid;
+  gap: 11px;
+}
+.practice-lab-item-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--lab-surface);
+  border: 1px solid var(--lab-line);
+  color: var(--lab-muted);
+  font-size: 11.5px;
+  font-weight: 550;
+}
+.practice-lab-item-controls {
+  display: flex;
+  gap: 5px;
+}
+.practice-lab-quote {
+  margin: 0;
+  padding: 10px 13px;
+  border-left: 3px solid var(--claude-clay);
+  border-radius: 0 10px 10px 0;
+  background: var(--lab-surface);
+  color: var(--lab-ink);
+  font-family: var(--claude-serif);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.practice-lab-item-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.practice-lab-assembly-grid .is-full {
+  grid-column: 1 / -1;
+}
+.practice-lab-item-grid label {
+  font-size: 11.5px;
+  gap: 4px;
+}
+.practice-lab-item-grid input {
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+/* ── Saved Library (Claude Recents Style) ────────────────── */
+.practice-lab-library-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--lab-line);
+}
+.practice-lab-library-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.practice-lab-library-empty {
+  margin: 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--lab-paper);
+  font-size: 12.5px;
+  color: var(--lab-muted);
+}
+.practice-workshop-saved {
+  display: grid;
+  gap: 8px;
+}
+.practice-workshop-saved li {
+  border: 1px solid var(--lab-line);
+  border-radius: 13px;
+  padding: 12px 14px;
+  background: var(--lab-paper);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.practice-workshop-saved li:hover {
+  border-color: var(--lab-line-strong);
+}
+.practice-workshop-saved li.is-active-lesson {
+  border-color: color-mix(in srgb, var(--claude-clay) 48%, var(--lab-line));
+  background: color-mix(in srgb, var(--claude-clay) 5.5%, var(--lab-surface));
+}
+.practice-workshop-saved-detail {
+  display: grid;
+  gap: 3px;
+}
+.practice-workshop-saved-detail strong {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--lab-ink);
+}
+.practice-workshop-saved-detail small {
+  color: var(--lab-muted);
+  opacity: 1;
+  font-size: 11.5px;
+}
+.practice-workshop-delete-confirm {
+  margin-top: 6px;
+  border-color: color-mix(in srgb, var(--lab-danger) 35%, var(--lab-line));
+  background: color-mix(in srgb, var(--lab-danger) 7%, var(--lab-surface));
+  border-radius: 10px;
+}
+.practice-workshop-delete-confirm button:first-of-type {
+  color: var(--lab-danger);
+  border-color: color-mix(in srgb, var(--lab-danger) 42%, transparent);
+}
+
+/* ── Responsive Breakpoints ──────────────────────────────── */
+@container (max-width: 980px) {
+  .practice-workshop-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@container (max-width: 620px) {
+  .practice-workshop {
+    padding: 20px 18px 48px;
+  }
+  .practice-lab-item-grid,
+  .practice-lab-two-col,
+  .practice-lab-inline-row {
+    grid-template-columns: 1fr;
+  }
+  .practice-workshop-pane {
+    padding: 18px;
+  }
+  .practice-workshop-saved-controls {
+    justify-content: flex-start;
+  }
 }

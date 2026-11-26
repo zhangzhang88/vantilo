@@ -83,19 +83,22 @@ it('accepts audiobook state only from the connected Reader and scopes controls t
     const { token } = post.mock.calls.find(([data]) => data.type === 'vantilo:audiobook-connect')![0];
     const snapshot = { sessionId: 7, mode: 'original', sourceId: 'book:sample', title: '听书测试', chapterId: 'one',
       chapters: [{ id: 'one', title: '第一章' }], phase: 'paused', paragraphIndex: 1,
-      paragraphCount: 5, paragraphNumber: 2, error: '', rate: 1, voice: 'serena', sleepMinutes: 0 };
-    function receive(origin: string, activeToken: string, mode = snapshot.mode) {
+      paragraphCount: 5, paragraphNumber: 2, progressPercent: 18, progressScope: 'book' as const,
+      error: '', rate: 1, voice: 'serena', sleepMinutes: 0 };
+    function receive(origin: string, activeToken: string, mode = snapshot.mode, extra: Record<string, unknown> = {}) {
       act(() => window.dispatchEvent(new MessageEvent('message', {
-        source: frame.contentWindow, origin, data: { type: 'vantilo:audiobook-state', token: activeToken, snapshot: { ...snapshot, mode } },
+        source: frame.contentWindow, origin, data: { type: 'vantilo:audiobook-state', token: activeToken, snapshot: { ...snapshot, mode, ...extra } },
       })));
     }
 
     receive('https://evil.test', token);
     receive('http://127.0.0.1:5175', 'stale-frame');
+    receive('http://127.0.0.1:5175', token, 'original', { progressPercent: 101 });
     expect(screen.queryByRole('region', { name: '听书播放器' })).toBeNull();
     receive('http://127.0.0.1:5175', token);
+    expect(screen.getByText('全书 18%')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '回到译文' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '回到原文' }));
+    fireEvent.click(screen.getByRole('button', { name: '回到当前位置' }));
     expect(onShowReader).toHaveBeenCalledOnce();
     expect(post).toHaveBeenCalledWith({
       type: 'vantilo:audiobook-control', token, sessionId: 7, action: { type: 'return-original' },
@@ -106,6 +109,37 @@ it('accepts audiobook state only from the connected Reader and scopes controls t
     expect(onShowReader).toHaveBeenCalledTimes(3);
     expect(post).toHaveBeenCalledWith({
       type: 'vantilo:audiobook-control', token, sessionId: 7, action: { type: 'return' },
+    }, 'http://127.0.0.1:5175');
+
+    // Floating background book translation pill persists across host overlay pages (e.g. growth page).
+    act(() => window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      origin: 'http://127.0.0.1:5175',
+      data: {
+        type: 'vantilo:bg-translation-state',
+        state: { id: 'book:messy', bookId: 'book:messy', bookTitle: 'Messy Jobs', statusText: '后台翻译全书中 · 4/20 章 · 167/972 项' },
+      },
+    })));
+    // Hidden while iframe is visible (iframe renders its own floating pill).
+    expect(screen.queryByRole('complementary', { name: '后台全书翻译' })).toBeNull();
+    // Shown when switching to host overlay page (e.g. Reading Growth).
+    act(() => window.dispatchEvent(new MessageEvent('message', {
+      source: frame.contentWindow,
+      origin: 'http://127.0.0.1:5175',
+      data: { type: 'vantilo:growth-open-request', token },
+    })));
+    expect(screen.getByText('后台翻译全书中 · 4/20 章 · 167/972 项')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '暂停全书翻译' }));
+    expect(post).toHaveBeenCalledWith({
+      type: 'vantilo:bg-translation-action',
+      action: 'pause',
+      jobId: 'book:messy',
+    }, 'http://127.0.0.1:5175');
+    fireEvent.click(screen.getByRole('button', { name: '查看《Messy Jobs》' }));
+    expect(post).toHaveBeenCalledWith({
+      type: 'vantilo:bg-translation-action',
+      action: 'open',
+      bookId: 'book:messy',
     }, 'http://127.0.0.1:5175');
   } finally {
     view.unmount();

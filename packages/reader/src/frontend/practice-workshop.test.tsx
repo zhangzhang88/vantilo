@@ -24,6 +24,7 @@ beforeEach(() => {
   vi.stubGlobal("localStorage",isolatedStorage);
   isolatedStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async (url:string, init?:RequestInit) => {
+    if (url === "/api/vantilo-custom-api/settings") return {ok:true,json:async()=>({activeProfileId:"v-1",profiles:[{id:"v-1",name:"Vantilo API",model:"gpt-4o",hasApiKey:true}]})};
     if (url === "/api/ai-settings") return {ok:true,json:async()=>({version:1,activeProfileId:null,profiles:[]})};
     if (url === "/api/practice-workshop/prompt") return {ok:true,json:async()=>({prompt:"请生成有序练习 IPA：{{ARTICLE_JSON}}。".repeat(12)})};
     if (url === "/api/practice-workshop/generate") {
@@ -66,6 +67,7 @@ it("generates, previews, edits, saves, reopens and plays IPA exercises without t
 it("keeps the previous result when a generation fails and blocks malformed IPA", async () => {
   let generateCount=0;
   vi.stubGlobal("fetch",vi.fn(async (url:string) => {
+    if(url==="/api/vantilo-custom-api/settings") return {ok:true,json:async()=>({activeProfileId:"v-1",profiles:[{id:"v-1",name:"Vantilo API",model:"gpt-4o",hasApiKey:true}]})};
     if(url==="/api/ai-settings") return {ok:true,json:async()=>({version:1,activeProfileId:null,profiles:[]})};
     if(url==="/api/practice-workshop/prompt") return {ok:true,json:async()=>({prompt:"Provide ordered examples. ".repeat(6)+"{{ARTICLE_JSON}}"})};
     if(url==="/api/practice-workshop/generate") {
@@ -185,6 +187,7 @@ it("uses a manually chosen saved profile without activating the global profile",
   const calls:string[]=[];
   vi.stubGlobal("fetch",vi.fn(async (url:string,init?:RequestInit) => {
     calls.push(url);
+    if(url==="/api/vantilo-custom-api/settings") return {ok:true,json:async()=>({activeProfileId:"v-1",profiles:[{id:"v-1",name:"Vantilo API",model:"gpt-4o",hasApiKey:true}]})};
     if(url==="/api/ai-settings") return {ok:true,json:async()=>({version:1,activeProfileId:"p-old",profiles:[{id:"p-old",name:"Old model",model:"old"},{id:"p-alt",name:"Alternate",model:"alt"}]})};
     if(url==="/api/practice-workshop/prompt") return {ok:true,json:async()=>({prompt:"Create short lessons. ".repeat(7)+"{{ARTICLE_JSON}}"})};
     if(url==="/api/practice-workshop/generate") {
@@ -212,6 +215,7 @@ it("uses a manually chosen saved profile without activating the global profile",
 it("edits, saves and restores the default prompt without storing credentials", async () => {
   const original="请生成按教学顺序排列的英文词组、完整句及对应 IPA。".repeat(8)+"{{ARTICLE_JSON}}";
   vi.stubGlobal("fetch",vi.fn(async (url:string) => {
+    if(url==="/api/vantilo-custom-api/settings") return {ok:true,json:async()=>({activeProfileId:"v-1",profiles:[{id:"v-1",name:"Vantilo API",model:"gpt-4o",hasApiKey:true}]})};
     if(url==="/api/ai-settings") return {ok:true,json:async()=>({version:1,activeProfileId:null,profiles:[]})};
     if(url==="/api/practice-workshop/prompt") return {ok:true,json:async()=>({prompt:original})};
     throw new Error("Unexpected API "+url);

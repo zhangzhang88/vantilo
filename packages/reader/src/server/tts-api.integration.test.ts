@@ -4,34 +4,14 @@ import path from "node:path";
 import { ReadableStream } from "node:stream/web";
 import { describe, expect, it, vi } from "vitest";
 import { HttpSpeechTts } from "./services/http-speech-tts.js";
-import { MY_VOICE_BASE_URL, MY_VOICE_MODEL, TtsApiSettingsService, validateTtsApiBaseUrl } from "./services/tts-api-settings-service.js";
+import { TtsApiSettingsService, validateTtsApiBaseUrl } from "./services/tts-api-settings-service.js";
 import { buildServer } from "./app.js";
 
 const config = { baseUrl: "http://192.168.3.54:18439/v1", model: "qwen3-tts-0.6b", apiKey: "test-only-key" };
 
 describe("Independent Qwen TTS API", () => {
-  it("keeps the private bf16 profile separate from the existing CustomVoice settings and never exposes either API key", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "reader-dual-tts-"));
-    try {
-      const original = await TtsApiSettingsService.create(root);
-      const clone = await TtsApiSettingsService.create(root, "my_voice");
-      expect(clone.publicSettings()).toMatchObject({ mode: "worker", model: MY_VOICE_MODEL, hasApiKey: false });
-      await original.save(config);
-      await clone.save({ baseUrl: MY_VOICE_BASE_URL, model: MY_VOICE_MODEL, apiKey: "private-clone-test-key" });
-      expect(clone.publicSettings()).toMatchObject({ mode: "api", model: MY_VOICE_MODEL, baseUrl: MY_VOICE_BASE_URL, hasApiKey: true });
-      expect(original.publicSettings()).toMatchObject({ mode: "api", model: config.model, baseUrl: config.baseUrl });
-      expect(JSON.stringify(clone.publicSettings())).not.toContain("private-clone-test-key");
-      expect((await stat(path.join(root, "tts", "tts-api-my-voice.local.json"))).mode & 0o077).toBe(0);
-      const restored = await TtsApiSettingsService.create(root, "my_voice");
-      expect(restored.resolveDraft({ baseUrl: MY_VOICE_BASE_URL, model: MY_VOICE_MODEL, apiKey: "" }).apiKey).toBe("private-clone-test-key");
-      expect((await readFile(path.join(root, "tts", "tts-api.local.json"), "utf8"))).toContain(config.apiKey);
-      expect((await readFile(path.join(root, "tts", "tts-api-my-voice.local.json"), "utf8"))).not.toContain(config.apiKey);
-      expect(() => restored.resolveDraft({ ...config, apiKey: "any" })).toThrow("模型");
-    } finally { await rm(root, { recursive: true, force: true }); }
-  });
-
-  it("routes my_voice only to bf16 while the existing Chinese and English voice routes stay unchanged", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "reader-dual-tts-routing-"));
+  it("routes Chinese and English Qwen voices through the configured API and rejects retired voices", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "reader-tts-routing-"));
     const network: Array<{ url: string; body: Record<string, unknown>; auth: string }> = [];
     const fakeFetch = vi.fn(async (url: string | URL | Request, opts?: RequestInit) => {
       if (String(url).endsWith("/health")) return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
@@ -43,19 +23,11 @@ describe("Independent Qwen TTS API", () => {
     const app = await buildServer({ projectRoot: root, ttsApiSettingsRoot: root, serveFrontend: false, aiProviderEnv: {} });
     try {
       expect((await app.inject({ method: "POST", url: "/api/prep/tts",
-        payload: { text: "你好", language: "zh-CN", voice: "my_voice" } })).statusCode).toBe(409);
-      expect((await app.inject({ method: "POST", url: "/api/prep/tts",
-        payload: { text: "Hello", language: "en-US", voice: "my_voice" } })).statusCode).toBe(400);
+        payload: { text: "你好", language: "zh-CN", voice: "my_voice" } })).statusCode).toBe(400);
+      expect((await app.inject({ method: "GET", url: "/api/tts-settings/my-voice" })).statusCode).toBe(404);
       const original = await app.inject({ method: "PUT", url: "/api/tts-settings", payload: config });
       expect(original.statusCode).toBe(200);
-      const clone = await app.inject({ method: "PUT", url: "/api/tts-settings/my-voice",
-        payload: { baseUrl: MY_VOICE_BASE_URL, model: MY_VOICE_MODEL, apiKey: "separate-secret-test-only" } });
-      expect(clone.statusCode).toBe(200);
-      expect(clone.body).not.toContain("separate-secret-test-only");
-      expect((await app.inject({ method: "POST", url: "/api/tts-settings/my-voice/test",
-        payload: { baseUrl: MY_VOICE_BASE_URL, model: MY_VOICE_MODEL, apiKey: "" } })).statusCode).toBe(200);
       for (const [voice, language, text, seed] of [
-        ["my_voice", "zh-CN", "我的中文朗读。", 1234],
         ["serena", "zh-CN", "原来的声音。", 2345],
         ["aiden", "en-US", "English voice.", 3456],
       ] as const) {
@@ -63,15 +35,12 @@ describe("Independent Qwen TTS API", () => {
         expect(response.statusCode).toBe(200);
         expect(response.body).toContain('"type":"end"');
       }
-      expect(network).toHaveLength(3);
-      expect(network[0]).toMatchObject({ url: MY_VOICE_BASE_URL + "/audio/speech", auth: "Bearer separate-secret-test-only",
-        body: { voice: "my_voice", model: MY_VOICE_MODEL, seed: 1234, language: "zh" } });
-      expect(network[1]).toMatchObject({ url: config.baseUrl + "/audio/speech", auth: "Bearer " + config.apiKey,
+      expect(network).toHaveLength(2);
+      expect(network[0]).toMatchObject({ url: config.baseUrl + "/audio/speech", auth: "Bearer " + config.apiKey,
         body: { voice: "serena", model: config.model, seed: 2345 } });
-      expect(network[2]).toMatchObject({ url: config.baseUrl + "/audio/speech",
+      expect(network[1]).toMatchObject({ url: config.baseUrl + "/audio/speech",
         body: { voice: "aiden", language: "en", seed: 3456 } });
       expect((await app.inject({ method: "GET", url: "/api/tts-settings" })).json().baseUrl).toBe(config.baseUrl);
-      expect((await app.inject({ method: "GET", url: "/api/tts-settings/my-voice" })).json().baseUrl).toBe(MY_VOICE_BASE_URL);
     } finally {
       await app.close(); vi.unstubAllGlobals(); await rm(root, { recursive: true, force: true });
     }
@@ -97,6 +66,10 @@ describe("Independent Qwen TTS API", () => {
       const reopened = await TtsApiSettingsService.create(root);
       expect(reopened.resolveDraft({ ...config, apiKey: "" }).apiKey).toBe(config.apiKey);
       expect(() => reopened.resolveDraft({ ...config, baseUrl: "http://192.168.3.55:18439/v1", apiKey: "" })).toThrow("API Key");
+      expect(await reopened.clear()).toMatchObject({ mode: "worker", baseUrl: "", hasApiKey: false });
+      expect(reopened.activeProfile()).toBeNull();
+      const afterClear = await TtsApiSettingsService.create(root);
+      expect(afterClear.publicSettings()).toMatchObject({ mode: "worker", hasApiKey: false });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

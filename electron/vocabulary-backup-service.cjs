@@ -6,6 +6,7 @@ const FORMAT = 'vantilo-vocabulary-backup';
 const FORMAT_VERSION = 1;
 const MAX_SNIPPET = 320;
 const MAX_BACKUP_BYTES = 25 * 1024 * 1024;
+const ALLOWED_CONTEXT_PROVIDERS = new Set(['easycliproxy', 'custom-api', 'vantilo-agent', 'qwen-mlx', 'qwen-gguf']);
 const EXCLUSIONS = [
   '电子书、EPUB、杂志、文章全文及其图片、音频、视频等原始内容',
   '阅读进度、逐句位置、Reader 设置、普通词典缓存和临时 AI 缓存',
@@ -80,7 +81,7 @@ function validateContext(value) {
   if (!Number.isInteger(value.paragraphIndex) || value.paragraphIndex < 0 || !Number.isInteger(value.startOffset) || value.startOffset < 0) throw new Error('语境释义位置无效');
   if (!Array.isArray(value.examplesEn) || value.examplesEn.length > 20) throw new Error('语境例句无效');
   value.examplesEn.forEach(item => string(item, 1000, '语境例句'));
-  if (value.provider !== 'easycliproxy') throw new Error('语境服务标识无效');
+  if (!ALLOWED_CONTEXT_PROVIDERS.has(value.provider)) throw new Error('语境服务标识无效');
   if (value.meaningSource !== undefined && !['ai', 'user'].includes(value.meaningSource)) throw new Error('语境释义来源无效');
   if (value.editedAt !== undefined) string(value.editedAt, 100, '释义编辑时间');
   if (value.meaningVersion !== undefined && value.meaningVersion !== 2) throw new Error('语境释义版本无效');

@@ -5,41 +5,41 @@
 
 main[data-vantilo-theme="paper"] {
   color-scheme: light;
-  --vantilo-bg: #f5f5f7;
+  --vantilo-bg: #faf9f5;
   --vantilo-surface: #ffffff;
-  --vantilo-soft: #eef0f4;
-  --vantilo-ink: #1d1d1f;
-  --vantilo-muted: #6e6e73;
-  --vantilo-line: rgba(0, 0, 0, 0.1);
-  --vantilo-accent: #0071e3;
+  --vantilo-soft: #f0eee6;
+  --vantilo-ink: #141413;
+  --vantilo-muted: #78756c;
+  --vantilo-line: rgba(61, 57, 41, 0.11);
+  --vantilo-accent: #c96442;
 
-  --mac-shell-bg: #ececef;
-  --mac-chrome: rgba(247, 247, 249, 0.9);
-  --mac-sidebar: #f3f3f6;
-  --mac-content: #f8f8fa;
+  --mac-shell-bg: #efede5;
+  --mac-chrome: rgba(248, 246, 240, 0.92);
+  --mac-sidebar: #f3f1e9;
+  --mac-content: #faf9f5;
   --mac-surface: #ffffff;
   --mac-surface-raised: #ffffff;
-  --mac-surface-hover: rgba(0, 0, 0, 0.05);
-  --mac-line: rgba(0, 0, 0, 0.085);
-  --mac-line-strong: rgba(0, 0, 0, 0.14);
-  --mac-text: #1d1d1f;
-  --mac-secondary: #48484c;
-  --mac-muted: #76767c;
-  --mac-selected: rgba(0, 113, 227, 0.1);
-  --mac-accent: #0071e3;
-  --mac-accent-solid: #0071e3;
-  --mac-accent-soft: rgba(0, 113, 227, 0.11);
-  --mac-accent-border: rgba(0, 113, 227, 0.3);
-  --mac-focus: #0071e3;
-  --mac-warning-bg: rgba(217, 119, 6, 0.09);
-  --mac-warning-border: rgba(217, 119, 6, 0.28);
-  --mac-warning-text: #92400e;
-  --mac-danger-bg: rgba(217, 48, 37, 0.09);
-  --mac-danger-border: rgba(217, 48, 37, 0.28);
-  --mac-danger-text: #b91c1c;
-  --mac-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --mac-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.09);
-  --mac-shadow-lg: 0 22px 54px rgba(0, 0, 0, 0.16);
+  --mac-surface-hover: rgba(61, 57, 41, 0.055);
+  --mac-line: rgba(61, 57, 41, 0.1);
+  --mac-line-strong: rgba(61, 57, 41, 0.17);
+  --mac-text: #141413;
+  --mac-secondary: #4a4842;
+  --mac-muted: #78756c;
+  --mac-selected: rgba(201, 100, 66, 0.11);
+  --mac-accent: #c96442;
+  --mac-accent-solid: #c96442;
+  --mac-accent-soft: rgba(201, 100, 66, 0.11);
+  --mac-accent-border: rgba(201, 100, 66, 0.3);
+  --mac-focus: #c96442;
+  --mac-warning-bg: rgba(185, 137, 61, 0.1);
+  --mac-warning-border: rgba(185, 137, 61, 0.28);
+  --mac-warning-text: #855a18;
+  --mac-danger-bg: rgba(192, 72, 62, 0.09);
+  --mac-danger-border: rgba(192, 72, 62, 0.28);
+  --mac-danger-text: #a93b32;
+  --mac-shadow-sm: 0 1px 3px rgba(20, 20, 19, 0.05);
+  --mac-shadow-md: 0 8px 26px rgba(20, 20, 19, 0.08);
+  --mac-shadow-lg: 0 20px 50px rgba(20, 20, 19, 0.14);
 }
 
 main[data-vantilo-theme="sepia"] {
@@ -152,13 +152,13 @@ main[data-vantilo-theme="blue"] {
 
 main[data-vantilo-theme="night"] {
   color-scheme: dark;
-  --vantilo-bg: #111113;
-  --vantilo-surface: #19191d;
-  --vantilo-soft: #242429;
-  --vantilo-ink: #f5f5f7;
-  --vantilo-muted: #868690;
-  --vantilo-line: rgba(255, 255, 255, 0.09);
-  --vantilo-accent: #4c9aff;
+  --vantilo-bg: #262624;
+  --vantilo-surface: #2e2e2b;
+  --vantilo-soft: #383834;
+  --vantilo-ink: #ecebe4;
+  --vantilo-muted: #8f8d82;
+  --vantilo-line: rgba(236, 235, 228, 0.1);
+  --vantilo-accent: #d97757;
 }
 
 /* Light-theme refinements for surfaces that previously assumed dark backgrounds */
@@ -231,13 +231,6 @@ main[data-vantilo-theme="sepia"] .conversation-markdown code,
 main[data-vantilo-theme="green"] .conversation-markdown code {
   background: var(--vantilo-soft);
   color: var(--mac-accent);
-}
-
-main[data-vantilo-theme="paper"] :is(.codex-picker-menu, .permission-mode-menu),
-main[data-vantilo-theme="sepia"] :is(.codex-picker-menu, .permission-mode-menu),
-main[data-vantilo-theme="green"] :is(.codex-picker-menu, .permission-mode-menu) {
-  color-scheme: light;
-  background: color-mix(in oklab, var(--mac-surface) 95%, transparent);
 }
 
 main[data-vantilo-theme="paper"] .discovery-card:hover,

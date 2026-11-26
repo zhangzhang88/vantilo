@@ -24,14 +24,12 @@ describe('Reader main-process IPC', () => {
     const app = { getPath: () => process.cwd(), getVersion: () => '0.1.1', setName() {}, setPath() {},
       commandLine: { hasSwitch: () => false },
       isPackaged: false, requestSingleInstanceLock: () => true, on() {}, quit() {}, whenReady: () => ({ then: (fn: Function) => fn() }) };
-    const runtime = { on() {}, start: () => Promise.resolve() };
     runInNewContext(readFileSync('electron/main.cjs', 'utf8'), {
       require: (name: string) => name === 'electron' ? {
         app, BrowserWindow, Menu: { buildFromTemplate: vi.fn(), setApplicationMenu() {} },
         session: { defaultSession: { on: vi.fn() } }, powerMonitor: { on: vi.fn() },
         ipcMain: { handle: (key: string, fn: Function) => handlers.set(key, fn) },
       } : name === './reader-data-lock.cjs' ? { acquireReaderDataLockSync: vi.fn(() => ({ assertHeld: vi.fn(), close: vi.fn() })) }
-        : name === './runtime-supervisor.cjs' ? { RuntimeSupervisor: function () { return runtime; } }
         : name === './portable-reader-supervisor.cjs' ? {
           PortableReaderSupervisor: function () { return { start, checkHealth }; },
         } : name.startsWith('./') ? require('../electron/' + name.slice(2)) : require(name),

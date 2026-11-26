@@ -56,8 +56,14 @@ export interface PcmAudioSink {
 }
 
 /** Schedules short PCM buffers on one AudioContext, with no MP3 encoding or whole-utterance wait. */
+const GAIN_RAMP_SECONDS = 0.012;
+const PAUSE_FADE_DELAY_MS = 15;
+const AUDIO_STALL_RECOVERY_MS = 2500;
+const UNDERRUN_FADE_SAMPLES = 96; // 4 ms at 24 kHz
+
 export class WebAudioPcmSink implements PcmAudioSink {
   private context = new AudioContext();
+  private outputGain?: GainNode;
   private nextStart = this.context.currentTime + 0.04;
   private sources = new Set<AudioBufferSourceNode>();
   private timeline: AudioTimeline[] = [];
@@ -66,6 +72,11 @@ export class WebAudioPcmSink implements PcmAudioSink {
   private timer: ReturnType<typeof setInterval>;
   private rate = 1;
   private stopped = false;
+  private desiredRunning = true;
+  private stateSyncRunning = false;
+  private lastObservedAudioTime = this.context.currentTime;
+  private lastAudioAdvanceWallMs = performance.now();
+  private stallKickInFlight = false;
   private stretch: PcmPitchPreservingStretch | null = null;
   private stretchCursor?: SpeechCursor;
   private segmentRate = 1;
@@ -73,9 +84,131 @@ export class WebAudioPcmSink implements PcmAudioSink {
   private loudness?: SpeechLoudness;
   constructor(private onPosition: (position: TimedCursor) => void, balanceLoudness = false) {
     if (balanceLoudness) this.loudness = new SpeechLoudness();
+    if (typeof this.context.createGain === "function") {
+      this.outputGain = this.context.createGain();
+      this.outputGain.gain.value = 1;
+      this.outputGain.connect(this.context.destination);
+    }
+    this.context.onstatechange = () => {
+      if (!this.stopped && this.desiredRunning && typeof this.context.state === "string" && this.context.state !== "running") {
+        this.syncAudioState();
+      }
+    };
     // Constructed synchronously from the click handler so browser audio activation is permitted.
-    void this.context.resume().catch(() => {});
-    this.timer = setInterval(() => { const current = this.position(); if (current) this.onPosition(current); }, 250);
+    this.syncAudioState();
+    this.timer = setInterval(() => {
+      if (this.stopped) return;
+      this.ensureAudioRunning();
+      const current = this.position();
+      if (current) this.onPosition(current);
+    }, 75);
+  }
+
+  private rampGain(target: number) {
+    if (!this.outputGain) return;
+    const gain = this.outputGain.gain;
+    const now = this.context.currentTime;
+    if (typeof gain.cancelScheduledValues === "function" && typeof gain.linearRampToValueAtTime === "function") {
+      try {
+        gain.cancelScheduledValues(now);
+        if (typeof gain.setValueAtTime === "function") gain.setValueAtTime(gain.value, now);
+        gain.linearRampToValueAtTime(target, now + GAIN_RAMP_SECONDS);
+        return;
+      } catch { /* Fall through to direct assignment on minimal mocks. */ }
+    }
+    gain.value = target;
+  }
+
+  private syncAudioState() {
+    if (this.stopped || this.stateSyncRunning) return;
+    this.stateSyncRunning = true;
+    void (async () => {
+      try {
+        let attempts = 0;
+        while (!this.stopped && attempts < 4) {
+          attempts++;
+          const wantRunning = this.desiredRunning;
+          const state = typeof this.context.state === "string" ? this.context.state : undefined;
+          if (wantRunning) {
+            if (state === "running") {
+              this.rampGain(1);
+              break;
+            }
+            if (this.outputGain && state === "suspended") {
+              try { this.outputGain.gain.value = 0; } catch { /* ignore */ }
+            }
+            try { await this.context.resume(); } catch { break; }
+            if (this.stopped) break;
+            if (this.desiredRunning) {
+              this.lastObservedAudioTime = this.context.currentTime;
+              this.lastAudioAdvanceWallMs = performance.now();
+              this.rampGain(1);
+            }
+            if (typeof this.context.state !== "string" || this.context.state === "running") {
+              if (this.desiredRunning) break;
+            } else {
+              break;
+            }
+          } else {
+            if (state === "suspended") break;
+            if (this.outputGain && state === "running") {
+              this.rampGain(0);
+              await new Promise(resolve => setTimeout(resolve, PAUSE_FADE_DELAY_MS));
+              if (this.stopped || this.desiredRunning) continue;
+            }
+            try { await this.context.suspend(); } catch { break; }
+            if (this.stopped) break;
+            if (!this.desiredRunning && (typeof this.context.state !== "string" || this.context.state === "suspended")) {
+              break;
+            }
+          }
+        }
+      } finally {
+        this.stateSyncRunning = false;
+      }
+    })();
+  }
+
+  private ensureAudioRunning() {
+    if (this.stopped || !this.desiredRunning) return;
+    const state = typeof this.context.state === "string" ? this.context.state : undefined;
+    if (state && state !== "running") {
+      this.syncAudioState();
+      return;
+    }
+    if (!this.sources.size || this.nextStart <= this.context.currentTime) {
+      this.lastObservedAudioTime = this.context.currentTime;
+      this.lastAudioAdvanceWallMs = performance.now();
+      return;
+    }
+    const audioNow = this.context.currentTime;
+    const wallNow = performance.now();
+    if (audioNow > this.lastObservedAudioTime + 1e-4) {
+      this.lastObservedAudioTime = audioNow;
+      this.lastAudioAdvanceWallMs = wallNow;
+      return;
+    }
+    // Recover from a stalled Chromium/CoreAudio output clock where state claims
+    // "running" while currentTime stops advancing with active sources queued.
+    if (!this.stallKickInFlight && !this.stateSyncRunning && wallNow - this.lastAudioAdvanceWallMs >= AUDIO_STALL_RECOVERY_MS) {
+      this.stallKickInFlight = true;
+      this.lastAudioAdvanceWallMs = wallNow;
+      void (async () => {
+        try {
+          if (this.stopped || !this.desiredRunning) return;
+          try { await this.context.suspend(); } catch { /* ignore */ }
+          if (this.stopped || !this.desiredRunning) return;
+          try { await this.context.resume(); } catch { /* ignore */ }
+          if (!this.stopped && this.desiredRunning) {
+            this.lastObservedAudioTime = this.context.currentTime;
+            this.lastAudioAdvanceWallMs = performance.now();
+            this.rampGain(1);
+          }
+        } finally {
+          this.stallKickInFlight = false;
+        }
+      })();
+    }
   }
 
   append(frame: SpeechPcmChunk, cursor: SpeechCursor, offsetSeconds: number, resumeSeconds: number) {
@@ -105,12 +238,18 @@ export class WebAudioPcmSink implements PcmAudioSink {
 
   private schedule(samples: Float32Array, cursor: SpeechCursor) {
     if (this.stopped || !samples.length) return;
+    const now = this.context.currentTime;
+    const hadGap = this.timeline.length > 0 && this.nextStart < now;
     const buffer = this.context.createBuffer(1, samples.length, 24000);
-    buffer.getChannelData(0).set(samples);
+    const channelData = buffer.getChannelData(0);
+    channelData.set(samples);
+    if (hadGap) {
+      const fadeSamples = Math.min(UNDERRUN_FADE_SAMPLES, channelData.length);
+      for (let i = 0; i < fadeSamples; i++) channelData[i] *= i / fadeSamples;
+    }
     const source = this.context.createBufferSource();
     source.buffer = buffer; source.playbackRate.value = 1;
-    source.connect(this.context.destination);
-    const now = this.context.currentTime;
+    source.connect(this.outputGain ?? this.context.destination);
     const start = this.nextStart >= now ? this.nextStart : now + 0.02;
     const seconds = this.progressSeconds;
     const end = start + buffer.duration;
@@ -126,6 +265,7 @@ export class WebAudioPcmSink implements PcmAudioSink {
       if (this.completed && !this.sources.size) this.finishResolver?.();
     };
     source.start(start);
+    if (this.desiredRunning) this.ensureAudioRunning();
   }
 
   private flushStretch() {
@@ -147,11 +287,22 @@ export class WebAudioPcmSink implements PcmAudioSink {
   finish(): Promise<void> {
     this.flushStretch();
     this.completed = true;
+    if (this.desiredRunning) this.ensureAudioRunning();
     if (this.stopped || !this.sources.size) return Promise.resolve();
     return new Promise(resolve => { this.finishResolver = resolve; });
   }
-  pause() { if (!this.stopped) void this.context.suspend().catch(() => {}); }
-  resume() { if (!this.stopped) void this.context.resume().catch(() => {}); }
+  pause() {
+    if (this.stopped) return;
+    this.desiredRunning = false;
+    this.syncAudioState();
+  }
+  resume() {
+    if (this.stopped) return;
+    this.desiredRunning = true;
+    this.lastObservedAudioTime = this.context.currentTime;
+    this.lastAudioAdvanceWallMs = performance.now();
+    this.syncAudioState();
+  }
   setRate(rate: number) {
     // Keep already scheduled sources at their original rate so their start/end
     // positions stay sample-accurate; the new rate applies to subsequent frames.
@@ -160,11 +311,15 @@ export class WebAudioPcmSink implements PcmAudioSink {
   stop() {
     if (this.stopped) return;
     this.stopped = true;
+    this.desiredRunning = false;
     this.stretch = null;
     this.stretchCursor = undefined;
     clearInterval(this.timer);
+    this.context.onstatechange = null;
     for (const source of this.sources) { source.onended = null; try { source.stop(); } catch { /* Already ended. */ } source.disconnect(); }
     this.sources.clear();
+    try { this.outputGain?.disconnect(); } catch { /* Already disconnected. */ }
+    this.outputGain = undefined;
     this.finishResolver?.(); this.finishResolver = undefined;
     void this.context.close().catch(() => {});
   }
@@ -174,10 +329,11 @@ interface PlayerDependencies {
   indices: number[];
   getText: (index: number) => Promise<string>;
   synthesize: (text: string, signal: AbortSignal) => AsyncIterable<SpeechPcmChunk>;
+  transformText?: (text: string) => string;
   splitText?: (text: string) => string[];
   balanceLoudness?: boolean;
   phase: (phase: SpeechPhase, error?: string) => void;
-  position: (cursor: SpeechCursor, seconds: number, completed: boolean) => void;
+  position: (cursor: SpeechCursor, seconds: number, completed: boolean, durationSeconds?: number) => void;
   sink?: (position: (value: TimedCursor) => void) => PcmAudioSink;
   /** Exposes real playable audio seconds for the UI's loading indicator. */
   bufferProgress?: (availableSeconds: number, targetSeconds: number) => void;
@@ -250,7 +406,10 @@ export class ChineseStreamingAudioPlayer {
     if (!this.controller) return;
     this.paused = true; this.sink?.pause();
     const position = this.sink?.position() ?? this.latest;
-    if (position) this.dependencies.position(position.cursor, position.seconds, false);
+    if (position) {
+      const info = this.durations.get(`${position.cursor.paragraphIndex}:${position.cursor.chunkIndex}`);
+      this.dependencies.position(position.cursor, position.seconds, false, info?.complete && info.seconds > 0 ? info.seconds : undefined);
+    }
     this.dependencies.phase("paused");
   }
   resume() {
@@ -280,7 +439,9 @@ export class ChineseStreamingAudioPlayer {
     const publish = (value: TimedCursor) => {
       if (!valid()) return;
       this.latest = value;
-      this.dependencies.position(value.cursor, value.seconds, false);
+      const info = this.durations.get(`${value.cursor.paragraphIndex}:${value.cursor.chunkIndex}`);
+      const durationSeconds = info?.complete && info.seconds > 0 ? info.seconds : undefined;
+      this.dependencies.position(value.cursor, value.seconds, false, durationSeconds);
     };
     this.dependencies.phase("loading");
     const clock = () => this.dependencies.now?.() ?? performance.now();
@@ -366,15 +527,59 @@ export class ChineseStreamingAudioPlayer {
       while (current && valid()) {
         if (this.paused) await new Promise<void>(resolve => { this.wake = resolve; });
         if (!valid()) break;
-        const chunks = (this.dependencies.splitText ?? splitChineseSpeech)(await this.dependencies.getText(current.paragraphIndex));
+        const rawParagraph = await this.dependencies.getText(current.paragraphIndex);
         if (!valid()) break;
-        if (!chunks.length) throw new Error("这一段没有可朗读的中文");
-        const { chunkIndex, seconds: resumeSeconds } = resolveSpeechChunk(chunks, current);
-        const selected: SpeechCursor = { paragraphIndex: current.paragraphIndex, chunkIndex, chunkText: chunks[chunkIndex] };
-        const durationKey = `${selected.paragraphIndex}:${selected.chunkIndex}`;
-        const duration = this.durations.get(durationKey) ?? {
-          cursor: selected, seconds: 0, complete: false, lastInParagraph: chunkIndex === chunks.length - 1,
+        const speechParagraph = this.dependencies.transformText ? this.dependencies.transformText(rawParagraph) : rawParagraph;
+        const chunks = (this.dependencies.splitText ?? splitChineseSpeech)(speechParagraph);
+        if (!valid()) break;
+        if (!chunks.length) {
+          const nextIndex: number = this.dependencies.indices.indexOf(current.paragraphIndex) + 1;
+          if (this.dependencies.transformText && nextIndex > 0 && nextIndex < this.dependencies.indices.length) {
+            current = { paragraphIndex: this.dependencies.indices[nextIndex], chunkIndex: 0 };
+            continue;
+          }
+          if (this.dependencies.transformText && !this.bufferingFirstPlayback) {
+            current = null;
+            break;
+          }
+          throw new Error("这一段没有可朗读的中文");
+        }
+        const { chunkIndex: resolvedChunkIndex, seconds: resumeSeconds } = resolveSpeechChunk(chunks, current);
+        let chunkIndex = resolvedChunkIndex;
+        let rawChunk = chunks[chunkIndex];
+        let rawOffset = current.speechOffset ?? 0;
+        const targetText = current.chunkText
+          ? (this.dependencies.transformText ? this.dependencies.transformText(current.chunkText) : current.chunkText).trim()
+          : "";
+        if (targetText && (rawOffset <= 0 || rawOffset >= rawChunk.length || !rawChunk.slice(rawOffset).trimStart().startsWith(targetText.slice(0, Math.min(8, targetText.length))))) {
+          const matchedInChunk = rawChunk.indexOf(targetText);
+          if (matchedInChunk >= 0) {
+            rawOffset = matchedInChunk;
+          } else {
+            for (let idx = 0; idx < chunks.length; idx++) {
+              const pos = chunks[idx].indexOf(targetText);
+              if (pos >= 0) {
+                chunkIndex = idx;
+                rawChunk = chunks[idx];
+                rawOffset = pos;
+                break;
+              }
+            }
+          }
+        }
+        const hasValidSlice = rawOffset > 0 && rawOffset < rawChunk.length && rawChunk.slice(rawOffset).trim().length > 0;
+        const spokenText = hasValidSlice ? rawChunk.slice(rawOffset) : rawChunk;
+        const selected: SpeechCursor = {
+          paragraphIndex: current.paragraphIndex,
+          chunkIndex,
+          chunkText: spokenText,
+          ...(hasValidSlice ? { speechOffset: rawOffset } : {}),
         };
+        const durationKey = `${selected.paragraphIndex}:${selected.chunkIndex}`;
+        const existingDuration = this.durations.get(durationKey);
+        const duration = existingDuration && existingDuration.cursor.chunkText === spokenText
+          ? existingDuration
+          : { cursor: selected, seconds: 0, complete: false, lastInParagraph: chunkIndex === chunks.length - 1 };
         this.durations.set(durationKey, duration);
         let offsetSeconds = 0, hasAudio = false;
         // Tiny PCM frames can be generated slower than real-time during a
@@ -393,13 +598,13 @@ export class ChineseStreamingAudioPlayer {
           initialFrames.length = 0;
         };
         const chunkRequestStartedAt = now();
-        for await (const frame of this.dependencies.synthesize(chunks[chunkIndex], signal)) {
+        for await (const frame of this.dependencies.synthesize(spokenText, signal)) {
           if (!valid()) break;
           if (frame.sampleRate !== 24000 || !frame.samples.length) throw new Error("TTS 音频块无效");
           if (!firstPcmReported) {
             firstPcmReported = true;
             diagnostic("first_pcm", selected, {
-              generationMs: this.dependencies.generationFirstFrameMs?.(chunks[chunkIndex])
+              generationMs: this.dependencies.generationFirstFrameMs?.(spokenText)
                 ?? Math.max(0, Math.round(now() - chunkRequestStartedAt)),
             });
           }
@@ -417,7 +622,10 @@ export class ChineseStreamingAudioPlayer {
           lastFrameAt = arrivedAt;
           // Keep at most a bounded reserve ahead of playback; the former 3 s
           // limit prevented sufficient headroom during a cold model stall.
-          while (valid() && sink.bufferedSeconds() > MAX_SCHEDULED_SECONDS) await new Promise(resolve => setTimeout(resolve, 60));
+          while (valid() && sink.bufferedSeconds() > MAX_SCHEDULED_SECONDS) {
+            if (this.rebuffering) checkBuffer();
+            await new Promise(resolve => setTimeout(resolve, 60));
+          }
           if (!valid()) break;
           if (this.bufferingFirstPlayback) {
             startupFrames.push({ frame, cursor: selected, offset: offsetSeconds, resume: resumeSeconds });
@@ -442,7 +650,7 @@ export class ChineseStreamingAudioPlayer {
         if (!valid()) break;
         duration.complete = true;
         flushInitial(); // A very short utterance may end before 650 ms.
-        const measuredRtf = this.dependencies.generationRtf?.(chunks[chunkIndex]) ?? null;
+        const measuredRtf = this.dependencies.generationRtf?.(spokenText) ?? null;
         if (measuredRtf !== null && Number.isFinite(measuredRtf)) {
           // Weight the latest warmed chunk most heavily: its steady-state
           // generation time matters more than the first model cold start.
@@ -470,7 +678,10 @@ export class ChineseStreamingAudioPlayer {
           : nextIndex > 0 && nextIndex < this.dependencies.indices.length
             ? { paragraphIndex: this.dependencies.indices[nextIndex], chunkIndex: 0 } : null;
         // A faster-than-realtime synthesizer must not queue a whole book into WebAudio memory.
-        while (valid() && sink.bufferedSeconds() > MAX_SCHEDULED_SECONDS) await new Promise(resolve => setTimeout(resolve, 60));
+        while (valid() && sink.bufferedSeconds() > MAX_SCHEDULED_SECONDS) {
+          if (this.rebuffering) checkBuffer();
+          await new Promise(resolve => setTimeout(resolve, 60));
+        }
       }
       if (!valid()) return;
       if (this.bufferingFirstPlayback && !startupFrames.length) throw new Error("本地朗读没有生成可播放音频");

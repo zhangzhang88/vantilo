@@ -9,9 +9,10 @@
 }
 
 .app-shell .settings-page .page-heading-row h1 {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
+  font-family: var(--vantilo-font-serif, "Iowan Old Style", Georgia, "Songti SC", serif);
+  font-size: 30px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
 }
 
 .app-shell .settings-page .page-heading-row p {
@@ -39,11 +40,11 @@
 }
 
 .app-shell .settings-page .settings-card-heading h2 {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
-  font-size: 17px;
+  font-family: var(--vantilo-font-serif, "Iowan Old Style", Georgia, "Songti SC", serif);
+  font-size: 18.5px;
   line-height: 1.35;
-  font-weight: 650;
-  letter-spacing: -0.015em;
+  font-weight: 550;
+  letter-spacing: -0.012em;
   color: var(--theme-ink);
 }
 
@@ -169,7 +170,7 @@
 }
 
 .app-shell .settings-page .tts-api-settings h3 {
-  font: 650 17px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  font: 550 18.5px/1.35 var(--vantilo-font-serif, "Iowan Old Style", Georgia, "Songti SC", serif);
   color: var(--theme-ink);
 }
 
@@ -272,11 +273,11 @@
 }
 
 .app-shell .settings-page [data-theme-swatch="light"] .theme-swatch {
-  background: linear-gradient(180deg, #ffffff, #f5f5f7);
-  border-color: rgba(0, 0, 0, 0.14);
-  --swatch-accent: #0071e3;
-  --swatch-line: rgba(29, 29, 31, 0.38);
-  --swatch-line-soft: rgba(29, 29, 31, 0.2);
+  background: linear-gradient(180deg, #ffffff, #faf9f5);
+  border-color: rgba(61, 57, 41, 0.18);
+  --swatch-accent: #c96442;
+  --swatch-line: rgba(20, 20, 19, 0.36);
+  --swatch-line-soft: rgba(20, 20, 19, 0.18);
 }
 
 .app-shell .settings-page [data-theme-swatch="sepia"] .theme-swatch {
@@ -304,19 +305,19 @@
 }
 
 .app-shell .settings-page [data-theme-swatch="dark"] .theme-swatch {
-  background: linear-gradient(180deg, #222227, #141417);
-  border-color: rgba(255, 255, 255, 0.16);
-  --swatch-accent: #4c9aff;
-  --swatch-line: rgba(245, 245, 247, 0.48);
-  --swatch-line-soft: rgba(245, 245, 247, 0.24);
+  background: linear-gradient(180deg, #2e2e2b, #222220);
+  border-color: rgba(236, 235, 228, 0.16);
+  --swatch-accent: #d97757;
+  --swatch-line: rgba(236, 235, 228, 0.46);
+  --swatch-line-soft: rgba(236, 235, 228, 0.22);
 }
 
 .app-shell .settings-page [data-theme-swatch="system"] .theme-swatch {
-  background: linear-gradient(90deg, #ffffff 0 50%, #19191d 50% 100%);
-  border-color: rgba(128, 128, 140, 0.34);
-  --swatch-accent: #0a84ff;
-  --swatch-line: rgba(128, 128, 140, 0.55);
-  --swatch-line-soft: rgba(128, 128, 140, 0.34);
+  background: linear-gradient(90deg, #faf9f5 0 50%, #262624 50% 100%);
+  border-color: rgba(128, 122, 110, 0.34);
+  --swatch-accent: #c96442;
+  --swatch-line: rgba(128, 122, 110, 0.55);
+  --swatch-line-soft: rgba(128, 122, 110, 0.34);
 }
 
 /* Segmented controls (正文字体 / 行距 / 正文宽度 / 默认发音) */

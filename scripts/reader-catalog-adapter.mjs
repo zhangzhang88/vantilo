@@ -17,11 +17,6 @@ export function adaptCatalogPreview(source,filename) {
     return source;
   }
   if(filename.endsWith('/frontend/global-navigation.tsx')) {
-    // Use Vantilo's existing colored Codex mark in the Reader assistant control.
-    const reactImport='import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";';
-    exact(reactImport,reactImport+'\nimport codexIcon from '+JSON.stringify(new URL('../src/ui/vendor-icons/codex.svg',import.meta.url).pathname)+';');
-    const assistantSvg='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-9l-5 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m9 9-2 2 2 2m6-4 2 2-2 2"/></svg>';
-    exact(assistantSvg,'<img src={codexIcon} alt="" aria-hidden="true" width="20" height="20" draggable={false}/>');
     // The desktop rail owns the single settings entry, including on small screens.
     const button='          <button className={`global-nav-icon${page === "settings" ? " is-active" : ""}`} aria-label="设置" title="设置" onClick={() => navigate("settings")}><NavIcon name="settings" /></button>\n';
     exact(button,'');
@@ -57,6 +52,13 @@ export function adaptCatalogPreview(source,filename) {
 .vantilo-custom-api-settings>label {display:grid;gap:6px;margin:12px 0;font-size:13px;}
 .vantilo-custom-api-settings input,.vantilo-custom-api-settings select {font:inherit;color:inherit;background:var(--ui-surface,#fff);border:1px solid var(--ui-line,#ccc);border-radius:7px;padding:9px 11px;max-width:720px;}
 .vantilo-custom-api-settings .settings-help {max-width:850px;line-height:1.65;}
+.vantilo-custom-api-tabs {display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px;}
+.vantilo-custom-api-tab {border:1px solid var(--ui-line,#ccc);border-radius:999px;padding:6px 13px;background:var(--ui-surface,#fff);color:inherit;cursor:pointer;font-size:12.5px;font-weight:500;}
+.vantilo-custom-api-tab.is-active {border-color:var(--theme-accent,#c45a33);background:rgba(196,90,51,.12);color:var(--theme-accent,#c45a33);font-weight:600;}
+.vantilo-custom-api-model-field {display:grid;gap:6px;margin:12px 0;font-size:13px;max-width:720px;}
+.vantilo-custom-api-model-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;}
+.vantilo-custom-api-fetch-btn {border:1px solid var(--ui-line,#ccc);border-radius:8px;padding:9px 13px;background:var(--ui-surface,#fff);color:inherit;cursor:pointer;font:inherit;white-space:nowrap;}
+.vantilo-custom-api-fetch-btn:disabled {opacity:.55;cursor:not-allowed;}
 .vantilo-custom-api-actions {display:flex;gap:9px;flex-wrap:wrap;margin:14px 0;}
 .vantilo-custom-api-actions button {border:1px solid var(--ui-line,#ccc);border-radius:8px;padding:9px 14px;background:var(--ui-surface,#fff);color:inherit;cursor:pointer;font:inherit;}
 .vantilo-custom-api-actions button:disabled {opacity:.55;cursor:wait;}
@@ -73,13 +75,12 @@ export function adaptCatalogPreview(source,filename) {
 .reader-page-shell .reader-toolbar-actions > .vantilo-reader-translation-action {flex:0 0 auto;white-space:nowrap;}
 .reader-page-shell .reader-toolbar-center .vantilo-reader-exit-chinese {display:none;}
 
-/* Keep the article toolbar readable when its many actions share one row. */
+/* Keep the article toolbar calm, uncluttered, and never clipped on desktop widths. */
 @media (min-width:1081px) {
-  .reader-page-shell .reader-toolbar {grid-template-columns:minmax(220px,1fr) auto minmax(0,2fr);gap:clamp(8px,1vw,18px);}
-  .reader-page-shell .reader-toolbar-left {min-width:0;}
-  .reader-page-shell .reader-toolbar-center {white-space:nowrap;}
-  .reader-page-shell .reader-toolbar-actions {min-width:0;flex-wrap:nowrap;gap:clamp(4px,.45vw,9px);overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;}
-  .reader-page-shell .reader-toolbar-actions::-webkit-scrollbar {display:none;}
+  .reader-page-shell .reader-toolbar {grid-template-columns:auto minmax(0,1fr) auto;gap:clamp(8px,1vw,16px);}
+  .reader-page-shell .reader-toolbar-left {min-width:0;flex:0 0 auto;}
+  .reader-page-shell .reader-toolbar-center {min-width:0;white-space:nowrap;justify-content:center;}
+  .reader-page-shell .reader-toolbar-actions {min-width:0;flex-wrap:nowrap;gap:6px;overflow:visible;}
   .reader-page-shell .reader-toolbar-actions > .toolbar-button {flex:0 0 auto;white-space:nowrap;}
   .reader-page-shell .reader-toolbar-actions > .toolbar-button span {white-space:nowrap;}
 }
@@ -89,10 +90,10 @@ export function adaptCatalogPreview(source,filename) {
   source='import VantiloReleaseMarkdown from "react-markdown";\n'+source;
   exact('  const [assistantOpen, setAssistantOpen] = useState(() => window.matchMedia("(min-width: 1151px)").matches);',
     '  const [assistantOpen, setAssistantOpen] = useState(false);');
-  source=source.replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。','管理阅读环境、杂志与软件更新、外观、数据备份和自定义 API。').replaceAll('阅读偏好在浏览器 · AI 配置在本机','阅读偏好保存在本机 · 翻译模型独立选择');
+  source=source.replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。','管理阅读环境、杂志与软件更新、外观、数据备份和 AI 模型服务。').replaceAll('阅读偏好在浏览器 · AI 配置在本机','阅读偏好保存在本机 · 翻译模型独立选择');
   exact('    { id: \"settings\", label: \"设置\", icon: \"⚙\" },\n','');
-  const modeSwitchEnd='          </div>\n        </div>\n        <div className=\"reader-toolbar-actions\">';
-  exact(modeSwitchEnd,'          </div>\n          {readerLanguage === \"chinese\" && <button className=\"toolbar-button vantilo-reader-exit-chinese\" aria-label=\"退出中文阅读并返回英文原文\" title=\"退出中文阅读，返回对应英文段落\" onClick={toggleChineseReader}>返回英文</button>}\n        </div>\n        <div className=\"reader-toolbar-actions\">');
+  const modeSwitchEnd='          </div>)}\n        </div>\n        <div className=\"reader-toolbar-actions\">';
+  exact(modeSwitchEnd,'          </div>)}\n          {readerLanguage === \"chinese\" && <button className=\"toolbar-button vantilo-reader-exit-chinese\" aria-label=\"退出中文阅读并返回英文原文\" title=\"退出中文阅读，返回对应英文段落\" onClick={toggleChineseReader}>返回英文</button>}\n        </div>\n        <div className=\"reader-toolbar-actions\">');
   // Keep directory, translation, Codex and a compact More menu on the article toolbar.
   const toolbarStart=source.indexOf('        <div className="reader-toolbar-actions">');
   const toolbarEnd=source.indexOf('\n        </div>\n      </div>',toolbarStart);
@@ -105,29 +106,26 @@ export function adaptCatalogPreview(source,filename) {
   }
   const readLater=take('          {(\n            <button\n              className={`toolbar-button reader-focus-hidden ${queuedForLater','          )}');
   const jumpBack=take('          {jumpBackTarget && (','          )}');
-  const chinese=take('          {audiobookMode === "original" ? null : onListenFromHere ? <button className="toolbar-button"','</button>}')
+  const chinese=take('          {onListenFromHere ? <button','</button>}')
     .replaceAll('reader-chinese-button','reader-chinese-button vantilo-reader-translation-action')
     .replaceAll('中文阅读','听书版')
     .replace('{readerLanguage === "chinese" ? "A" : "中"}','');
-  const full=take('          <button\n            className={`toolbar-button reader-full-translation-button','          </button>')
-    .replaceAll('reader-full-translation-button','reader-full-translation-button vantilo-reader-translation-action')
-    .replace(': fullArticleTranslationExpanded ? "译文" : "全文"', ': "全文翻译"')
-    .replace(': fullArticleTranslationExpanded ? "收" : "译"}', ': fullArticleTranslationExpanded ? "收" : ""}');
+  const full=take('          {audiobookMode !== "original" && (<button\n            className={`toolbar-button reader-full-translation-button','          </button>)}')
+    .replaceAll('reader-full-translation-button','reader-full-translation-button vantilo-reader-translation-action');
   const sourceButton=take('          {issue.kind === "book" && <BookSourceButton','\n');
   const copyEnglish=take('          {copyEnglishText !== undefined && <CuratedArticleCopyButton','\n');
   const notes=take('          <button className={`toolbar-button ${drawer === "notes"','\n');
   const find=take('          <button\n            className={`toolbar-button reader-find-button','</button>');
   const shortcuts=take('          <button\n            className={`toolbar-button reader-shortcuts-button','</button>');
+  const appearance=actions.includes('reader-appearance-button')
+    ? take('          {onReaderPreferencesChange && (','          )}')
+    : '';
   const immersion=take('          <button\n            className={`toolbar-button reader-focus-toggle','</button>');
   const vocabulary=take('          <button className={`toolbar-button reader-focus-hidden mobile-vocabulary-button','</button>');
-  const tocEnd='>☰ <span>目录</span></button>';
-  if(!actions.includes(tocEnd))throw new Error('Table of contents toolbar action changed');
-  const menus=`
-          <details className="reader-toolbar-menu reader-more-menu" onClick={(event)=>{if((event.target as HTMLElement).closest(".reader-toolbar-menu-panel button"))event.currentTarget.open=false;}}>
-            <summary className="toolbar-button reader-toolbar-menu-trigger" aria-label="更多阅读操作">⋯ <span>更多</span></summary>
-            <div className="reader-toolbar-menu-panel" aria-label="更多阅读操作">${readLater}${jumpBack}${notes}${find}${shortcuts}${immersion}${sourceButton}${vocabulary}</div>
-          </details>`;
-  actions=actions.replace(tocEnd,tocEnd+chinese+full+copyEnglish+menus);
+  const navAnchor='{globalNavigation}';
+  if(!actions.includes(navAnchor))throw new Error('Toolbar navigation anchor changed');
+  const unifiedNav=`<ReaderMenuExtrasProvider value={<div className="reader-toolbar-menu-panel is-embedded" aria-label="更多阅读操作">${notes}${vocabulary}${find}${readLater}${jumpBack}${immersion}${shortcuts}${sourceButton}</div>}>${navAnchor}</ReaderMenuExtrasProvider>`;
+  actions=actions.replace(navAnchor,chinese+full+copyEnglish+appearance+'\n          '+unifiedNav);
   source=source.slice(0,toolbarStart)+actions+source.slice(toolbarEnd);
   const settingsStart=source.indexOf('function SettingsPage('),settingsEnd=source.indexOf('\nexport default function App',settingsStart+10);
   if(settingsStart<0||settingsEnd<0)throw new Error('Settings boundaries changed');
@@ -197,27 +195,29 @@ export function adaptCatalogPreview(source,filename) {
   const [vantiloImportModelBusy,setVantiloImportModelBusy]=useState(false);
   const readyCount = items.filter((item) => item.preview.status === "ready").length;
   const importedCount = items.filter((item) => item.preview.status === "imported").length;
+  const vantiloHasNonChinese = items.some((item) => item.preview.status === "ready" && item.preview.readingLanguage !== "zh");
+  const vantiloCatalogActive = vantiloHasNonChinese && vantiloGenerateCatalog;
 
   function closeDialog()`);
 
   book=book.replace('    setOpen(true);','    setOpen(true);setVantiloGenerateCatalog(false);');
-  book=book.replace('    if (!readyCount || importing) return;',"    if (!readyCount || importing) return;\n    if(vantiloGenerateCatalog&&(vantiloImportModelBusy||!vantiloImportEngine)){setError('请先选择目录翻译模型');return;}");
+  book=book.replace('    if (!readyCount || importing) return;',"    if (!readyCount || importing) return;\n    if(vantiloCatalogActive&&(vantiloImportModelBusy||!vantiloImportEngine)){setError('请先选择目录翻译模型');return;}");
   book=book.replace('        if (result.status === "imported") imported += 1;',`        if (result.status === "imported") {
           imported += 1;
-          if(vantiloGenerateCatalog&&result.bookId&&result.readingLanguage!=="zh") {
+          if(vantiloCatalogActive&&result.bookId&&result.readingLanguage!=="zh") {
             try {let generated;do{generated=await vantiloCatalogRequest('/api/vantilo-catalog/book/'+encodeURIComponent(result.bookId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({engineId:vantiloImportEngine,regenerate:false})});}while(generated.state==='pending');}
             catch(e){setError('书籍已成功导入；中文目录未生成：'+(e instanceof Error?e.message:'请在目录页重试'));}
           }
         }`);
-  book=book.replace('            {preparing ? (',`            <section className="vantilo-catalog-import" aria-label="导入时的目录翻译设置">
+  book=book.replace('            {preparing ? (',`            {!preparing && vantiloHasNonChinese && (<section className="vantilo-catalog-import" aria-label="导入时的目录翻译设置">
               <label><input type="radio" name="vantilo-import-mode" checked={!vantiloGenerateCatalog} disabled={importing} onChange={()=>setVantiloGenerateCatalog(false)}/>仅导入（保留原书目录）</label>
               <label><input type="radio" name="vantilo-import-mode" checked={vantiloGenerateCatalog} disabled={importing} onChange={()=>setVantiloGenerateCatalog(true)}/>导入并生成中文目录</label>
               {vantiloGenerateCatalog&&<VantiloCatalogPicker value={vantiloImportEngine} onChange={setVantiloImportEngine} disabled={importing} onBusy={setVantiloImportModelBusy}/>}
-              <small>目录模型单独保存，不跟随助手或正文翻译模型；千问在本机运行；选择 GPT 时需要登录 ChatGPT。</small>
-            </section>
+              <small>目录模型单独保存，不跟随正文翻译模型；可在「阅读设置」中添加 AI 模型服务。</small>
+            </section>)}
             {preparing ? (`);
-  book=book.replace('disabled={preparing || importing} onClick={() => void confirmImport()}', 'disabled={preparing || importing || (vantiloGenerateCatalog&&(vantiloImportModelBusy||!vantiloImportEngine))} onClick={() => void confirmImport()}');
-  book=book.replace('`导入 ${readyCount} 本`','`${vantiloGenerateCatalog?"导入并生成中文目录":"仅导入"} ${readyCount} 本`');
+  book=book.replace('disabled={preparing || importing} onClick={() => void confirmImport()}', 'disabled={preparing || importing || (vantiloCatalogActive&&(vantiloImportModelBusy||!vantiloImportEngine))} onClick={() => void confirmImport()}');
+  book=book.replace('`导入 ${readyCount} 本`','`${vantiloHasNonChinese?(vantiloCatalogActive?"导入并生成中文目录":"仅导入"):"导入"} ${readyCount} 本`');
   source=source.slice(0,bookStart)+book+source.slice(bookEnd);
   // Books display cached generation provenance and a direct model picker.
   exact('  const groups = buildBookTocGroups(book);','  const groups = buildBookTocGroups(book);');
@@ -240,7 +240,7 @@ export function adaptCatalogPreview(source,filename) {
   issue=issue.replace('        <div className="issue-toc-search">','        <VantiloCatalogControl key={issue.id} kind="issue" id={issue.id} hasBatchTitles={Object.keys(batchTitles).length > 0} onResolved={setVantiloIssueCatalog}/>\n        <div className="issue-toc-search">');
   issue=issue.replace('中文标题准备中…','保留英文标题；可在上方生成中文目录');
   source=source.slice(0,issueStart)+issue+source.slice(issueEnd);
-  source+='\n'+readFileSync(new URL('../src/reader/custom-api-settings.tsx',import.meta.url),'utf8');
+  source+='\n'+readFileSync(new URL('../src/reader/custom-api-settings.tsx',import.meta.url),'utf8').replaceAll('../../packages/reader/src/shared/','../shared/');
   source+='\n'+readFileSync(new URL('./reader-catalog-controls.tsx',import.meta.url),'utf8');
   source+='\n'+readFileSync(new URL('./reader-update-settings.tsx',import.meta.url),'utf8');
   return source;

@@ -28,19 +28,13 @@ if(sourceStatus)throw new Error('Universal 发布构建要求干净的 Git 源�
 const readerPackage=JSON.parse(await fs.readFile(path.join(readerSourceRoot,'package.json'),'utf8'));
 const packageLockHash=createHash('sha256').update(await fs.readFile(path.join(repo,'package-lock.json'))).digest('hex');
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('通用版构建需要 Apple Silicon macOS 构建机');
-const requireReader=createRequire(path.join(readerSourceRoot,'package.json'));
-const sourceCodexPath=requireReader.resolve('@openai/codex-darwin-arm64/package.json');
-const sourceCodex=JSON.parse(await fs.readFile(sourceCodexPath,'utf8'));
-const codexVersion=/^(\d+\.\d+\.\d+)-darwin-arm64$/.exec(sourceCodex.version)?.[1];
-if(!codexVersion)throw new Error('无法确认 ARM Codex 运行时版本');
 
 const stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
 const buildDir=await fs.realpath(path.join(repo,'build'));
 const inputRoot=path.join(repo,'build/universal-inputs');
 const electronRoot=path.join(inputRoot,'electron-x64');
-const codexRoot=path.join(inputRoot,'codex-x64');
 const nativeRoot=path.join(inputRoot,'native-x64');
-await Promise.all([inputRoot,electronRoot,codexRoot,nativeRoot,path.join(inputRoot,'npm-cache')].map(folder=>fs.mkdir(folder,{recursive:true})));
+await Promise.all([inputRoot,electronRoot,nativeRoot,path.join(inputRoot,'npm-cache')].map(folder=>fs.mkdir(folder,{recursive:true})));
 
 // Resolve helper freshness before large downloads or candidate builds. The
 // versioned input is immutable and the strict comparison is always required.
@@ -102,22 +96,7 @@ const electronZip=await electronArchive('x64');
 await electronArchive('arm64');
 if(!(await fs.stat(path.join(electronRoot,'Electron.app')).then(()=>true,()=>false)))execFileSync('/usr/bin/ditto',['-x','-k',electronZip,electronRoot],{stdio:'inherit'});
 
-// The codex platform package is an official npm alias published alongside the
-// ARM package used by Reader. Keep the tarball, extraction, and npm cache local.
-const codexPackage=path.join(codexRoot,'package');
-const x64CodexBin=path.join(codexPackage,'vendor/x86_64-apple-darwin/bin');
-if(!(await fs.stat(path.join(x64CodexBin,'codex')).then(()=>true,()=>false))){
-  const packDir=path.join(codexRoot,'download');await fs.mkdir(packDir,{recursive:true});
-  const packed=execFileSync('npm',['pack',`@openai/codex@${codexVersion}-darwin-x64`,'--json','--pack-destination',packDir,'--cache',path.join(inputRoot,'npm-cache'),'--ignore-scripts'],{cwd:repo,encoding:'utf8',stdio:['ignore','pipe','inherit']});
-  const archiveName=JSON.parse(packed)[0]?.filename;
-  if(typeof archiveName!=='string'||!archiveName.endsWith('.tgz'))throw new Error('未能下载官方 Intel Codex 运行时');
-  await fs.mkdir(codexPackage,{recursive:true});
-  execFileSync('/usr/bin/tar',['-xzf',path.join(packDir,archiveName),'-C',codexPackage,'--strip-components=1'],{stdio:'inherit'});
-}
-for(const name of ['codex','codex-code-mode-host'])await fs.access(path.join(x64CodexBin,name));
-
 function arches(file){return execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/);}
-for(const name of ['codex','codex-code-mode-host'])if(!arches(path.join(x64CodexBin,name)).includes('x86_64'))throw new Error('Intel Codex 架构验证失败: '+name);
 if(!arches(x64Dictionary).includes('x86_64'))throw new Error('Intel 系统词典程序架构验证失败');
 const sha256Bytes=bytes=>createHash('sha256').update(bytes).digest('hex');
 nativeDictionaryVerification.sourceSha256=dictionaryIdentity.sourceSha256;
@@ -232,7 +211,7 @@ await signMergedApp(universalApp);
 execFileSync('/usr/bin/codesign',['--verify','--deep','--strict',universalApp],{stdio:'inherit'});
 execFileSync('/usr/bin/codesign',['--verify','--strict',path.join(universalApp,'Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib')],{stdio:'inherit'});
 const appExecutable=path.join(universalApp,'Contents/MacOS/Vantilo Beta');
-for(const file of [appExecutable,path.join(universalApp,'Contents/Resources/app/reader/codex'),path.join(universalApp,'Contents/Resources/app/reader/codex-code-mode-host'),path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary')]){
+for(const file of [appExecutable,path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary')]){
   const found=arches(file);if(!found.includes('arm64')||!found.includes('x86_64'))throw new Error(`通用架构验证失败: ${path.basename(file)} (${found.join(',')})`);
 }
 nativeDictionaryVerification.universalAppSha256=createHash('sha256').update(await fs.readFile(path.join(universalApp,'Contents/Resources/app/reader/native/vantilo-dictionary'))).digest('hex');

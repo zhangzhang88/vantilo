@@ -11,7 +11,6 @@ import {build as viteBuild} from 'vite';
 import react from '@vitejs/plugin-react';
 import parcelMacros from 'unplugin-parcel-macros';
 import {packager} from '@electron/packager';
-import {copyCodexRuntime} from './codex-runtime-assets.mjs';
 import {readerSourceRoot} from './reader-source-path.mjs';
 import {assertNoEpubFiles} from './package-artifact-policy.mjs';
 import {runtimeModuleInventoryPlugin} from './runtime-module-inventory.mjs';
@@ -52,13 +51,10 @@ await viteBuild({root:repo,configFile:false,envFile:false,base:'./',cacheDir:pat
 
 const nativeArm=path.join(repo,'build/reader/native/vantilo-dictionary');
 const nativeIntel=process.env.VANTILO_NATIVE_X64_HELPER?path.resolve(process.env.VANTILO_NATIVE_X64_HELPER):path.join(inputs,'native-x64/vantilo-dictionary');
-// Prepared separately from the pinned official b11904 archive; no model weights.
-const codexArm=path.join(path.dirname(requireReader.resolve('@openai/codex-darwin-arm64/package.json')),'vendor/aarch64-apple-darwin/bin');
-const codexIntel=path.join(inputs,'codex-x64/package/vendor/x86_64-apple-darwin/bin');
 const electronArm=path.join(repo,'node_modules/electron/dist');
 const electronIntel=path.join(inputs,'electron-x64');
 function archOf(file){return execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/);}
-for(const [file,arch] of [[nativeArm,'arm64'],[nativeIntel,'x86_64'],[path.join(codexArm,'codex'),'arm64'],[path.join(codexArm,'codex-code-mode-host'),'arm64'],[path.join(codexIntel,'codex'),'x86_64'],[path.join(codexIntel,'codex-code-mode-host'),'x86_64'],[path.join(electronArm,'Electron.app/Contents/MacOS/Electron'),'arm64'],[path.join(electronIntel,'Electron.app/Contents/MacOS/Electron'),'x86_64']]){
+for(const [file,arch] of [[nativeArm,'arm64'],[nativeIntel,'x86_64'],[path.join(electronArm,'Electron.app/Contents/MacOS/Electron'),'arm64'],[path.join(electronIntel,'Electron.app/Contents/MacOS/Electron'),'x86_64']]){
   if(!archOf(file).includes(arch))throw new Error('组件架构不匹配: '+path.basename(file));
 }
 const metadata=JSON.parse(await fs.readFile(path.join(repo,'package.json'),'utf8'));
@@ -70,24 +66,18 @@ const chromiumLicenses=electronZipText(electronZips.arm64,'LICENSES.chromium.htm
 for(const arch of ['x64']){
   if(electronZipText(electronZips[arch],'LICENSE')!==electronLicense||electronZipText(electronZips[arch],'LICENSES.chromium.html')!==chromiumLicenses)throw new Error('Electron architecture archives have different license or Chromium notice contents');
 }
-const codexArmPackage=JSON.parse(await fs.readFile(requireReader.resolve('@openai/codex-darwin-arm64/package.json'),'utf8'));
-const codexIntelPackage=JSON.parse(await fs.readFile(path.join(inputs,'codex-x64/package/package.json'),'utf8'));
-const codexVersion=/^(\d+\.\d+\.\d+)-darwin-arm64$/.exec(codexArmPackage.version)?.[1];
-if(!codexVersion||codexIntelPackage.version!==`${codexVersion}-darwin-x64`)throw new Error('Bundled Codex architecture versions do not match');
 async function staticDocument(name,version,license,file,source){return{name,version,license,label:file,text:await fs.readFile(path.join(repo,file),'utf8'),source};}
 const spectrumAi=JSON.parse(await fs.readFile(require.resolve('@react-spectrum/ai/package.json'),'utf8'));
 const spectrumS2=JSON.parse(await fs.readFile(require.resolve('@react-spectrum/s2/package.json'),'utf8'));
 const binaryDocuments=[
   {name:'Electron',version:electronVersion,license:'MIT',label:'Official Electron distribution LICENSE',text:electronLicense,source:`electron-v${electronVersion}-darwin-arm64.zip and electron-v${electronVersion}-darwin-x64.zip`},
   {name:'Electron bundled Chromium components',version:electronVersion,license:'Multiple component licenses (full upstream catalog)',label:'Official LICENSES.chromium.html',text:chromiumLicenses,source:`electron-v${electronVersion}-darwin-arm64.zip and electron-v${electronVersion}-darwin-x64.zip`},
-  {name:'OpenAI Codex',version:codexVersion,license:'Apache-2.0',label:'licenses/OpenAI-Codex/LICENSE',text:await fs.readFile(path.join(repo,'licenses/OpenAI-Codex/LICENSE'),'utf8'),source:'Pinned official @openai/codex Darwin packages'},
-  {name:'OpenAI Codex',version:codexVersion,license:'Apache-2.0',label:'licenses/OpenAI-Codex/NOTICE.md',text:await fs.readFile(path.join(repo,'licenses/OpenAI-Codex/NOTICE.md'),'utf8'),source:'Pinned official @openai/codex Darwin packages'},
   await staticDocument('@react-spectrum/ai',spectrumAi.version,spectrumAi.license,'licenses/Adobe-React-Spectrum/LICENSE-AI','Adobe React Spectrum upstream license'),
   await staticDocument('@react-spectrum/s2',spectrumS2.version,spectrumS2.license,'licenses/Adobe-React-Spectrum/LICENSE-S2','Adobe React Spectrum upstream license'),
   await staticDocument('Adobe React Spectrum attribution',`${spectrumAi.version}+${spectrumS2.version}`,'NOTICE','licenses/Adobe-React-Spectrum/NOTICE.md','Vantilo-preserved upstream provenance and attribution'),
 ];
 const artifacts=[];
-for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:electronArm},{arch:'x64',native:nativeIntel,codex:codexIntel,electron:electronIntel}]){
+for(const target of [{arch:'arm64',native:nativeArm,electron:electronArm},{arch:'x64',native:nativeIntel,electron:electronIntel}]){
   const stage=path.join(root,'stage-'+target.arch),out=path.join(root,'apps');
   await fs.mkdir(path.join(stage,'resources'),{recursive:true});
   await fs.copyFile(path.join(repo,'resources/vantilo-icon.png'),path.join(stage,'resources/vantilo-icon.png'));
@@ -100,10 +90,9 @@ for(const target of [{arch:'arm64',native:nativeArm,codex:codexArm,electron:elec
   await fs.cp(path.join(reader,'web'),path.join(r,'web'),{recursive:true});
   await fs.copyFile(path.join(reader,'api.cjs'),path.join(r,'api.cjs'));
   await fs.copyFile(nativeArm===target.native?nativeArm:nativeIntel,path.join(r,'native/vantilo-dictionary'));
-  await copyCodexRuntime(target.codex,r);
   await fs.copyFile(path.join(repo,'build/reader/provenance.json'),path.join(r,'provenance.json'));
   const electronModuleIds=[];
-  for(const entry of ['main.cjs','preload.cjs','runtime-entry.cjs','portable-reader-entry.cjs','portable-reader-service.cjs']){
+  for(const entry of ['main.cjs','preload.cjs','portable-reader-entry.cjs','portable-reader-service.cjs']){
     const result=await bundle({entryPoints:[path.join(repo,'electron',entry)],outfile:path.join(stage,'electron',entry),platform:'node',target:'node22',format:'cjs',bundle:true,external:['electron'],minify:true,legalComments:'eof',metafile:true,plugins:[]});
     electronModuleIds.push(...Object.keys(result.metafile.inputs));
   }

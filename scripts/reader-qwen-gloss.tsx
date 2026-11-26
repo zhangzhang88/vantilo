@@ -57,7 +57,7 @@ function VantiloLocalGloss({
           throw new Error('Invalid context gloss');
         }
         setMeaning(result.meaningZh);setStatus('ready');
-        if(result.provider==='custom-api')setProviderLabel(`自定义 API${typeof result.model==='string'&&result.model?' · '+result.model:''}`);
+        if(result.provider==='custom-api'&&typeof result.model==='string'&&result.model)setProviderLabel(result.model);
         onResolved(result.meaningZh,typeof result.provider==='string'?result.provider:undefined,typeof result.model==='string'?result.model:undefined);
       } catch {
         if(live)setStatus('error');

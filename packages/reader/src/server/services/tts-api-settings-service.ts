@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile, chmod } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 
 export interface TtsApiSettingsPublic {
@@ -20,9 +20,6 @@ export interface TtsApiSettingsDraft {
 
 const FILE = "tts-api.local.json";
 const DEFAULT_MODEL = "qwen3-tts-0.6b";
-const MY_VOICE_FILE = "tts-api-my-voice.local.json";
-export const MY_VOICE_MODEL = "qwen3-tts-0.6b-base-bf16";
-export const MY_VOICE_BASE_URL = "http://127.0.0.1:18441/v1";
 
 /** Only explicit private IPv4 literals and loopback are accepted; no DNS, URL credentials or redirects. */
 export function validateTtsApiBaseUrl(input: string): string {
@@ -49,9 +46,9 @@ export class TtsApiSettingsService {
   private writeQueue = Promise.resolve();
   private constructor(private filePath: string, private expectedModel = DEFAULT_MODEL) {}
 
-  static async create(userDataRoot: string, kind: "custom" | "my_voice" = "custom"): Promise<TtsApiSettingsService> {
-    const model = kind === "my_voice" ? MY_VOICE_MODEL : DEFAULT_MODEL;
-    const service = new TtsApiSettingsService(path.join(userDataRoot, "tts", kind === "my_voice" ? MY_VOICE_FILE : FILE), model);
+  static async create(userDataRoot: string): Promise<TtsApiSettingsService> {
+    const model = DEFAULT_MODEL;
+    const service = new TtsApiSettingsService(path.join(userDataRoot, "tts", FILE), model);
     try {
       const data: unknown = JSON.parse(await readFile(service.filePath, "utf8"));
       if (data && typeof data === "object") {
@@ -93,6 +90,16 @@ export class TtsApiSettingsService {
       await chmod(temporary, 0o600);
       await rename(temporary, this.filePath);
       this.state = validated;
+    });
+    this.writeQueue = task.catch(() => {});
+    await task;
+    return this.publicSettings();
+  }
+
+  async clear(): Promise<TtsApiSettingsPublic> {
+    const task = this.writeQueue.then(async () => {
+      await rm(this.filePath, { force: true });
+      this.state = null;
     });
     this.writeQueue = task.catch(() => {});
     await task;

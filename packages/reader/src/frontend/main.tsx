@@ -13,6 +13,14 @@ import "./book-detail-content.css";
 import "./global-navigation.css";
 import "./native-assistant-settings.css";
 import "./native-reader-surfaces.css";
+import "./reader-ux-upgrade.css";
+
+window.addEventListener("message", (event: MessageEvent) => {
+  if (event.source !== window.parent || !event.data || typeof event.data !== "object") return;
+  if ((event.data as { type?: unknown }).type === "vantilo:custom-api-updated") {
+    window.dispatchEvent(new CustomEvent("vantilo-custom-api-updated"));
+  }
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

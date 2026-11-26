@@ -120,9 +120,14 @@ describe('portable Reader process ownership',()=>{
     child.emit('message',{...request,selectedProfileId:profile,task:'word-context'});
     await new Promise(resolve=>setImmediate(resolve));
     expect(customApi).toHaveBeenCalledWith('complete',{instruction:'Translate',input:'source',selectedProfileId:profile,task:'word-context'},expect.any(AbortSignal));
+    const workshopPrompt='P'.repeat(21000);
+    child.emit('message',{...request,input:workshopPrompt,selectedProfileId:profile,task:'practice-workshop'});
+    await new Promise(resolve=>setImmediate(resolve));
+    expect(customApi).toHaveBeenCalledWith('complete',{instruction:'Translate',input:workshopPrompt,selectedProfileId:profile,task:'practice-workshop'},expect.any(AbortSignal));
+    child.emit('message',{...request,input:workshopPrompt,selectedProfileId:profile});
     child.emit('message',{...request,selectedProfileId:'invalid'});
     child.emit('message',{...request,selectedProfileId:profile,expectedEngineId:'invalid'});
-    expect(customApi).toHaveBeenCalledTimes(2);
+    expect(customApi).toHaveBeenCalledTimes(3);
     await supervisor.stop();
   });
   it('forwards a safe error category without exposing backend details',async()=>{

@@ -1,6 +1,6 @@
 {
   "name": "vantilo",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -18,8 +18,6 @@
     "test:release:source": "npm run typecheck && npm run check:reader:release && npm test && npm run test:reader:offline && npm run test:reader:audiobook && npm run test:e2e:vocabulary-backup",
     "test": "node scripts/run-tests-on-workspace.mjs",
     "test:workspace-infrastructure": "node scripts/run-tests-on-workspace.mjs --vitest tests/workspace-test-infrastructure.test.mjs",
-    "test:e2e:codex": "node scripts/run-tests-on-workspace.mjs --node scripts/verify-real-codex-tools.cjs",
-    "test:e2e:codex:passage": "node scripts/run-tests-on-workspace.mjs --node scripts/verify-real-codex-passage.cjs",
     "test:e2e:vocabulary-backup": "node scripts/run-tests-on-workspace.mjs --e2e scripts/run-vocabulary-backup-e2e.mjs",
     "package:e2e:vocabulary-backup": "node scripts/run-tests-on-workspace.mjs --node scripts/package-vocabulary-backup-e2e.mjs --keep-artifacts",
     "test:e2e:vocabulary-backup:packaged": "node scripts/run-tests-on-workspace.mjs --e2e scripts/run-vocabulary-backup-packaged-e2e.mjs",

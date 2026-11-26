@@ -921,6 +921,38 @@ textarea:focus-visible {
 
 .tts-api-settings { margin-top: 24px; padding: 24px; border: 1px solid var(--ui-line-soft, #e6e1d7); border-radius: 16px; }
 .tts-api-settings h3 { margin: 0 0 8px; font-size: 16px; }
+.tts-local-installer-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.tts-local-installer-header h3 { margin: 0; }
+.tts-local-installer-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--ui-soft, rgba(128,128,128,0.12)); color: var(--ui-muted, #817b72); }
+.tts-local-installer-badge.is-installed { background: rgba(43, 132, 96, 0.14); color: #2b8460; }
+.tts-local-installer-badge.is-downloading,
+.tts-local-installer-badge.is-extracting,
+.tts-local-installer-badge.is-verifying { background: rgba(10, 132, 255, 0.14); color: #0a84ff; }
+.tts-local-installer-badge.is-error,
+.tts-local-installer-badge.is-unsupported { background: rgba(176, 77, 57, 0.14); color: #b04d39; }
+.tts-local-installer-progress { margin: 14px 0; display: grid; gap: 6px; }
+.tts-local-installer-bar { height: 7px; border-radius: 999px; background: var(--ui-line-soft, #e6e1d7); overflow: hidden; }
+.tts-local-installer-bar > span { display: block; height: 100%; border-radius: 999px; background: #0a84ff; transition: width 180ms ease; }
+.tts-local-installer-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--ui-muted, #817b72); }
+.tts-local-installer-mirror { display: inline-flex; align-items: center; gap: 8px; margin: 10px 0 14px; font-size: 12.5px; color: var(--ui-muted, #817b72); cursor: pointer; }
+.tts-local-installer-actions { padding-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--theme-line-soft, var(--ui-line-soft, #e6e1d7)); }
+.tts-local-installer-button { min-height: 36px; padding: 0 14px; border: 1px solid var(--theme-line, var(--ui-line, #d2ccc0)); border-radius: 9px; background: var(--theme-surface-strong, var(--ui-surface-strong, #fffdf8)); color: var(--theme-ink, var(--ui-ink-soft, #4c4740)); font-size: 12.5px; font-weight: 550; cursor: pointer; transition: 120ms ease; }
+.tts-local-installer-button:hover:not(:disabled) { border-color: var(--theme-line-strong, #aa9f8e); }
+.tts-local-installer-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.tts-local-installer-button.is-primary { border-color: var(--theme-accent, #c45a33); background: var(--theme-accent, #c45a33); color: var(--theme-on-accent, #ffffff); }
+.tts-local-installer-button.is-primary:hover:not(:disabled) { filter: brightness(1.06); }
+.tts-local-installer-button.is-danger { border-color: rgba(184, 75, 75, 0.35); color: var(--theme-danger, #b04d39); }
+.tts-local-installer-override-banner { margin-top: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--theme-line-soft, var(--ui-line-soft, #e6e1d7)); background: var(--theme-surface-soft, rgba(128, 128, 128, 0.06)); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--theme-ink-soft, var(--ui-ink-soft, #4c4740)); }
+.tts-advanced-details { margin-top: 16px; border: 1px solid var(--theme-line-soft, var(--ui-line-soft, #e6e1d7)); border-radius: 14px; background: var(--theme-surface, var(--ui-surface, transparent)); }
+.tts-advanced-summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; cursor: pointer; font-size: 13.5px; font-weight: 550; color: var(--theme-ink, var(--ui-ink, #1f1d19)); user-select: none; }
+.tts-advanced-summary::-webkit-details-marker { display: none; }
+.tts-advanced-summary::before { content: "▸"; margin-right: 6px; font-size: 12px; color: var(--theme-muted, var(--ui-muted, #817b72)); transition: transform 140ms ease; }
+.tts-advanced-details[open] > .tts-advanced-summary::before { transform: rotate(90deg); }
+.tts-advanced-summary > span:first-child { margin-right: auto; }
+.tts-advanced-summary-hint { font-size: 12px; font-weight: 500; color: var(--theme-muted, var(--ui-muted, #817b72)); }
+.tts-advanced-summary-hint.is-active { padding: 2px 9px; border-radius: 999px; background: rgba(196, 90, 51, 0.14); color: var(--theme-accent, #c45a33); }
+.tts-advanced-body { padding: 0 16px 16px; }
+.tts-advanced-body .tts-api-settings { margin-top: 12px; }
 .tts-api-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 16px 0; }
 .tts-api-settings-state { font-size: 12px; color: var(--ui-muted,#817b72); }
 .tts-api-settings-error { color: #b04d39; font-size: 12px; }
@@ -8064,6 +8096,13 @@ input.learning-slot { outline-offset: 4px; border-bottom-color: var(--accent); }
 
 .issue-translation-controls .issue-translation-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.book-export-hint {
+  color: var(--muted);
 }
 
 .issue-translation-options,
@@ -8107,6 +8146,10 @@ input.learning-slot { outline-offset: 4px; border-bottom-color: var(--accent); }
 
   .issue-translation-controls {
     justify-items: start;
+  }
+
+  .issue-translation-controls .issue-translation-actions {
+    justify-content: flex-start;
   }
 }
 

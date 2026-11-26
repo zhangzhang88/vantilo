@@ -194,4 +194,63 @@ describe("GuidePreparationService", () => {
     });
     expect(record.articles.every((item) => item.readerGuide)).toBe(true);
   });
+
+  it("deduplicates concurrent start() calls for the same issue so waitForIdle() never returns while work is still running", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "magazine-guide-concurrent-start-"));
+    dirs.push(dir);
+    const storage = new JsonStorage(dir);
+    const record = issue(["a"]);
+
+    let enteredGeneration!: () => void;
+    const generationStarted = new Promise<void>((resolve) => { enteredGeneration = resolve; });
+    let releaseGeneration!: () => void;
+    const generationGate = new Promise<void>((resolve) => { releaseGeneration = resolve; });
+    let generationCalls = 0;
+
+    const service = {
+      getIssue: vi.fn(async () => record),
+      listIssues: vi.fn(async () => [{ id: record.id }]),
+      generateSectionTranslations: vi.fn(),
+      generateReaderGuidesForArticles: vi.fn(async (_issueId: string, _provider: ReaderGuideProvider, ids: string[]) => {
+        generationCalls += 1;
+        enteredGeneration();
+        await generationGate;
+        ids.forEach((id) => {
+          const target = record.articles.find((item) => item.id === id);
+          if (target && !target.readerGuide) target.readerGuide = guide(id);
+        });
+        return {
+          issue: record,
+          generated: ids.length,
+          remaining: 0,
+          unresolvedIds: [],
+        };
+      }),
+    } as unknown as IssueService;
+
+    const preparation = new GuidePreparationService(service, storage, fakeProvider(), null, {
+      retryDelaysMs: [0, 0],
+      sleep: async () => undefined,
+    });
+
+    const [firstStatus, secondStatus] = await Promise.all([
+      preparation.start(record.id),
+      preparation.start(record.id),
+    ]);
+    expect(firstStatus?.state).toBe("running");
+    expect(secondStatus?.state).toBe("running");
+    await generationStarted;
+
+    let idleResolved = false;
+    const idlePromise = preparation.waitForIdle().then(() => { idleResolved = true; });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(generationCalls).toBe(1);
+    expect(idleResolved).toBe(false);
+
+    releaseGeneration();
+    await idlePromise;
+    expect(idleResolved).toBe(true);
+    expect(generationCalls).toBe(1);
+    expect((await preparation.getStatus(record.id))?.state).toBe("complete");
+  });
 });

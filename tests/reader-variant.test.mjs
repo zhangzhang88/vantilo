@@ -124,33 +124,12 @@ it('keeps unavailable documents in history but removes the unavailable primary c
   expect(()=>adaptReaderSource('new layout', '/source/src/frontend/global-reading-list.tsx')).toThrow(/seam changed/);
 });
 
-it('preserves the Qwen3-TTS assistant read-aloud when adapting Vantilo composer and login',()=>{
+it('stubs out the retired CodexPrepPanel in Vantilo builds',()=>{
   const filename=`${readerSourceRoot}/src/frontend/codex-prep-panel.tsx`;
   const adapted=adaptReaderSource(readFileSync(filename,'utf8'),filename);
-  for(const feature of ['ReaderSharedComposer','PREP_QUICK_PROMPTS','READING_ASSISTANT_PRESETS','draftStorageKey','locateParagraph','重新回答','清空讨论记录','选择备课章节','确认内容并保存到精选阅读'])expect(adapted).toContain(feature);
+  expect(adapted).toBe('export function CodexPrepPanel() { return null; }\n');
+  expect(adapted).not.toContain('ReaderSharedComposer');
   expect(adapted).not.toContain('void connect()');
-  // The previously shipped adaptation replaced the real PCM streaming player
-  // with SpeechSynthesisUtterance. Keep the actual reader audio pipeline.
-  expect(adapted).toContain('streamChineseTts(');
-  expect(adapted).toContain('new ChineseStreamingAudioPlayer(');
-  expect(adapted).toContain('loadQwenTtsVoice(getReaderStorage())');
-  expect(adapted).toContain('magazine-reader:pause-chinese-audio');
-  expect(adapted).toContain('magazine-reader:stop-english-sentence-audio');
-  expect(adapted).not.toContain('SpeechSynthesisUtterance');
-  expect(adapted).not.toContain('window.speechSynthesis');
-  expect(adapted).not.toContain('此设备暂不支持系统朗读');
-  const tree = ts.createSourceFile('result.tsx',adapted,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-  expect(tree.parseDiagnostics).toHaveLength(0);
-  const readReplyBodies = [];
-  const walk = node => {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === 'readReply') readReplyBodies.push(node.getText(tree));
-    ts.forEachChild(node, walk);
-  };
-  walk(tree);
-  expect(readReplyBodies).toHaveLength(1);
-  expect(readReplyBodies[0]).toContain('new ChineseStreamingAudioPlayer(');
-  expect(readReplyBodies[0]).toContain('streamChineseTts(');
-  expect(readReplyBodies[0]).not.toContain('speechSynthesis');
 });
 
 it('preserves previously saved native-Agent contextual meanings after a Reader reload', () => {

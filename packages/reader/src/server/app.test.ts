@@ -113,6 +113,36 @@ describe("Fastify app", () => {
     }finally{await app.close();}
   });
 
+  it("generates practice exercises through Vantilo unified custom API when provider is vantilo-custom-api", async () => {
+    const root=await mkdtemp(path.join(os.tmpdir(),"workshop-vantilo-custom-api-"));roots.push(root);
+    await mkdir(path.join(root,"issues"));
+    const codex=vi.fn(async()=>{throw new Error("Codex must not be invoked");});
+    const vantiloCustomApiComplete=vi.fn(async (params: { instruction: string; input: string; selectedProfileId?: string; task?: string; signal?: AbortSignal }) => {
+      expect(params.selectedProfileId).toBe("v-profile-1");
+      expect(params.task).toBe("practice-workshop");
+      expect(params.signal).toBeInstanceOf(AbortSignal);
+      expect(params.input).toContain("The market is busy.");
+      return JSON.stringify({ titleZh: "忙碌的市场", exercises: [{ sentence: "the market", chinese: "市场", pronunciation: "/ðə ˈmɑːrkɪt/" }] });
+    });
+    const app=await buildServer({
+      projectRoot:root,serveFrontend:false,
+      aiFetchImpl:codex as unknown as typeof fetch,
+      vantiloCustomApiComplete,
+      readerGuideProvider:null,sectionTranslationProvider:null,selectionAssistProvider:null,
+      readingAssistantProvider:null,dictionaryProvider:null,
+    });
+    try{
+      const prompt=(await app.inject({method:"GET",url:"/api/practice-workshop/prompt"})).json().prompt as string;
+      const result=await app.inject({method:"POST",url:"/api/practice-workshop/generate",
+        payload:{provider:"vantilo-custom-api",profileId:"v-profile-1",article:"The market is busy.",prompt}});
+      expect(result.statusCode).toBe(200);
+      expect(result.json().titleZh).toBe("忙碌的市场");
+      expect(result.json().exercises).toEqual([{sentence:"the market",chinese:"市场",pronunciation:"/ðə ˈmɑːrkɪt/"}]);
+      expect(vantiloCustomApiComplete).toHaveBeenCalledTimes(1);
+      expect(codex).not.toHaveBeenCalled();
+    }finally{await app.close();}
+  });
+
   it("lists shelf headers before opening or parsing an EPUB", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "reader-issue-headers-"));
     roots.push(root);
@@ -1200,6 +1230,130 @@ describe("Fastify app", () => {
       expect(status.json().state).toBe("error");
     }, { timeout: 20_000, interval: 50 });
     await app.close();
+  });
+
+  it("waits for background Chinese guide preparation and its status writes to finish before app.close() resolves", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "magazine-reader-close-drain-"));
+    roots.push(root);
+    await mkdir(path.join(root, "issues"));
+    let guideEntered!: () => void;
+    const guideStarted = new Promise<void>((resolve) => { guideEntered = resolve; });
+    let releaseGuide!: () => void;
+    const guideGate = new Promise<void>((resolve) => { releaseGuide = resolve; });
+    let pausedOnce = false;
+    const generate = vi.fn(async (articles: Article[]) => {
+      if (!pausedOnce) {
+        pausedOnce = true;
+        guideEntered();
+        await guideGate;
+      }
+      return new Map(articles.map((article) => [article.id, {
+        titleZh: `中文：${article.title}`,
+        subtitleZh: null,
+        summaryZh: "关闭前完成写盘的摘要。",
+        model: "test-reader-guide",
+        provider: "easycliproxy" as const,
+        generatedAt: "2099-01-01T00:00:00.000Z",
+      }]));
+    });
+    const translate = vi.fn(async (_publicationId: Article["publicationId"], sections: string[]) =>
+      new Map(sections.map((section) => [section, `中文栏目：${section}`])));
+    const app = await buildServer({
+      projectRoot: root,
+      serveFrontend: false,
+      translationProvider: null,
+      readerGuideProvider: { generate },
+      sectionTranslationProvider: { translate },
+      selectionAssistProvider: null,
+      wordContextProvider: null,
+      dictionaryProvider: null,
+    });
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/import/epub?filename=TheEconomist.2099.01.08.epub",
+      headers: { "content-type": "application/epub+zip" },
+      payload: await syntheticMagazineEpub(),
+    });
+    expect(imported.statusCode).toBe(201);
+    await guideStarted;
+
+    let closed = false;
+    const closePromise = app.close().then(() => { closed = true; });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(closed).toBe(false);
+
+    releaseGuide();
+    await closePromise;
+    expect(closed).toBe(true);
+
+    // Status file must already be flushed to data/ before close() resolved, and immediate removal must succeed cleanly.
+    const statusFile = JSON.parse(await readFile(path.join(root, "data", "guide-preparation-status.json"), "utf8")) as {
+      issues: Record<string, { state: string }>;
+    };
+    expect(statusFile.issues["economist:2099-01-08"]?.state).toBe("complete");
+    await rm(root, { recursive: true });
+    roots.pop();
+  });
+
+  it("drains background science content refreshes BEFORE closing dependent transports and workers during app.close()", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "magazine-reader-close-order-"));
+    roots.push(root);
+    await mkdir(path.join(root, "issues"));
+    const events: string[] = [];
+    let refreshEntered!: () => void;
+    const refreshStarted = new Promise<void>((resolve) => { refreshEntered = resolve; });
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    let pausedFirst = false;
+
+    const contentDiscoveryFetchImpl: typeof fetch = vi.fn(async () => {
+      if (!pausedFirst) {
+        pausedFirst = true;
+        refreshEntered();
+        await refreshGate;
+        events.push("refresh-done");
+      }
+      return new Response("<?xml version=\"1.0\"?><rss><channel></channel></rss>", {
+        status: 200,
+        headers: { "content-type": "application/xml" },
+      });
+    });
+
+    const app = await buildServer({
+      projectRoot: root,
+      serveFrontend: false,
+      translationProvider: null,
+      readerGuideProvider: null,
+      sectionTranslationProvider: null,
+      selectionAssistProvider: null,
+      wordContextProvider: null,
+      dictionaryProvider: null,
+      githubMagazineSync: { sources: [] },
+      contentDiscoveryFetchImpl,
+      speechTtsSource: {
+        warm: async () => {},
+        synthesize: async () => ({ wav: Buffer.alloc(0) }),
+        stream: async function* () {},
+        close: () => { events.push("transport-and-worker-close"); },
+      } as unknown as Parameters<typeof buildServer>[0]["speechTtsSource"],
+    });
+
+    // Trigger GitHub sync (0 sources), which returns immediately while kicking off background refreshScienceContent().
+    const syncRes = await app.inject({ method: "POST", url: "/api/source-sync/github" });
+    expect(syncRes.statusCode).toBe(200);
+    await refreshStarted;
+
+    let closed = false;
+    const closePromise = app.close().then(() => { closed = true; });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(closed).toBe(false);
+    // Dependent close hooks must NOT have executed while the background refresh is still running.
+    expect(events).toEqual([]);
+
+    releaseRefresh();
+    await closePromise;
+    expect(closed).toBe(true);
+    expect(events).toEqual(["refresh-done", "transport-and-worker-close"]);
   });
 
   it("manages masked AI profiles and applies an activated Gemini profile without restart", async () => {

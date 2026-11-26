@@ -18,11 +18,8 @@ const nodeEntries = new Set([
   'scripts/run-vocabulary-backup-packaged-e2e.mjs',
   'scripts/run-vocabulary-backup-universal-e2e.mjs',
   'scripts/package-vocabulary-backup-e2e.mjs',
-  'scripts/verify-real-codex-tools.cjs',
-  'scripts/verify-real-codex-passage.cjs',
   'scripts/verify-tts-server.cjs',
   'scripts/verify-magazine-progress.cjs',
-  'scripts/verify-ordered-practice-runner.cjs',
   'scripts/verify-original-game-sounds-build.cjs',
   'scripts/test-fixtures/workspace-runner-failure.mjs',
 ]);

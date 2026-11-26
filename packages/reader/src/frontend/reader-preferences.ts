@@ -3,13 +3,41 @@ export type AppThemePreset = "light" | "sepia" | "green" | "dark" | "system";
 export type ReaderWidth = "narrow" | "medium" | "wide";
 export type ReaderFontFamily = "serif" | "sans";
 export type ReaderLineHeight = "compact" | "standard" | "relaxed";
+export type ReaderLayoutMode = "scroll" | "single" | "double";
+export type ReaderPaperTint =
+  | "default"
+  | "silver"
+  | "parchment"
+  | "sage"
+  | "blush"
+  | "mist"
+  | "ivory"
+  | "butter"
+  | "slate";
+
+export type ReaderDarkTint =
+  | "pitch"
+  | "obsidian"
+  | "espresso"
+  | "forest"
+  | "burgundy"
+  | "midnight"
+  | "abyss"
+  | "umber"
+  | "graphite";
+
 export type PronunciationAccent = "us" | "uk";
 
 export interface ReaderPreferences {
   version: 1;
   theme: ReaderTheme;
   themePreset?: AppThemePreset;
+  paperTint: ReaderPaperTint;
+  darkTint: ReaderDarkTint;
+  layoutMode: ReaderLayoutMode;
+  chineseIndent: boolean;
   fontSize: number;
+  horizontalMargin: number;
   readerWidth: ReaderWidth;
   fontFamily: ReaderFontFamily;
   lineHeight: ReaderLineHeight;
@@ -29,11 +57,20 @@ interface WriteStorage extends ReadStorage {
 
 export const READER_PREFERENCES_KEY = "magazine-reader-preferences-v1";
 
+export const MIN_HORIZONTAL_MARGIN = 0;
+export const MAX_HORIZONTAL_MARGIN = 28;
+export const DEFAULT_HORIZONTAL_MARGIN = 12;
+
 export const DEFAULT_READER_PREFERENCES: ReaderPreferences = {
   version: 1,
   theme: "paper",
   themePreset: "system",
+  paperTint: "default",
+  darkTint: "obsidian",
+  layoutMode: "scroll",
+  chineseIndent: true,
   fontSize: 18,
+  horizontalMargin: DEFAULT_HORIZONTAL_MARGIN,
   readerWidth: "medium",
   fontFamily: "serif",
   lineHeight: "standard",
@@ -76,6 +113,42 @@ function isReaderLineHeight(value: unknown): value is ReaderLineHeight {
   return value === "compact" || value === "standard" || value === "relaxed";
 }
 
+function isReaderLayoutMode(value: unknown): value is ReaderLayoutMode {
+  return value === "scroll" || value === "single" || value === "double";
+}
+
+const VALID_LIGHT_TINTS = new Set<string>([
+  "default",
+  "silver",
+  "parchment",
+  "sage",
+  "blush",
+  "mist",
+  "ivory",
+  "butter",
+  "slate",
+]);
+
+const VALID_DARK_TINTS = new Set<string>([
+  "pitch",
+  "obsidian",
+  "espresso",
+  "forest",
+  "burgundy",
+  "midnight",
+  "abyss",
+  "umber",
+  "graphite",
+]);
+
+function isReaderPaperTint(value: unknown): value is ReaderPaperTint {
+  return typeof value === "string" && VALID_LIGHT_TINTS.has(value);
+}
+
+function isReaderDarkTint(value: unknown): value is ReaderDarkTint {
+  return typeof value === "string" && VALID_DARK_TINTS.has(value);
+}
+
 function isPronunciationAccent(value: unknown): value is PronunciationAccent {
   return value === "us" || value === "uk";
 }
@@ -83,6 +156,15 @@ function isPronunciationAccent(value: unknown): value is PronunciationAccent {
 function normalizedFontSize(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_READER_PREFERENCES.fontSize;
   return Math.max(15, Math.min(24, Math.round(value)));
+}
+
+function normalizedHorizontalMargin(value: unknown, fallbackWidth: ReaderWidth): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(MIN_HORIZONTAL_MARGIN, Math.min(MAX_HORIZONTAL_MARGIN, Math.round(value)));
+  }
+  if (fallbackWidth === "wide") return 6;
+  if (fallbackWidth === "narrow") return 22;
+  return DEFAULT_HORIZONTAL_MARGIN;
 }
 
 export function loadReaderPreferences(storage: ReadStorage): ReaderPreferences {
@@ -95,7 +177,21 @@ export function loadReaderPreferences(storage: ReadStorage): ReaderPreferences {
       version: 1,
       theme: isReaderTheme(parsed.theme) ? parsed.theme : DEFAULT_READER_PREFERENCES.theme,
       themePreset: migratedThemePreset(parsed),
+      paperTint: isReaderPaperTint(parsed.paperTint) ? parsed.paperTint : DEFAULT_READER_PREFERENCES.paperTint,
+      darkTint: isReaderDarkTint(parsed.darkTint)
+        ? parsed.darkTint
+        : isReaderDarkTint(parsed.paperTint)
+          ? parsed.paperTint
+          : DEFAULT_READER_PREFERENCES.darkTint,
+      layoutMode: isReaderLayoutMode(parsed.layoutMode) ? parsed.layoutMode : DEFAULT_READER_PREFERENCES.layoutMode,
+      chineseIndent: typeof parsed.chineseIndent === "boolean"
+        ? parsed.chineseIndent
+        : DEFAULT_READER_PREFERENCES.chineseIndent,
       fontSize: normalizedFontSize(parsed.fontSize),
+      horizontalMargin: normalizedHorizontalMargin(
+        parsed.horizontalMargin,
+        isReaderWidth(parsed.readerWidth) ? parsed.readerWidth : DEFAULT_READER_PREFERENCES.readerWidth,
+      ),
       readerWidth: isReaderWidth(parsed.readerWidth) ? parsed.readerWidth : DEFAULT_READER_PREFERENCES.readerWidth,
       fontFamily: isReaderFontFamily(parsed.fontFamily) ? parsed.fontFamily : DEFAULT_READER_PREFERENCES.fontFamily,
       lineHeight: isReaderLineHeight(parsed.lineHeight) ? parsed.lineHeight : DEFAULT_READER_PREFERENCES.lineHeight,

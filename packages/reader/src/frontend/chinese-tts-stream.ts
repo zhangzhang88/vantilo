@@ -17,6 +17,56 @@ function pcmFromBase64(encoded: string): Int16Array {
   return samples;
 }
 
+const FIRST_FRAME_TIMEOUT_MS = 90_000;
+const NEXT_FRAME_TIMEOUT_MS = 45_000;
+
+function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      void reader.cancel().catch(() => {});
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      void reader.cancel().catch(() => {});
+      reject(new Error("本地 TTS 音频流响应超时，请重试"));
+    }, timeoutMs);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    reader.read().then(
+      result => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(result);
+      },
+      error => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
 export async function* streamChineseTts(text: string, signal: AbortSignal, language: "zh-CN" | "en-US" = "zh-CN", voice: ChineseAudiobookVoice = DEFAULT_QWEN_TTS_VOICE, seed?: number): AsyncGenerator<SpeechPcmChunk> {
   const response = await fetch("/api/prep/tts", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -32,10 +82,14 @@ export async function* streamChineseTts(text: string, signal: AbortSignal, langu
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let pending = "", ended = false;
+  let pending = "", ended = false, sawChunk = false;
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithTimeout(
+        reader,
+        sawChunk ? NEXT_FRAME_TIMEOUT_MS : FIRST_FRAME_TIMEOUT_MS,
+        signal,
+      );
       pending += decoder.decode(value, { stream: !done });
       if (pending.length > 2_000_000) throw new Error("TTS 音频响应超过单帧限制");
       let newline: number;
@@ -53,6 +107,7 @@ export async function* streamChineseTts(text: string, signal: AbortSignal, langu
           ended = true; break;
         }
         if (data.type !== "chunk" || data.sampleRate !== 24000 || typeof data.pcm !== "string") throw new Error("TTS 音频协议无效");
+        sawChunk = true;
         yield { sampleRate: 24000, samples: pcmFromBase64(data.pcm) };
       }
       if (ended || done) break;

@@ -24,8 +24,9 @@ export function adaptTranslationPreview(source,filename) {
   if(filename.endsWith('/frontend/styles.css'))return source+`
 .reader-page-shell.is-chinese-mode .chinese-player {top:74px;}
 .reader-page-shell.is-focus-mode.is-chinese-mode .chinese-player {top:60px;}
-.vantilo-translation-menu {position:relative;flex:none;font-size:13px;color:var(--ui-ink,#222);}
-.vantilo-translation-menu summary {cursor:pointer;list-style:none;white-space:nowrap;padding:7px 10px;border:1px solid var(--ui-line,#d9d6cf);border-radius:8px;background:var(--ui-surface,#f7f6f2);}
+.vantilo-translation-menu {position:relative;flex:0 0 auto;font-size:12px;color:var(--ui-muted,#555);}
+.vantilo-translation-menu summary {cursor:pointer;list-style:none;white-space:nowrap;padding:4px 9px;border:1px solid transparent;border-radius:999px;background:rgba(128,128,138,.1);color:inherit;transition:background-color .14s ease,border-color .14s ease;}
+.vantilo-translation-menu summary:hover,.vantilo-translation-menu[open] summary {background:rgba(128,128,138,.16);border-color:var(--ui-line,#d9d6cf);color:var(--ui-ink,#222);}
 .vantilo-translation-menu summary::-webkit-details-marker {display:none;}
 .vantilo-translation-bar {position:absolute;top:100%;right:0;z-index:40;box-sizing:border-box;width:min(360px,85vw);display:grid;gap:10px;padding:14px;background:var(--ui-surface,#f7f6f2);color:var(--ui-ink,#222);border:1px solid var(--ui-line,#d9d6cf);border-radius:12px;box-shadow:0 8px 24px #0002;white-space:normal;}
 .vantilo-translation-engine {display:grid;gap:6px;min-width:0;}
@@ -88,9 +89,10 @@ export function adaptTranslationPreview(source,filename) {
     setSentenceTranslationRequests({});
     setFullArticleTranslationExpanded(false);
   }
+  const reloadVantiloEnginesRef=useRef<()=>void>(()=>{});
   useEffect(()=>{
     let ctl:AbortController|null=null;
-    const load=()=>{ctl?.abort();ctl=new AbortController();setVantiloEngineError('');fetch('/api/vantilo-translation/engines',{signal:ctl.signal}).then(async r=>{if(!r.ok)throw new Error('无法读取引擎列表');return r.json();})
+    const load=()=>{ctl?.abort();ctl=new AbortController();setVantiloEngineError('');fetch('/api/vantilo-translation/engines',{cache:'no-store',signal:ctl.signal}).then(async r=>{if(!r.ok)throw new Error('无法读取引擎列表');return r.json();})
       .then(data=>{
         if(ctl?.signal.aborted)return;
         setVantiloEngines(data.engines);
@@ -98,10 +100,13 @@ export function adaptTranslationPreview(source,filename) {
         if(!remembered&&data.defaultId)changeVantiloEngine(data.defaultId,!preferredTranslationEngine);
         else if(remembered&&!data.engines.some((engine:{id:string})=>engine.id===remembered)){
           cancelVantiloTranslation();
-          setVantiloEngineError('原选模型已变更或不可用，请重新选择。');
+          setVantiloEngineError(data.engines.length
+            ?'原选模型已变更或不可用，请重新选择阅读翻译模型。'
+            :'原选模型已变更或不可用，请在阅读设置中重新配置。');
         }
       })
       .catch(e=>{if(!ctl?.signal.aborted)setVantiloEngineError(e.message);});};
+    reloadVantiloEnginesRef.current=load;
     load();window.addEventListener('vantilo-custom-api-updated',load);return ()=>{ctl?.abort();window.removeEventListener('vantilo-custom-api-updated',load);};
   },[]);
   useEffect(()=>{
@@ -117,34 +122,52 @@ export function adaptTranslationPreview(source,filename) {
     return !!record && (record.meaningSource === 'user' || (record as any).engineId === vantiloEngineRef.current);
   }
   async function vantiloExplainWordContext(input: any, onPartial: (result: any) => void) {
-    const engineId=vantiloEngineRef.current;
+    const engineId=vantiloEngineRef.current || (()=>{try{return getReaderStorage().getItem('vantilo-translation-engine-v1')||'';}catch{return '';}})();
     const call=async(stage: string, primary: any = {})=>{
       const response=await fetch('/api/vantilo-word-context',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({engineId,stage,text:input.text,sentence:input.sentence,paragraph:input.paragraph||'',meaningZh:primary.meaningZh||'',explanationZh:primary.explanationZh||'',...(stage==='verified'?{sentenceTranslationZh:input.sentenceTranslationZh||'',expressionExplanationZh:input.expressionExplanationZh||'',suggestedMeaningZh:input.suggestedMeaningZh||''}:{})})});
       if(!response.ok)throw new Error('语境解释暂时不可用');
       return await response.json();
     };
+    const fetchBriefGloss=async()=>{
+      const word=String(input.text||'').trim();
+      if(!/^[A-Za-z][A-Za-z '-]{0,63}$/.test(word))throw new Error('语境解释暂时不可用');
+      const run=async()=>{
+        const response=await fetch('/api/vantilo-context-gloss',{
+          method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({...(engineId?{engineId}:{}),word,sentence:String(input.sentence||'').slice(0,600)}),
+        });
+        if(!response.ok)throw new Error('语境解释暂时不可用');
+        const brief=await response.json();
+        if(typeof brief.meaningZh!=='string'||!/^[\\p{Script=Han}、， ]{1,24}$/u.test(brief.meaningZh.trim()))throw new Error('语境解释暂时不可用');
+        return {engineId,meaningZh:brief.meaningZh.trim(),partOfSpeech:/[-‐‑–—]/u.test(input.text)?'phrase':'',explanationZh:'',
+          provider:brief.provider,model:brief.model};
+      };
+      if(typeof vantiloQwenAutoQueue!=='undefined'){
+        const task=vantiloQwenAutoQueue.then(run,run);
+        vantiloQwenAutoQueue=task.then(()=>{},()=>{});
+        return await task;
+      }
+      return await run();
+    };
     if(input.verifyConsistency)return call('verified');
-    // Keep a hyphenated compound intact. When the full structured response
-    // fails, request a short Chinese contextual gloss from the same engine.
-    // Never invent a meaning by concatenating dictionary entries.
+    if(engineId.startsWith('qwen:')){
+      const brief=await fetchBriefGloss();
+      const partial={...brief,meaningEn:'',explanationEn:'',examplesEn:[],supplementStatus:'ready'};
+      if(vantiloEngineRef.current&&vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
+      onPartial(partial);
+      return partial;
+    }
+    // Keep a hyphenated compound intact, and fall back to concise contextual gloss
+    // when the full structured endpoint is unavailable for the selected engine.
     const primary=await call('primary').catch(async originalError => {
-      if(!/[-‐‑–—]/u.test(input.text))throw originalError;
-      const response=await fetch('/api/vantilo-context-gloss',{
-        method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({engineId,word:input.text,sentence:input.sentence.slice(0,600)}),
-      });
-      if(!response.ok)throw originalError;
-      const brief=await response.json();
-      if(typeof brief.meaningZh!=='string'||!/^[\\p{Script=Han}、， ]{1,24}$/u.test(brief.meaningZh.trim()))throw originalError;
-      return {engineId,meaningZh:brief.meaningZh.trim(),partOfSpeech:'phrase',explanationZh:'',
-        provider:brief.provider,model:brief.model};
+      try { return await fetchBriefGloss(); } catch { throw originalError; }
     });
     const partial={...primary,meaningEn:'',explanationEn:'',examplesEn:[],supplementStatus:'loading'};
-    if(vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
+    if(vantiloEngineRef.current&&vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
     onPartial(partial);
     try {
       const extra=await call('supplement',primary);
-      if(vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
+      if(vantiloEngineRef.current&&vantiloEngineRef.current!==engineId)throw new Error('模型已切换');
       return {...partial,...extra,meaningZh:primary.meaningZh,explanationZh:primary.explanationZh,partOfSpeech:primary.partOfSpeech,supplementStatus:'ready'};
     } catch { return {...partial,supplementStatus:'error'}; }
   }
@@ -284,7 +307,7 @@ export function adaptTranslationPreview(source,filename) {
   const provenanceSeam='                      {currentSentenceTranslation && <><p>{currentSentenceTranslation.translationZh}</p>';
   const provenanceIndex=source.indexOf(provenanceSeam);
   if(provenanceIndex<0)throw new Error('Sentence provenance seam changed');
-  source=source.slice(0,provenanceIndex)+source.slice(provenanceIndex).replace(provenanceSeam,`                      {currentSentenceTranslation && <><small className="vantilo-sentence-provenance">{currentSentenceTranslation.model} · {["qwen-mlx","qwen-gguf"].includes(currentSentenceTranslation.provider) ? "本地 Qwen" : currentSentenceTranslation.provider === "custom-api" ? "自定义 API" : "Codex / ChatGPT"} · 已保存</small><p>{currentSentenceTranslation.translationZh}</p>`);
+  source=source.slice(0,provenanceIndex)+source.slice(provenanceIndex).replace(provenanceSeam,`                      {currentSentenceTranslation && <><small className="vantilo-sentence-provenance">{currentSentenceTranslation.model} · {["qwen-mlx","qwen-gguf"].includes(currentSentenceTranslation.provider) ? "本地 Qwen" : currentSentenceTranslation.provider === "custom-api" ? "AI 模型" : "Codex / ChatGPT"} · 已保存</small><p>{currentSentenceTranslation.translationZh}</p>`);
   const noExpressionsSeam='{currentSentenceTranslation && !currentSentenceTranslation.expressions?.length && <p className="muted-text">本句暂无需要单独学习的关键表达。</p>}';
   if(!source.includes(noExpressionsSeam))throw new Error('Sentence expression help seam changed');
   source=source.replace(noExpressionsSeam,'{currentSentenceTranslation && !currentSentenceTranslation.expressions?.length && <p className="muted-text">{["qwen-mlx","qwen-gguf"].includes(currentSentenceTranslation.provider) ? "本地 Qwen 当前只生成逐句译文；如需关键表达，请切换 GPT 后点击“重新推荐关键表达”。" : "本句暂无需要单独学习的关键表达。"}</p>}');
@@ -298,22 +321,22 @@ export function adaptTranslationPreview(source,filename) {
   if(!source.includes(oldActions))throw new Error('Sentence bottom actions seam changed');
   source=source.replace(oldActions,'');
   source=source.replace('{currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。"}','{currentSentenceTranslationRequest.error || (currentSentenceTranslation ? "更新失败，已保留上次内容，请重试。" : "句子翻译暂时失败，请重试。")}');
-  exact('          <div className="reader-mode-switch" aria-label="阅读模式">', `          <details className="vantilo-translation-menu" onMouseLeave={event => { if (event.relatedTarget) event.currentTarget.open = false; }}>
+  exact('          {audiobookMode !== "original" && (<div className="reader-mode-switch" aria-label="阅读模式">', `          {audiobookMode !== "original" && <><details className="vantilo-translation-menu" onToggle={event => { if (event.currentTarget.open) reloadVantiloEnginesRef.current(); }} onMouseLeave={event => { if (event.relatedTarget) event.currentTarget.open = false; }}>
         <summary title="选择阅读翻译模型">翻译模型 ▾</summary>
         <aside className="vantilo-translation-bar" aria-label="阅读翻译设置">
           <label className="vantilo-translation-engine">
             <span>阅读翻译模型</span>
             <select aria-label="阅读翻译引擎，适用于段落、全文和逐句模式" value={vantiloEngine} disabled={!vantiloEngines.length} onChange={e=>changeVantiloEngine(e.target.value)}>
               {vantiloEngine&&!vantiloEngines.some(engine=>engine.id===vantiloEngine)&&<option value={vantiloEngine} disabled>原选模型不可用</option>}
-              {!vantiloEngine && <option value="">暂无可用模型，请在设置中配置 API 或登录 ChatGPT</option>}
+              {!vantiloEngine && <option value="">暂无可用模型，请在阅读设置中配置 AI 模型服务</option>}
               {vantiloEngines.map(engine=><option key={engine.id} value={engine.id}>{engine.label}</option>)}
             </select>
           </label>
           {vantiloEngineError && <span role="status">{vantiloEngineError}</span>}
-          <span className="vantilo-translation-note">{vantiloChunkProgress?.engineId===vantiloEngine&&vantiloChunkProgress.totalChunks>1?('本地 Qwen 分段 '+vantiloChunkProgress.completedChunks+'/'+vantiloChunkProgress.totalChunks+(vantiloChunkProgress.status==='failed'&&vantiloChunkProgress.failedChunk?' · 第 '+vantiloChunkProgress.failedChunk+' 段失败':'')):vantiloEngine.startsWith('qwen:')?'本地 Qwen · 长段落按句子分段翻译':vantiloEngine.startsWith('custom-api:')?'自定义 API · 使用所选模型':'Codex / ChatGPT · 使用所选模型'} · 记住所选模型，译文分别保存</span>
+          <span className="vantilo-translation-note">{vantiloChunkProgress?.engineId===vantiloEngine&&vantiloChunkProgress.totalChunks>1?('本地 Qwen 分段 '+vantiloChunkProgress.completedChunks+'/'+vantiloChunkProgress.totalChunks+(vantiloChunkProgress.status==='failed'&&vantiloChunkProgress.failedChunk?' · 第 '+vantiloChunkProgress.failedChunk+' 段失败':'')):vantiloEngine.startsWith('qwen:')?'本地 Qwen · 长段落按句子分段翻译':'使用所选模型'} · 记住所选模型，译文分别保存</span>
       </aside>
       </details>
-      {(fullArticleTranslationRunning || currentArticleTranslationLoading) && <button className="toolbar-button" onClick={cancelVantiloTranslation}>停止翻译</button>}
-          <div className="reader-mode-switch" aria-label="阅读模式">`);
+      {(fullArticleTranslationRunning || currentArticleTranslationLoading) && <button className="toolbar-button" onClick={cancelVantiloTranslation}>停止翻译</button>}</>}
+          {audiobookMode !== "original" && (<div className="reader-mode-switch" aria-label="阅读模式">`);
   return source;
 }

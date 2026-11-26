@@ -57,7 +57,8 @@ async function responseJson(response, apiKey) {
     throw new Error('API 返回的不是有效 JSON');
   }
   if(!response.ok){
-    const detail=typeof body?.error==='string'?body.error:body?.error?.message||body?.message||body?.detail||body?.error?.code||response.statusText;
+    const errorRoot=Array.isArray(body)?body[0]:body;
+    const detail=typeof errorRoot?.error==='string'?errorRoot.error:errorRoot?.error?.message||errorRoot?.message||errorRoot?.detail||errorRoot?.error?.code||response.statusText;
     const safe=String(detail||'').replace(/[\u0000-\u001f\u007f]/g,' ').replaceAll(apiKey||'\0','[已隐藏]').trim().slice(0,240);
     throw new Error(`API 返回 HTTP ${response.status}${safe?'：'+safe:''}`);
   }
@@ -139,25 +140,31 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
     const responsesEndpoint=config.baseUrl.endsWith('/responses');
     const endpoint=responsesEndpoint||config.baseUrl.endsWith('/chat/completions')?config.baseUrl:config.baseUrl+'/chat/completions';
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(new Error('API 请求超时（60 秒）')),60000);
-    const abort=()=>controller.abort(signal.reason||new Error('API 请求已取消'));
-    signal?.addEventListener('abort',abort,{once:true});
-    if(signal?.aborted)abort();
+    const isWorkshop = task === 'practice-workshop';
+    const timeoutMs = isWorkshop ? 180000 : 60000;
+    const timeoutLabel = `API 请求超时（${Math.round(timeoutMs / 1000)} 秒）`;
+    const timer = setTimeout(() => controller.abort(new Error(timeoutLabel)), timeoutMs);
+    const abort = () => controller.abort(signal.reason || new Error('API 请求已取消'));
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     try {
-      const bodyText=test?'Reply with exactly: OK':input;
-      const isDeepSeek=/^(?:[a-z0-9-]+\.)*deepseek\.com$/i.test(new URL(config.baseUrl).hostname);
-      const quickContext=isDeepSeek && task==='word-context';
-      const body=responsesEndpoint
-        ?{model:config.model,instructions:test?'Reply with exactly OK.':instruction||'',input:bodyText,temperature:0,max_output_tokens:test?128:quickContext?1000:6000,...(quickContext?{reasoning:{effort:'none'}}:{})}
-        :{model:config.model,messages:test?[{role:'user',content:bodyText}]:[{role:'system',content:instruction},{role:'user',content:bodyText}],temperature:0,max_tokens:test?128:quickContext?1000:6000,...((test&&isDeepSeek)||quickContext?{thinking:{type:'disabled'}}:{})};
-      const response=await fetchImpl(endpoint,{method:'POST',redirect:'error',signal:controller.signal,headers:{'content-type':'application/json',...(config.apiKey?{authorization:'Bearer '+config.apiKey}:{})},body:JSON.stringify(body)});
-      const result=await responseJson(response,config.apiKey);const content=result?.choices?.[0]?.message?.content;
-      const responseText=typeof result?.output_text==='string'?result.output_text:Array.isArray(result?.output)?result.output.flatMap(item=>Array.isArray(item?.content)?item.content:[]).map(part=>typeof part?.text==='string'?part.text:'').join(''):'';
-      const text=typeof content==='string'?content:Array.isArray(content)?content.map(part=>typeof part?.text==='string'?part.text:'').join(''):responseText;
-      if(typeof text!=='string'||!text.trim()||text.length>(test?1000:20000))throw new Error('API 返回内容为空或超出长度限制');
+      const bodyText = test ? 'Reply with exactly: OK' : input;
+      const isDeepSeek = /^(?:[a-z0-9-]+\.)*deepseek\.com$/i.test(new URL(config.baseUrl).hostname);
+      const isGemini = /^generativelanguage\.googleapis\.com$/i.test(new URL(config.baseUrl).hostname);
+      const quickContext = isDeepSeek && task === 'word-context';
+      const maxTokens = test ? (isGemini ? 1024 : 128) : quickContext ? 1000 : isWorkshop ? 16000 : 6000;
+      const body = responsesEndpoint
+        ? { model: config.model, instructions: test ? 'Reply with exactly OK.' : instruction || '', input: bodyText, temperature: 0, max_output_tokens: maxTokens, ...(quickContext ? { reasoning: { effort: 'none' } } : {}) }
+        : { model: config.model, messages: test ? [{ role: 'user', content: bodyText }] : [{ role: 'system', content: instruction }, { role: 'user', content: bodyText }], temperature: 0, max_tokens: maxTokens, ...((test && isDeepSeek) || quickContext ? { thinking: { type: 'disabled' } } : {}) };
+      const response = await fetchImpl(endpoint, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'content-type': 'application/json', ...(config.apiKey ? { authorization: 'Bearer ' + config.apiKey } : {}) }, body: JSON.stringify(body) });
+      const result = await responseJson(response, config.apiKey); const content = result?.choices?.[0]?.message?.content;
+      const responseText = typeof result?.output_text === 'string' ? result.output_text : Array.isArray(result?.output) ? result.output.flatMap(item => Array.isArray(item?.content) ? item.content : []).map(part => typeof part?.text === 'string' ? part.text : '').join('') : '';
+      const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map(part => typeof part?.text === 'string' ? part.text : '').join('') : responseText;
+      const maxResponseLength = test ? 1000 : isWorkshop ? 200000 : 20000;
+      if (typeof text !== 'string' || !text.trim() || text.length > maxResponseLength) throw new Error('API 返回内容为空或超出长度限制');
       return text.trim();
-    } catch(error) {
-      if(controller.signal.aborted)throw new Error(signal?.aborted?'API 请求已取消':'API 请求超时（60 秒）');
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error(signal?.aborted ? 'API 请求已取消' : timeoutLabel);
       if(error instanceof TypeError)throw new Error('无法连接自定义 API；请检查网络、地址和局域网服务状态');
       throw error;
     } finally {clearTimeout(timer);signal?.removeEventListener('abort',abort);}
@@ -200,13 +207,70 @@ function createReaderCustomApi({ filePath, safeStorage, fetchImpl = fetch }) {
       await request(config, { test: true });
       return { ok: true, message: '连接成功，模型已返回测试内容' };
     },
+    async listModels(input) {
+      await writes;
+      if (!input || typeof input !== 'object' || Array.isArray(input) ||
+          Object.keys(input).some(key => !['id', 'name', 'baseUrl', 'model', 'apiKey'].includes(key))) {
+        throw new Error('模型列表请求参数无效');
+      }
+      let url;
+      try { url = new URL(typeof input.baseUrl === 'string' ? input.baseUrl.trim() : ''); } catch { throw new Error('请输入有效的 API 地址'); }
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !url.hostname || /[\r\n\0]/.test(String(input.baseUrl))) {
+        throw new Error('API 地址必须是有效的 HTTP(S) 根地址');
+      }
+      assertAllowedHttpHost(url);
+      url.pathname = url.pathname.replace(/\/+$/, '').replace(/\/(?:chat\/completions|responses|models)$/i, '');
+      const normalizedBase = url.toString().replace(/\/$/, '');
+      let apiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : '';
+      if (apiKey.length > 4096 || /[\r\n\0]/.test(apiKey)) throw new Error('API 密钥格式无效');
+      if (!apiKey && typeof input.id === 'string' && /^[a-f0-9-]{36}$/i.test(input.id)) {
+        const state = await read();
+        const profile = state?.profiles.find(item => item.id === input.id && item.baseUrl.replace(/\/(?:chat\/completions|responses)$/i, '') === normalizedBase);
+        if (profile) apiKey = decrypt(profile);
+      }
+      const endpoint = `${normalizedBase}/models`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new Error('拉取模型列表超时（20 秒）')), 20000);
+      try {
+        const response = await fetchImpl(endpoint, {
+          method: 'GET',
+          redirect: 'error',
+          signal: controller.signal,
+          headers: { Accept: 'application/json', ...(apiKey ? { authorization: 'Bearer ' + apiKey } : {}) },
+        });
+        const body = await responseJson(response, apiKey);
+        const rawList = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
+        const allIds = [];
+        const seen = new Set();
+        for (const item of rawList) {
+          const rawId = typeof item === 'string' ? item : (typeof item?.id === 'string' ? item.id : typeof item?.name === 'string' ? item.name : '');
+          const cleaned = rawId.trim().replace(/^models\//i, '');
+          if (!cleaned || cleaned.length > 256 || /[\r\n\0]/.test(cleaned) || seen.has(cleaned)) continue;
+          seen.add(cleaned);
+          allIds.push(cleaned);
+          if (allIds.length >= 200) break;
+        }
+        const nonChatPattern = /(?:^|[-_/])(embedding|text-embedding|imagen|veo|aqa|whisper|tts|moderation|dall-e|sora|lyria|chirp|transcribe|rerank)(?:$|[-_./0-9])/i;
+        const chatIds = allIds.filter(id => !nonChatPattern.test(id));
+        const models = chatIds.length > 0 ? chatIds : allIds;
+        if (!models.length) throw new Error('服务端未返回可用模型列表，可手动输入模型名称');
+        return { models };
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error('拉取模型列表超时（20 秒）');
+        if (error instanceof TypeError) throw new Error('无法连接自定义 API 拉取模型；请检查网络、代理或 API 地址');
+        throw error;
+      } finally { clearTimeout(timer); }
+    },
     async complete({instruction,input,signal,task,profileId,selectedProfileId,expectedEngineId}){
-      if(typeof instruction!=='string'||!instruction.trim()||instruction.length>8000||typeof input!=='string'||!input.trim()||input.length>18000||instruction.length+input.length>19000)throw new Error('自定义 API 请求超出允许长度');
+      if(task!==undefined&&task!=='word-context'&&task!=='practice-workshop')throw new Error('自定义 API 请求类型无效');
+      const isWorkshop=task==='practice-workshop';
+      const maxInput=isWorkshop?24000:18000;
+      const maxTotal=isWorkshop?26000:19000;
+      if(typeof instruction!=='string'||!instruction.trim()||instruction.length>8000||typeof input!=='string'||!input.trim()||input.length>maxInput||instruction.length+input.length>maxTotal)throw new Error('自定义 API 请求超出允许长度');
       await writes;const state=await read();
       const profile=state?.profiles.find(item=>item.id===(selectedProfileId ?? state.activeId));
       if(!profile)throw new Error(selectedProfileId === undefined ? '请先在阅读设置中配置自定义 API' : '所选自定义 API 已不存在，请重新选择翻译模型');
       if(expectedEngineId!==undefined && expectedEngineId!==customApiEngineId(profile)) throw failure('engine_changed', '所选 API 模型或地址已变更，请重新选择模型');
-      if(task!==undefined&&task!=='word-context')throw new Error('自定义 API 请求类型无效');
       if(profileId!==undefined&&profileId!==profile.id)throw new Error('自定义 API 已切换，请重新点词');
       assertAllowedHttpHost(new URL(profile.baseUrl));
       return request({...profile,apiKey:decrypt(profile)},{instruction,input,signal,task});

@@ -56,7 +56,7 @@ const originalReader = path.join(repo,'build/reader');
 // Explicit allowlist; NEVER copy build/reader/seed or build/reader/ai-bench.
 for (const name of ['web','native']) await fs.cp(isQwenPreview?path.join(translationStage,name):path.join(originalReader,name),path.join(readerRoot,name),{recursive:true});
 await assertBundledOriginalGameSounds(path.join(readerRoot,'web'));
-for (const name of ['api.cjs','codex','codex-code-mode-host','provenance.json','THIRD_PARTY_NOTICES.txt'])
+for (const name of ['api.cjs','provenance.json','THIRD_PARTY_NOTICES.txt'])
   await fs.copyFile(isQwenPreview&&name==='api.cjs'?path.join(translationStage,'api.cjs'):path.join(originalReader,name),path.join(readerRoot,name));
 const seed = path.join(readerRoot,'seed');
 await fs.mkdir(path.join(seed,'issues'),{recursive:true});
@@ -122,7 +122,7 @@ const modifier = {name:'preview-only-ports-and-no-sync',setup(build){
     contents:previewOnlyOverrides(await fs.readFile(args.path,'utf8'),args.path),loader:'js'
   }));
 }};
-const entries=['main.cjs','preload.cjs','runtime-entry.cjs','portable-reader-entry.cjs','portable-reader-service.cjs'];
+const entries=['main.cjs','preload.cjs','portable-reader-entry.cjs','portable-reader-service.cjs'];
 for(const entry of entries){
   await build({entryPoints:[path.join(repo,'electron',entry)],outfile:path.join(stage,'electron',entry),
     platform:'node',target:'node22',format:'cjs',bundle:true,external:['electron'],minify:true,

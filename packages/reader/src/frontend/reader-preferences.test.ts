@@ -95,4 +95,36 @@ describe("reader preferences", () => {
       expect(loadReaderPreferences(storage)).toMatchObject({ themePreset: expected, fontSize: 21 });
     }
   });
+
+  it("persists layout mode, paper tint, and chinese indentation with safe fallback", () => {
+    const storage = new MemoryStorage();
+    const custom = {
+      ...DEFAULT_READER_PREFERENCES,
+      layoutMode: "double" as const,
+      paperTint: "butter" as const,
+      chineseIndent: false,
+    };
+    saveReaderPreferences(storage, custom);
+    expect(loadReaderPreferences(storage)).toEqual(custom);
+
+    storage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ layoutMode: "unknown", paperTint: "neon", chineseIndent: "yes" }));
+    expect(loadReaderPreferences(storage)).toMatchObject({
+      layoutMode: "scroll",
+      paperTint: "default",
+      chineseIndent: true,
+      horizontalMargin: 12,
+    });
+
+    // Migrates legacy readerWidth when horizontalMargin is absent, and clamps explicit values.
+    storage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ readerWidth: "wide" }));
+    expect(loadReaderPreferences(storage).horizontalMargin).toBe(6);
+    storage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ readerWidth: "narrow" }));
+    expect(loadReaderPreferences(storage).horizontalMargin).toBe(22);
+    storage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ horizontalMargin: 0 }));
+    expect(loadReaderPreferences(storage).horizontalMargin).toBe(0);
+    storage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ horizontalMargin: 99 }));
+    expect(loadReaderPreferences(storage).horizontalMargin).toBe(28);
+    storage.setItem(READER_PREFERENCES_KEY, JSON.stringify({ horizontalMargin: -5 }));
+    expect(loadReaderPreferences(storage).horizontalMargin).toBe(0);
+  });
 });

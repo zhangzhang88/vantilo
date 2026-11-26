@@ -24,8 +24,12 @@ describe("global Chinese audiobook preferences", () => {
     expect(loadChineseAudiobookPreferences(storage)).toEqual({ version: 1, voice: "vivian", rate: 1.25 });
     saveChineseAudiobookPreferences(storage, { version: 1, voice: "uncle_fu", rate: 1.5 });
     expect(loadChineseAudiobookPreferences(storage)).toEqual({ version: 1, voice: "uncle_fu", rate: 1.5 });
-    saveChineseAudiobookPreferences(storage, { version: 1, voice: "my_voice", rate: 1.25 });
-    expect(loadChineseAudiobookPreferences(storage)).toMatchObject({ voice: "my_voice", rate: 1.25 });
+  });
+  it("falls back to the default Chinese voice while keeping saved speed when a retired voice id was previously stored", () => {
+    const storage = memory();
+    storage.setItem(CHINESE_AUDIOBOOK_PREFERENCES_KEY, JSON.stringify({ version: 1, voice: "my_voice", rate: 1.25 }));
+    expect(validChineseAudiobookPreferences({ version: 1, voice: "my_voice", rate: 1.25 })).toBe(false);
+    expect(loadChineseAudiobookPreferences(storage)).toEqual({ version: 1, voice: "serena", rate: 1.25 });
   });
   it("migrates previous voice and most recent rate without overriding a new global setting", () => {
     const storage = memory();
@@ -53,10 +57,6 @@ describe("global Chinese audiobook preferences", () => {
     const destination = memory();
     restoreUserDataBackup(destination, parseUserDataBackup(JSON.stringify(backup)));
     expect(loadChineseAudiobookPreferences(destination)).toMatchObject({ voice: "dylan", rate: 1.25 });
-    saveChineseAudiobookPreferences(storage, { version: 1, voice: "my_voice", rate: 1 });
-    const withMyVoice = parseUserDataBackup(JSON.stringify(buildUserDataBackup(storage)));
-    restoreUserDataBackup(destination, withMyVoice);
-    expect(loadChineseAudiobookPreferences(destination)).toMatchObject({ voice: "my_voice", rate: 1 });
     expect(() => parseUserDataBackup(JSON.stringify({
       ...backup, data: { [CHINESE_AUDIOBOOK_PREFERENCES_KEY]: { version: 1, voice: "aiden", rate: 7 } },
     }))).toThrow("听书");

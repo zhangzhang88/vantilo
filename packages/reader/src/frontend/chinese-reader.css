@@ -5,7 +5,7 @@
 .reader-page-shell.is-chinese-mode .reader-progress-line > span { background: var(--theme-accent); }
 .reader-page-shell.is-chinese-mode .reading-page { padding-top: 30px; padding-bottom: 90px; }
 .reader-page-shell.is-chinese-mode .reader-toolbar-center { display: block; }
-.reader-page-shell.is-chinese-mode .reader-toolbar-actions > :not(.reader-chinese-button):not(.reader-shortcuts-button):not(.reader-source-button):not(.reader-copy-english-button):not(.reader-global-navigation) { display: none; }
+.reader-page-shell.is-chinese-mode .reader-toolbar-actions > :not(.reader-chinese-button):not(.reader-appearance-button):not(.reader-shortcuts-button):not(.reader-source-button):not(.reader-copy-english-button):not(.reader-global-navigation) { display: none; }
 .chinese-reading { color: var(--theme-ink); font: inherit; line-height: 1.9; }
 .chinese-reading-heading { margin-bottom: 20px; }
 .chinese-reading-heading > span, .chinese-reading-heading > small { color: var(--theme-muted); font: 13px/1.6 system-ui,sans-serif; }

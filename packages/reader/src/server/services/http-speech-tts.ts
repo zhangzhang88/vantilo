@@ -37,7 +37,7 @@ export class HttpSpeechTts implements ChineseSpeechSource {
     } finally { clearTimeout(timeout); }
   }
 
-  synthesize(text: string, signal: AbortSignal, language: "zh" | "en" = "zh", voice: QwenTtsVoice | "my_voice" = "serena", seed?: number): Readable {
+  synthesize(text: string, signal: AbortSignal, language: "zh" | "en" = "zh", voice: QwenTtsVoice = "serena", seed?: number): Readable {
     const output = new PassThrough({ highWaterMark: 128 * 1024 });
     if (this.closed) { output.end(JSON.stringify({ type: "error", message: "TTS API 已关闭" }) + "\n"); return output; }
     const profile = this.profile();
@@ -58,7 +58,7 @@ export class HttpSpeechTts implements ChineseSpeechSource {
 
   private async produce(
     output: PassThrough, profile: TtsApiProfile, text: string, language: "zh" | "en",
-    voice: QwenTtsVoice | "my_voice", controller: AbortController, seed?: number,
+    voice: QwenTtsVoice, controller: AbortController, seed?: number,
   ) {
     const timeout = setTimeout(() => controller.abort(), 120_000);
     try {
@@ -74,11 +74,9 @@ export class HttpSpeechTts implements ChineseSpeechSource {
       // Older locally installed gateways reject unknown fields. Preserve
       // playback without a service restart; deterministic seed is best-effort
       // until that gateway version is upgraded.
-      // Base bf16 always supports seed. Its 400 responses must never silently
-      // drop determinism; legacy CustomVoice gateways alone permit fallback.
-      const candidateSeed = voice === "my_voice" ? seed : this.supportsSeed === false ? undefined : seed;
+      const candidateSeed = this.supportsSeed === false ? undefined : seed;
       let response = await send(candidateSeed);
-      if (response.status === 400 && candidateSeed !== undefined && voice !== "my_voice" && !controller.signal.aborted) {
+      if (response.status === 400 && candidateSeed !== undefined && !controller.signal.aborted) {
         this.supportsSeed = false;
         await response.body?.cancel().catch(() => {});
         response = await send();

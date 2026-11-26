@@ -146,6 +146,7 @@ export interface BookSummary {
   partCount: number;
   numberedChapterCount: number;
   readableUnitCount: number;
+  chapterWeights?: Record<string, number>;
 }
 
 export type BookImportStatus = "ready" | "duplicate" | "conflict" | "unsupported" | "invalid" | "imported";

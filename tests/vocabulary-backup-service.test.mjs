@@ -57,6 +57,38 @@ describe('vocabulary backup main-process file service', () => {
     expect(() => verifyVocabularyBackupDocument(backup, serialized + ' ')).toThrow('文件大小校验失败');
   });
 
+  it('accepts custom-api and native contextual meaning providers while rejecting unknown providers', () => {
+    const contextBase = {
+      key: 'reading:book:fixture-book:chapter-1:2:7:meaning',
+      document,
+      paragraphIndex: 2,
+      startOffset: 7,
+      text: 'meaning',
+      paragraph: 'A short synthetic context.',
+      sentence: 'A short synthetic context.',
+      generatedAt: '2026-10-02T00:00:00.000Z',
+      meaningZh: '含义',
+      explanationZh: '语境说明',
+      meaningEn: 'what something represents',
+      explanationEn: 'Context explanation.',
+      examplesEn: ['The meaning is clear.'],
+      partOfSpeech: 'noun',
+      model: 'deepseek-chat',
+    };
+    for (const provider of ['easycliproxy', 'custom-api', 'vantilo-agent', 'qwen-mlx', 'qwen-gguf']) {
+      const backup = createVocabularyBackupDocument({
+        snapshot: { ...snapshot, contextualMeanings: [{ ...contextBase, provider }] },
+        appVersion: '0.1.18',
+        createdAt: '2026-10-30T00:00:00.000Z',
+      });
+      expect(verifyVocabularyBackupDocument(backup).sha256).toBe(backup.integrity.sha256);
+    }
+    expect(() => createVocabularyBackupDocument({
+      snapshot: { ...snapshot, contextualMeanings: [{ ...contextBase, provider: 'untrusted-provider' }] },
+      appVersion: '0.1.18',
+    })).toThrow('语境服务标识无效');
+  });
+
   it('uses the required timestamped JSON filename and preserves UTF-8 content', async () => {
     const date = new Date(2026, 9, 30, 15, 4, 7);
     expect(formatVocabularyBackupFilename(date)).toBe('Vantilo-Vocabulary-Backup-20261030-150407.json');

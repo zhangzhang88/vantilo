@@ -45,7 +45,7 @@ await fs.mkdir(path.join(stage, 'electron'), { recursive: true });
 await fs.mkdir(path.join(stage, 'scripts'), { recursive: true });
 for (const name of ['dist', 'licenses', 'resources']) await fs.cp(path.join(repo, name), path.join(stage, name), { recursive: true });
 await fs.mkdir(path.join(stage, 'reader'), { recursive: true });
-for (const name of ['web', 'native', 'api.cjs', 'codex', 'codex-code-mode-host', 'provenance.json', 'THIRD_PARTY_NOTICES.txt']) {
+for (const name of ['web', 'native', 'api.cjs', 'provenance.json', 'THIRD_PARTY_NOTICES.txt']) {
   await fs.cp(path.join(readerRoot, name), path.join(stage, 'reader', name), { recursive: true });
 }
 
@@ -57,7 +57,7 @@ const appMetadata = {
 };
 await fs.writeFile(path.join(stage, 'package.json'), `${JSON.stringify(appMetadata, null, 2)}\n`, { flag: 'wx' });
 
-for (const entry of ['main.cjs', 'preload.cjs', 'runtime-entry.cjs', 'portable-reader-entry.cjs', 'portable-reader-service.cjs']) {
+for (const entry of ['main.cjs', 'preload.cjs', 'portable-reader-entry.cjs', 'portable-reader-service.cjs']) {
   await build({
     entryPoints: [path.join(repo, 'electron', entry)],
     outfile: path.join(stage, 'electron', entry),

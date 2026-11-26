@@ -72,7 +72,6 @@
 
 ## Product principles
 
-- The primary interaction is a BaoCut/Codex-like Agent workspace, not a reading app with a background Codex helper.
-- Agents compose tools to accomplish goals; do not hard-code every cross-domain workflow into a single wizard.
-- The English typing game is a first-class capability, not a decorative add-on.
-- A tool API should expose useful actions to the Agent independently of the UI; the human-facing game UI can call the same domain logic.
+- Vantilo is focused on macOS English reading, audiobook playback, vocabulary learning, Practice Lab (English typing/cloze practice), and user-configured OpenAI-compatible custom APIs. The previous Codex / ChatGPT Agent workspace and bundled Codex runtime have been retired and removed.
+- The English typing game (Practice Lab / assembly and vocabulary cloze practice) is a first-class capability, not a decorative add-on.
+- Keep game and reading domain logic cleanly separated from UI components so business rules remain testable and reusable.

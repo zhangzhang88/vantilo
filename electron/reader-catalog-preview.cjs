@@ -20,8 +20,10 @@ function registerCatalogPreview(api,{localModel,customApi,dataDir,getDocument,ge
   async function settings(){
     const engines=(await models()).map(({selectedProfileId,...engine})=>engine);
     const stored=await read(settingsPath,{});
-    const engineId=stored.engineId||engines.find(engine=>engine.isDefault)?.id||engines[0]?.id||'';
-    return {engines,engineId,notice:'目录模型独立保存；抓取、导入和打开目录均不会自动翻译。'};
+    const savedEngineId=typeof stored.engineId==='string'&&stored.engineId.trim()?stored.engineId.trim():'';
+    const defaultEngineId=engines.find(engine=>engine.isDefault)?.id||engines[0]?.id||'';
+    const engineId=savedEngineId||defaultEngineId;
+    return {engines,engineId,savedEngineId:savedEngineId||null,defaultEngineId:defaultEngineId||null,notice:'目录模型独立保存；抓取、导入和打开目录均不会自动翻译。'};
   }
   const file=(kind,id)=>path.join(root,createHash('sha256').update(kind+':'+id).digest('hex')+'.json');
   function valid(kind,id){return ['book','issue'].includes(kind)&&typeof id==='string'&&id.length>0&&id.length<=256&&!/[\u0000-\u001f]/.test(id);}
@@ -75,7 +77,7 @@ function registerCatalogPreview(api,{localModel,customApi,dataDir,getDocument,ge
   });
   api.post('/api/vantilo-catalog/:kind/:id',async(req,reply)=>{
     reply.header('Cache-Control','no-store');const {kind,id}=req.params,b=req.body;
-    if(!valid(kind,id)||!b||Object.keys(b).sort().join(',')!=='engineId,regenerate'||typeof b.engineId!=='string'||typeof b.regenerate!=='boolean')return reply.code(400).send({error:'请选择目录模型后再生成'});
+    if(!valid(kind,id)||!b||typeof b!=='object'||Array.isArray(b)||!Object.keys(b).every(key=>['engineId','regenerate','preserveSetting'].includes(key))||typeof b.engineId!=='string'||typeof b.regenerate!=='boolean'||(b.preserveSetting!==undefined&&typeof b.preserveSetting!=='boolean'))return reply.code(400).send({error:'请选择目录模型后再生成'});
     if(busy)return reply.code(409).send({error:'另一项目录正在生成，请稍后再试'});
     busy=true;const ctl=new AbortController();const abort=()=>ctl.abort(new Error('目录翻译已取消'));
     const close=()=>{if(!reply.raw.writableEnded)abort();};reply.raw.on('close',close);lifetime.signal.addEventListener('abort',abort,{once:true});
@@ -85,7 +87,7 @@ function registerCatalogPreview(api,{localModel,customApi,dataDir,getDocument,ge
       const option=(await models()).find(m=>m.id===b.engineId);if(!option)return reply.code(400).send({error:'所选目录模型不可用，请重新选择'});
       const doc=await getDocument(kind,id);const cache=await read(file(kind,id),{version:1,fingerprint:doc.sourceFingerprint,variants:{}});
       const variants=cache.fingerprint===doc.sourceFingerprint?cache.variants:{};
-      await write(settingsPath,{engineId:b.engineId});
+      if(!b.preserveSetting)await write(settingsPath,{engineId:b.engineId});
       if(!b.regenerate&&variants[b.engineId]&&!(await read(pendingPath(kind,id,b.engineId),null))){await write(file(kind,id),{version:1,fingerprint:doc.sourceFingerprint,variants,active:b.engineId});return {...variants[b.engineId],state:'ready'};}
       const requests=rows(kind,doc);if(requests.length>1000||requests.some(r=>typeof r.title!=='string'||r.title.length>1000))throw new Error('目录过大，暂不支持生成');
       // Separate pending files never replace a complete catalog. Each request is

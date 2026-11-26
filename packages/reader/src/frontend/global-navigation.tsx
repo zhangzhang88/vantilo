@@ -1,6 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Page } from "./navigation-state";
+
+const ReaderMenuExtrasContext = createContext<ReactNode>(null);
+
+export function ReaderMenuExtrasProvider({ value, children }: { value: ReactNode; children: ReactNode }) {
+  return <ReaderMenuExtrasContext.Provider value={value}>{children}</ReaderMenuExtrasContext.Provider>;
+}
 
 export interface NavigationItem { id: Page | "recent"; label: string; icon: string; count?: number; }
 const primaryIds = ["library", "books", "articles", "practice", "vocabulary", "review"];
@@ -18,6 +24,7 @@ export function GlobalNavigation({ items, page, loading, onNavigate, compact = f
 }) {
   const [menu, setMenu] = useState<"all" | "more" | null>(null);
   const [position, setPosition] = useState({ top: 50, right: 12 });
+  const extraMenu = useContext(ReaderMenuExtrasContext);
   const root = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -93,7 +100,21 @@ export function GlobalNavigation({ items, page, loading, onNavigate, compact = f
         const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
         const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
         event.preventDefault(); buttons[next]?.focus();
-      }}>{menuItems.map(item => renderItem(item, true))}</div>, document.body)}
+      }}>
+        {compact && extraMenu && (
+          <div
+            className="global-nav-extra-section"
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("button")) setMenu(null);
+            }}
+          >
+            <div className="global-nav-section-label">阅读工具</div>
+            {extraMenu}
+            <div className="global-nav-section-divider" />
+          </div>
+        )}
+        {menuItems.map(item => renderItem(item, true))}
+      </div>, document.body)}
     </nav>
   </header>;
 }

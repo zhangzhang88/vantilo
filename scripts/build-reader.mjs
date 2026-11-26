@@ -6,7 +6,6 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
-import {copyCodexRuntime} from './codex-runtime-assets.mjs';
 import {verifyOriginalGameSoundDirectory,copyOriginalGameSoundsToWeb} from './original-game-sound-assets.mjs';
 import parcelMacros from 'unplugin-parcel-macros';
 import {sharedReaderComposerPlugin} from './reader-assistant-adapter.mjs';
@@ -72,22 +71,11 @@ for (const input of inputs) {
 }
 const packageRoots = await collectPackageRootsFromModules(repo, [...readerWebModules, ...inputs]);
 const packageRecords = await packageRecordsFromRoots(repo, packageRoots);
-const codexManifest = JSON.parse(await fs.readFile(requireReader.resolve('@openai/codex-darwin-arm64/package.json'), 'utf8'));
-const codexVersion = /^(\d+\.\d+\.\d+)-darwin-arm64$/.exec(codexManifest.version)?.[1];
-if (!codexVersion) throw new Error(`Unable to identify the bundled Codex runtime version: ${codexManifest.version}`);
-const binaryDocuments = [
-  { name: 'OpenAI Codex', version: codexVersion, license: 'Apache-2.0', label: 'licenses/OpenAI-Codex/LICENSE', text: await fs.readFile(path.join(repo, 'licenses/OpenAI-Codex/LICENSE'), 'utf8') },
-  { name: 'OpenAI Codex', version: codexVersion, license: 'Apache-2.0', label: 'licenses/OpenAI-Codex/NOTICE.md', text: await fs.readFile(path.join(repo, 'licenses/OpenAI-Codex/NOTICE.md'), 'utf8') },
-];
-const notices = await renderThirdPartyNotices({ repoRoot: repo, appVersion: JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8')).version, packageRecords, binaryDocuments });
+const notices = await renderThirdPartyNotices({ repoRoot: repo, appVersion: JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8')).version, packageRecords, binaryDocuments: [] });
 await fs.writeFile(path.join(output, 'runtime-package-roots.json'), JSON.stringify(packageRecords, null, 2) + '\n');
 await fs.writeFile(path.join(output, 'provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
 await fs.writeFile(path.join(output, 'THIRD_PARTY_NOTICES.txt'), notices);
 console.log('Reader production assets built without modifying the source project.');
-
-const nativePackage = path.dirname(requireReader.resolve('@openai/codex-darwin-' + process.arch + '/package.json'));
-const triple = process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
-await copyCodexRuntime(path.join(nativePackage, 'vendor', triple, 'bin'), output);
 
 // Compile a small native Dictionary Services bridge once, not per word lookup.
 // The helper reads installed macOS dictionaries; no dictionary data is bundled.

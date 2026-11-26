@@ -6,10 +6,18 @@ import {fileURLToPath} from 'node:url';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const resources=path.join(repo,'resources');
-const svg=path.join(resources,'vantilo-icon.svg');
 const png=path.join(resources,'vantilo-icon.png');
 const icns=path.join(resources,'vantilo.icns');
-execFileSync('/usr/bin/sips',['-s','format','png',svg,'--out',png],{stdio:'inherit'});
+
+await fs.access(png);
+const metadata=execFileSync('/usr/bin/sips',['-g','pixelWidth','-g','pixelHeight','-g','hasAlpha',png],{encoding:'utf8'});
+const width=Number(metadata.match(/pixelWidth:\s*(\d+)/)?.[1]??0);
+const height=Number(metadata.match(/pixelHeight:\s*(\d+)/)?.[1]??0);
+const hasAlpha=metadata.match(/hasAlpha:\s*(\w+)/)?.[1]??'';
+if(width!==1024||height!==1024||hasAlpha!=='yes'){
+  throw new Error(`Expected resources/vantilo-icon.png to be a 1024x1024 RGBA PNG with alpha, got ${width}x${height} (hasAlpha=${hasAlpha||'unknown'})`);
+}
+
 const tempRoot=await fs.mkdtemp(path.join(os.tmpdir(),'vantilo-iconset-'));
 const iconset=path.join(tempRoot,'Vantilo.iconset');
 await fs.mkdir(iconset);
@@ -26,4 +34,4 @@ try {
 } finally {
   await fs.rm(tempRoot,{recursive:true,force:true});
 }
-console.log('Generated Vantilo PNG and macOS ICNS icons from resources/vantilo-icon.svg');
+console.log('Generated macOS ICNS icon from resources/vantilo-icon.png');

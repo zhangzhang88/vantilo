@@ -34,7 +34,7 @@ async function startPortableReader(options = {}) {
 }
 
 async function startPortableReaderWithLease(options, readerDataLease, userDataRoot) {
-  let { assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, translationProvider, getTranslationCacheIdentity, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') } = options;
+  let { assetsDir, libraryRoot, apiPort = 5174, webPort = 5175, autoSync = true, onSync = () => {}, fetchImpl, apiModule, runAi, customApi, seedDir, getAccountStatus = async () => ({connected:false,email:null}), listModels = async () => ({models:[]}), enableLocalQwen = false, enableTranslation = false, enableReaderPreviews = false, localQwenService, softwareUpdates, ttsInstaller, translationProvider, getTranslationCacheIdentity, requireSessionAuth = true, sessionToken = randomBytes(32).toString('hex') } = options;
   if(!/^[a-f0-9]{64}$/.test(sessionToken))throw new Error('Reader session token is invalid');
   for (const folder of ['issues', 'books', 'data', 'config']) await fs.mkdir(path.join(libraryRoot, folder), { recursive: true, mode: 0o700 });
   if (seedDir) await initializeReaderLibrary({ seedDir, libraryRoot });
@@ -48,6 +48,7 @@ async function startPortableReaderWithLease(options, readerDataLease, userDataRo
   })) : undefined;
   const api = await buildServer({ projectRoot: libraryRoot, serveFrontend: false, aiProviderEnv: {}, vantiloReaderUserDataRoot: userDataRoot,
     ...(readerDataLease ? { vantiloReaderDataLockFd: readerDataLease.getInheritanceFd() } : {}),
+    ...(customApi ? { vantiloCustomApiComplete: input => customApi.complete(input) } : {}),
     ...(translationProvider ? { translationProvider } : {}),
     ...(getTranslationCacheIdentity ? { getTranslationCacheIdentity } : {}),
     // Never resume queued AI preparation merely by starting the packaged library.
@@ -184,6 +185,34 @@ async function startPortableReaderWithLease(options, readerDataLease, userDataRo
     api.post('/api/vantilo-custom-api/profiles/:id/activate',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.activate(request.params.id);}catch(error){reply.code(404);return {error:error.message||'无法切换 API 服务'};}});
     api.delete('/api/vantilo-custom-api/profiles/:id',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.remove(request.params.id);}catch(error){reply.code(404);return {error:error.message||'无法删除 API 服务'};}});
     api.post('/api/vantilo-custom-api/test',async(request,reply)=>{reply.header('Cache-Control','no-store');try{return await customApi.test(request.body);}catch(error){reply.code(502);return {error:error.message||'自定义 API 连接失败'};}});
+    api.post('/api/vantilo-custom-api/models',async(request,reply)=>{reply.header('Cache-Control','no-store');try{if(typeof customApi.listModels!=='function')throw new Error('当前服务不支持拉取模型列表');return await customApi.listModels(request.body);}catch(error){reply.code(502);return {error:error.message||'拉取模型列表失败'};}});
+  }
+  if(ttsInstaller) {
+    api.get('/api/vantilo-tts-installer/status',async(_request,reply)=>{
+      reply.header('Cache-Control','no-store');
+      try{return await ttsInstaller.getStatus();}catch(error){reply.code(503);return {error:error instanceof Error?error.message:'无法读取离线语音安装状态'};}
+    });
+    api.post('/api/vantilo-tts-installer/install',async(request,reply)=>{
+      reply.header('Cache-Control','no-store');
+      const body=request.body;
+      if(!body||typeof body!=='object'||Array.isArray(body)||body.consent!==true||(body.mirror!==undefined&&typeof body.mirror!=='boolean')){
+        return reply.code(400).send({error:'下载离线语音模型前必须由用户明确确认'});
+      }
+      try{return await ttsInstaller.install({consent:true,mirror:Boolean(body.mirror)});}
+      catch(error){reply.code(409);return {error:error instanceof Error?error.message:'无法开始下载离线语音模型'};}
+    });
+    api.post('/api/vantilo-tts-installer/cancel',async(_request,reply)=>{
+      reply.header('Cache-Control','no-store');
+      try{return await ttsInstaller.cancel();}
+      catch(error){reply.code(503);return {error:error instanceof Error?error.message:'取消下载失败'};}
+    });
+    api.post('/api/vantilo-tts-installer/remove',async(_request,reply)=>{
+      reply.header('Cache-Control','no-store');
+      try{
+        if(typeof api.vantiloResetLocalSpeech==='function')api.vantiloResetLocalSpeech();
+        return await ttsInstaller.remove();
+      }catch(error){reply.code(503);return {error:error instanceof Error?error.message:'卸载离线语音模型失败'};}
+    });
   }
   const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.mp3': 'audio/mpeg' };
   const webRoot = path.resolve(assetsDir, 'web');
@@ -210,8 +239,14 @@ async function startPortableReaderWithLease(options, readerDataLease, userDataRo
           response.writeHead(incoming.statusCode, incoming.headers); incoming.pipe(response);
         });
         // Local long-paragraph translation has a bounded ten-minute deadline;
-        // the proxy must not disconnect it after the ordinary two-minute limit.
-        upstream.setTimeout(url.pathname==='/api/vantilo-translation/translate'?610000:120000, () => upstream.destroy());
+        // Practice Lab generation has a bounded 3.5-minute deadline;
+        // the proxy must not disconnect them after the ordinary two-minute limit.
+        const proxyTimeoutMs = url.pathname === '/api/vantilo-translation/translate'
+          ? 610000
+          : url.pathname === '/api/practice-workshop/generate'
+            ? 210000
+            : 120000;
+        upstream.setTimeout(proxyTimeoutMs, () => upstream.destroy());
         upstream.on('error', () => { if (!response.headersSent) response.writeHead(502); response.end('Reader API unavailable'); });
         request.on('aborted', () => upstream.destroy());
         response.on('close',()=>{if(!response.writableEnded)upstream.destroy();});
@@ -242,6 +277,9 @@ async function startPortableReaderWithLease(options, readerDataLease, userDataRo
   let closed = false, backupFrozen = false;
   const backupControl = api.vantiloReaderBackupControl;
   return { sync, apiOrigin: 'http://127.0.0.1:' + apiPort, webOrigin: 'http://127.0.0.1:' + web.address().port,
+    resetLocalSpeech() {
+      if (typeof api.vantiloResetLocalSpeech === 'function') api.vantiloResetLocalSpeech();
+    },
     async freezeForBackup() {
       if (closed || backupFrozen) throw new Error('Reader 服务当前无法开始备份');
       await sync.suspend();
