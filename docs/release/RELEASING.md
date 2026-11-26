@@ -185,6 +185,14 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 - 外置构建时，将 `home`、`tmp`、缓存目录放在独立伴生目录 `workspaces/0.1.18-support`，保持 `workspaces/0.1.18-build` Git 工作树 100% 干净以通过 `prebuild:mac:universal` 门禁；外置 SWC 缓存镜像构建后已卸载。
 - 本机通过已启用的 macOS HTTPS 代理（`127.0.0.1:7897`）完成 `release:preflight` 与 `release:resume --publish` 全链路。
 
+## 0.1.19 Beta 发布记录与流程改进
+
+- `v0.1.19` 发布于 2026 年 11 月 26 日 21:40:33（北京时间），标签固定在构建提交 `bd0a0eba9a831bf918f4ab2a6594c7b4b7b85627`。Universal ZIP 大小 229,482,235 字节（退役随包 Codex 运行时后体积缩减过半），SHA-256 `407d5ef340a3d78ca0d3fd383789f31f2c39017dc5d885b0bf09a851250b518f`；双附件大小、摘要与匿名下载核验均通过。[完整发布记录](0.1.19-beta.md)
+- 源码发布门禁 `test:release:source` 暴露出主壳直达阅读界面移除左侧 `button[aria-label="阅读"]` 后，旧版 `scripts/vocabulary-backup-e2e-driver.cjs` 的 `ensureReader()` 等待超时。更新驱动兼容直达阅读主壳后，源码与最终 Universal ZIP 打包应用的全部 9 组词汇备份/恢复/回滚/真实限容 APFS `ENOSPC`/`EACCES` 验收均通过。
+- 外置构建验证了 SWC 稀疏镜像挂载点规则：镜像文件保存在外置伴生目录 `workspaces/0.1.19-support/swc-native-cache.sparseimage`，须通过 `diskutil image attach --nobrowse` 直接挂载到 `/Volumes/VantiloSWC019`（不可挂在 `/Volumes/Workspace/...` 子目录下，否则祖先目录权限会导致 `@swc/core` 拒绝加载原生绑定）；构建结束后自动卸载镜像。
+- 应用图标构建脚本 `scripts/build-app-icon.mjs` 改为直接以 `resources/vantilo-icon.png`（校验 `1024×1024` 与 Alpha 通道）生成 `resources/vantilo.icns`，并在最终 ZIP 与解包 `.app` 中逐一比对 `electron.icns` 和 `vantilo-icon.png` 摘要。
+- 另发现辅助脚本 `scripts/verify-packaged-reader.cjs`（未纳入 `test:release:source`）与 `scripts/verify-reader-layout.cjs` 在本版模块调整后存在旧路径/子进程环境变量传递问题，后续可单独修补；本次最终安装包验收由官方门禁 `test:e2e:vocabulary-backup:universal` 在真实解包 `.app` 上完整覆盖。
+
 ## 用户数据保护发布门禁
 
 - 不得未经授权删除用户数据。Keychain 或密钥解密失败不得重建空 API 配置；保存失败必须保留原配置。
