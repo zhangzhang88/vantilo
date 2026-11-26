@@ -2,7 +2,7 @@
 
 Vantilo 是一款面向 macOS 的英文阅读与练习应用。它把电子书、杂志阅读、翻译、词汇学习、听书与 Practice Lab 放在一个界面中，使用用户自行配置的自定义 OpenAI 兼容 API（云端或局域网）辅助理解与生成练习。
 
-> **项目状态：0.1.19 Beta 预发布。** 本版换装全新 macOS 立体质感应用图标，退役原 Codex / Agent 工作台并移除随包 Codex 运行时，启动直达阅读主界面（通用包体积缩减至约 219 MB）；新增电子书单页/双页翻页排版、阅读外观设置抽屉、听书词句同步高亮与智能跳过干扰项、全书译文导出与本地 TTS 模型管理，并加固书库删除日志恢复与关闭排空。应用为临时签名（ad-hoc），无 Developer ID，未公证。Gatekeeper 本机实测拒绝，Intel 真机未测。项目所有者已接受这四项 Beta 分发风险。有道 `dictvoice` 的公开分发书面授权尚未确认。[GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.19)
+> **项目状态：0.1.20 Beta 预发布。** 本版全面优化阅读器与五套全局主题（纸张、复古褐、护眼绿、深海蓝、夜间黑）的视觉一致性，修复听书浮层夜间白底与 Practice Lab 主题对比度问题，加入磨砂玻璃与标题栏品牌徽章并精简窗口标题栏入口；升级「阅读成长」（自定义目标/7日趋势/四档热力图）与「词汇复习」（掌握度分布/快捷键/英美发音），同时移除不稳定的「发现好书」/ Gutenberg 模块以聚焦核心阅读体验。应用为临时签名（ad-hoc），无 Developer ID，未公证。Gatekeeper 本机实测拒绝，Intel 真机未测。项目所有者已接受这四项 Beta 分发风险。有道 `dictvoice` 的公开分发书面授权尚未确认。[GitHub Release](https://github.com/zhangzhang88/vantilo/releases/tag/v0.1.20)
 
 ## 功能介绍
 
@@ -18,13 +18,13 @@ Vantilo 是一款面向 macOS 的英文阅读与练习应用。它把电子书�
 
   推荐 Mac mini 在 Workspace 外置盘独立部署 speech.cpp HTTP 服务及鉴权 LAN 网关（例如 `http://192.168.3.54:18439/v1`，模型 `qwen3-tts-0.6b`），每台 Vantilo 通过设置页手动配置自己的 API。音频仅通过本机 Reader 服务端转发，不将 API Key 返回到浏览器或写入 localStorage。开发版如未配置 API，则保留独立本机 Worker 兼容路径，可使用 `VANTILO_SPEECH_CPP_BIN`、`VANTILO_SPEECH_CPP_MODEL` 指定模型和可执行文件；不自动下载或打包模型。当前服务仅供可信局域网使用，弱密钥与 HTTP 不适合公网。
 
-## 当前版本：0.1.19 macOS Universal Beta
+## 当前版本：0.1.20 macOS Universal Beta
 
 Universal ZIP 面向 Apple Silicon `arm64` 与 Intel `x86_64`。本次构建包内 15/15 个 Mach-O 架构已逐项检查；Intel 实机安装和功能测试**未运行**。候选包不包含内置本地 Qwen 模型或 Codex 运行时；阅读功能使用用户配置的云端或局域网 API。签名为 ad-hoc，尚未 Developer ID 签名或 Apple 公证。
 
 ### 下载
 
-发布提供 Universal ZIP 与 SHA-256 校验文件。构建报告保存在 Vantilo 外置发布工作区。[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.19/Vantilo-Beta-0.1.19-universal.zip) · [下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.19/Vantilo-Beta-0.1.19-universal.zip.sha256) · [完整发布记录](docs/release/0.1.19-beta.md)
+发布提供 Universal ZIP 与 SHA-256 校验文件。构建报告保存在 Vantilo 外置发布工作区。[下载 Universal ZIP](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.20/Vantilo-Beta-0.1.20-universal.zip) · [下载 SHA-256 校验文件](https://github.com/zhangzhang88/vantilo/releases/download/v0.1.20/Vantilo-Beta-0.1.20-universal.zip.sha256) · [完整发布记录](docs/release/0.1.20-beta.md)
 
 ## 安装说明与已知限制
 
@@ -36,7 +36,7 @@ Intel 真机安装测试尚未运行（NOT RUN）。项目所有者接受该项 
 
 ## 杂志与更新
 
-应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.19 Universal ZIP 中的 EPUB 数量为零。** 用户可在应用中导入自己有权使用的电子书和期刊。
+应用运行期间可按状态检查杂志新刊，正常情况下约每三小时检查一次；关闭应用后不会在系统后台持续运行。网络不可用、上游来源变化或访问限制都可能影响检查结果。**0.1.20 Universal ZIP 中的 EPUB 数量为零。** 用户可在应用中导入自己有权使用的电子书和期刊。
 
 应用内的**软件更新检查**与杂志新刊检查是两件事。Beta 版检查 Beta 预发布，发现新版本后可在应用中下载并校验文件；用户需要退出应用，手动解压并替换旧版。校验值用于检查文件完整性，不是独立的数字签名。历史版本的更新器可能仍只检查稳定版，可通过上方链接下载。
 

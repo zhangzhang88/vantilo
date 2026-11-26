@@ -193,6 +193,13 @@ Release 正文按以下结构编写；不适用的子项可省略，不得编造
 - 应用图标构建脚本 `scripts/build-app-icon.mjs` 改为直接以 `resources/vantilo-icon.png`（校验 `1024×1024` 与 Alpha 通道）生成 `resources/vantilo.icns`，并在最终 ZIP 与解包 `.app` 中逐一比对 `electron.icns` 和 `vantilo-icon.png` 摘要。
 - 另发现辅助脚本 `scripts/verify-packaged-reader.cjs`（未纳入 `test:release:source`）与 `scripts/verify-reader-layout.cjs` 在本版模块调整后存在旧路径/子进程环境变量传递问题，后续可单独修补；本次最终安装包验收由官方门禁 `test:e2e:vocabulary-backup:universal` 在真实解包 `.app` 上完整覆盖。
 
+## 0.1.20 Beta 发布记录与流程改进
+
+- `v0.1.20` 发布于 2026 年 11 月 26 日 23:11:20（北京时间），标签固定在构建提交 `e33a326b51772bff9741c8afce43ff57f8d042ad`。Universal ZIP 大小 229,077,932 字节，SHA-256 `0833bc4b8c6b8c5b3c9fb14e06740ac29c25913a494977e3f1168fc078c8e4b2`；双附件大小、摘要与匿名下载核验均通过。[完整发布记录](0.1.20-beta.md)
+- 根 Vitest 默认并发下，`tests/workspace-test-infrastructure.test.mjs` 的子进程同步派生测试偶发超出 5s 单测默认超时；通过 `npm test -- --vitest --maxWorkers=2` 经 Workspace runner 显式控制并发度后，69 个文件 467 项根测试全部通过，同时完整跑通 Reader 离线测试（138 个文件 831 项通过、3 个文件 10 项跳过）、15 组源码 Electron 听书与翻译验收，以及源码与最终 Universal ZIP 解包应用的全部 9 组词汇备份/恢复/异常回滚验收（`UNIVERSAL_VOCABULARY_E2E_PASS`）。
+- 本次外置构建继续使用独立伴生目录 `workspaces/0.1.20-support` 与挂载在 `/Volumes/VantiloSWC020` 的 SWC APFS 稀疏镜像，构建结束后立即卸载，保持 `workspaces/0.1.20-build` 工作树完全干净。
+- `release:resume --publish` 创建草稿阶段出现单次远端读取超时后，按 SOP 查询到草稿（ID `459572295`）已存在并直接重跑 `release:resume --publish` 完成双附件上传、SHA-256/大小比对、公开预发布与匿名下载校验；使用 `--title` 时需以 `Vantilo <version> 测试版 · <中文摘要>` 开头方可通过标题格式校验。
+
 ## 用户数据保护发布门禁
 
 - 不得未经授权删除用户数据。Keychain 或密钥解密失败不得重建空 API 配置；保存失败必须保留原配置。
