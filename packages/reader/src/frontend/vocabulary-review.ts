@@ -30,6 +30,51 @@ export function preferredVocabularyReviewContext(item: GlobalVocabularyItem): Gl
   ) ?? item.contexts.find((context) => context.sentence.trim()) ?? null;
 }
 
+export type VocabularyDistribution = {
+  total: number;
+  counts: Record<FamiliarityLevel, number>;
+  learningCount: number;
+  masteredCount: number;
+};
+
+export function summarizeVocabularyDistribution(items: GlobalVocabularyItem[]): VocabularyDistribution {
+  const counts: Record<FamiliarityLevel, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const item of items) counts[item.familiarity] = (counts[item.familiarity] ?? 0) + 1;
+  return {
+    total: items.length,
+    counts,
+    learningCount: counts[1] + counts[2] + counts[3] + counts[4],
+    masteredCount: counts[5],
+  };
+}
+
+export type VocabularyReviewKeyAction =
+  | { type: "reveal" }
+  | { type: "rate"; level: FamiliarityLevel }
+  | { type: "pronounce" }
+  | { type: "defer" };
+
+export function resolveVocabularyReviewKeyAction(input: {
+  key: string;
+  revealed: boolean;
+  canDefer: boolean;
+  hasMetaOrCtrlOrAlt: boolean;
+  inEditableTarget: boolean;
+}): VocabularyReviewKeyAction | null {
+  if (input.hasMetaOrCtrlOrAlt || input.inEditableTarget) return null;
+  if (input.key === " " || input.key === "Enter") {
+    return input.revealed ? { type: "rate", level: 1 } : { type: "reveal" };
+  }
+  if (/^[0-5]$/.test(input.key)) {
+    return { type: "rate", level: Number(input.key) as FamiliarityLevel };
+  }
+  if (input.key === "p" || input.key === "P") return { type: "pronounce" };
+  if ((input.key === "s" || input.key === "S") && !input.revealed && input.canDefer) {
+    return { type: "defer" };
+  }
+  return null;
+}
+
 export interface VocabularyReviewSentenceSegment {
   text: string;
   meaningZh?: string;

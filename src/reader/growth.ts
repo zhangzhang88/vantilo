@@ -1,7 +1,21 @@
 export const DAILY_GOAL_SECONDS = 1800;
+export const READING_GOAL_STORAGE_KEY = 'vantilo-reading-goal-v1';
+export const READING_GOAL_PRESETS = [900, 1800, 2700, 3600] as const;
 export type GrowthDay = { seconds: number; books: Record<string, number> };
 export type GrowthRecord = { days: Record<string, GrowthDay> };
 export const READING_GROWTH_STORAGE_KEY = 'vantilo-reading-growth-v1';
+export function readDailyGoalSeconds(storage: Pick<Storage,'getItem'> = localStorage): number {
+  try {
+    const parsed = Number(storage.getItem(READING_GOAL_STORAGE_KEY));
+    if (READING_GOAL_PRESETS.includes(parsed as typeof READING_GOAL_PRESETS[number])) return parsed;
+  } catch {}
+  return DAILY_GOAL_SECONDS;
+}
+export function saveDailyGoalSeconds(seconds: number, storage: Pick<Storage,'setItem'> = localStorage): number {
+  if (!READING_GOAL_PRESETS.includes(seconds as typeof READING_GOAL_PRESETS[number])) throw new Error('每日阅读目标预设无效');
+  storage.setItem(READING_GOAL_STORAGE_KEY, String(seconds));
+  return seconds;
+}
 export function formatReadingDuration(seconds:number):string {
   const wholeSeconds=Math.floor(Math.max(0,Number.isFinite(seconds)?seconds:0));
   return `${String(Math.floor(wholeSeconds/60)).padStart(2,'0')}:${String(wholeSeconds%60).padStart(2,'0')}`;
@@ -27,14 +41,46 @@ export function splitAtMidnight(record: GrowthRecord, bookId: string, from: Date
   }
   return result;
 }
-export function growthStats(record: GrowthRecord, today = new Date()) {
+export function growthStats(record: GrowthRecord, today = new Date(), goalSeconds = DAILY_GOAL_SECONDS) {
   const keys = Object.keys(record.days).sort(), total = keys.reduce((sum,key)=>sum+record.days[key].seconds,0);
-  const qualified = keys.filter(key=>record.days[key].seconds >= DAILY_GOAL_SECONDS);
+  const qualified = keys.filter(key=>record.days[key].seconds >= goalSeconds);
   let streak = 0, cursor = new Date(today.getFullYear(),today.getMonth(),today.getDate());
   if (!qualified.includes(localDayKey(cursor))) cursor.setDate(cursor.getDate()-1);
   while (qualified.includes(localDayKey(cursor))) { streak++; cursor.setDate(cursor.getDate()-1); }
   const best = (()=>{let max=0,count=0,previous:number|null=null; for(const key of qualified){const [year,month,day]=key.split('-').map(Number);const ordinal=Date.UTC(year,month-1,day)/86400000;if(previous!==null&&ordinal-previous===1)count++;else count=1;max=Math.max(max,count);previous=ordinal;}return max;})();
   return { totalSeconds: total, qualifiedDays: qualified.length, streak, bestStreak: best, todaySeconds: record.days[localDayKey(today)]?.seconds ?? 0 };
+}
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const;
+export function recentDaysSeries(record: GrowthRecord, today = new Date(), count = 7, goalSeconds = DAILY_GOAL_SECONDS) {
+  const safeCount = Math.max(1, Math.min(31, Math.floor(count)));
+  const todayKey = localDayKey(today);
+  const items: { key: string; weekday: string; dateLabel: string; seconds: number; ratio: number; qualified: boolean; isToday: boolean }[] = [];
+  for (let offset = safeCount - 1; offset >= 0; offset--) {
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+    const key = localDayKey(date);
+    const seconds = record.days[key]?.seconds ?? 0;
+    items.push({
+      key,
+      weekday: offset === 0 ? '今天' : WEEKDAY_LABELS[date.getDay()],
+      dateLabel: `${date.getMonth() + 1}/${date.getDate()}`,
+      seconds,
+      ratio: goalSeconds > 0 ? Math.min(1, seconds / goalSeconds) : 0,
+      qualified: seconds >= goalSeconds,
+      isToday: key === todayKey,
+    });
+  }
+  return items;
+}
+export function monthSummary(record: GrowthRecord, year: number, monthIndex: number, goalSeconds = DAILY_GOAL_SECONDS) {
+  const prefix = `${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  let totalSeconds = 0, activeDays = 0, qualifiedDays = 0;
+  for (const [key, day] of Object.entries(record.days)) {
+    if (!key.startsWith(prefix)) continue;
+    totalSeconds += day.seconds;
+    if (day.seconds > 0) activeDays++;
+    if (day.seconds >= goalSeconds) qualifiedDays++;
+  }
+  return { totalSeconds, activeDays, qualifiedDays };
 }
 export function isValidGrowthRecord(value: unknown): value is GrowthRecord {
   if(!value||typeof value!=='object'||Array.isArray(value))return false;

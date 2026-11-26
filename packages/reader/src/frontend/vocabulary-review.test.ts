@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { GlobalVocabularyContext, GlobalVocabularyItem } from "./global-vocabulary";
 import type { FamiliarityLevel, SavedSelection } from "./selection-state";
 import type { WordContextMeaningRecord } from "./word-context-state";
-import { buildDueVocabularyReviewQueue, buildVocabularyReviewQueue, deferCurrentVocabularyReviewKey, preferredVocabularyReviewContext, vocabularyReviewSentenceSegments } from "./vocabulary-review";
+import {
+  buildDueVocabularyReviewQueue,
+  buildVocabularyReviewQueue,
+  deferCurrentVocabularyReviewKey,
+  preferredVocabularyReviewContext,
+  resolveVocabularyReviewKeyAction,
+  summarizeVocabularyDistribution,
+  vocabularyReviewSentenceSegments,
+} from "./vocabulary-review";
 
 function context(id: string, meaningZh?: string): GlobalVocabularyContext {
   return {
@@ -203,5 +211,32 @@ describe("vocabulary review", () => {
       isTarget: false,
     });
     expect(segments.map((segment) => segment.text).join("")).toBe(paragraph);
+  });
+
+  it("summarizes vocabulary distribution across familiarity levels", () => {
+    const summary = summarizeVocabularyDistribution([
+      item("a", 0, []),
+      item("b", 1, []),
+      item("c", 1, []),
+      item("d", 3, []),
+      item("e", 5, []),
+    ]);
+    expect(summary).toEqual({
+      total: 5,
+      counts: { 0: 1, 1: 2, 2: 0, 3: 1, 4: 0, 5: 1 },
+      learningCount: 3,
+      masteredCount: 1,
+    });
+  });
+
+  it("resolves keyboard shortcuts for reveal, rating, pronunciation, and defer safely", () => {
+    expect(resolveVocabularyReviewKeyAction({ key: " ", revealed: false, canDefer: true, hasMetaOrCtrlOrAlt: false, inEditableTarget: false })).toEqual({ type: "reveal" });
+    expect(resolveVocabularyReviewKeyAction({ key: "Enter", revealed: true, canDefer: true, hasMetaOrCtrlOrAlt: false, inEditableTarget: false })).toEqual({ type: "rate", level: 1 });
+    expect(resolveVocabularyReviewKeyAction({ key: "4", revealed: false, canDefer: true, hasMetaOrCtrlOrAlt: false, inEditableTarget: false })).toEqual({ type: "rate", level: 4 });
+    expect(resolveVocabularyReviewKeyAction({ key: "p", revealed: false, canDefer: false, hasMetaOrCtrlOrAlt: false, inEditableTarget: false })).toEqual({ type: "pronounce" });
+    expect(resolveVocabularyReviewKeyAction({ key: "s", revealed: false, canDefer: true, hasMetaOrCtrlOrAlt: false, inEditableTarget: false })).toEqual({ type: "defer" });
+    expect(resolveVocabularyReviewKeyAction({ key: "s", revealed: true, canDefer: true, hasMetaOrCtrlOrAlt: false, inEditableTarget: false })).toBeNull();
+    expect(resolveVocabularyReviewKeyAction({ key: "1", revealed: false, canDefer: true, hasMetaOrCtrlOrAlt: true, inEditableTarget: false })).toBeNull();
+    expect(resolveVocabularyReviewKeyAction({ key: "1", revealed: false, canDefer: true, hasMetaOrCtrlOrAlt: false, inEditableTarget: true })).toBeNull();
   });
 });

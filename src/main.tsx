@@ -28,7 +28,6 @@ type RuntimeApi = {
   revealVocabularyBackup: () => Promise<{ shown: boolean }>;
   getVocabularyBackupStatus: () => Promise<{ lastBackup: { createdAt: string; name: string; path: string; size: number; sha256: string; vocabularyCount: number } | null }>;
   onVocabularyBackupEvent: (callback: (event: VocabularyBackupEvent) => void) => () => void;
-  requestGutenberg: (request: { operation: 'introEngines' } | { operation: 'search'; query?: string; topic?: string; page?: number } | { operation: 'detail'; id: number } | { operation: 'acquire'; id: number; filename: string; categoryId: string } | { operation: 'intro' | 'introCached' | 'introCancel'; id: number; engine?: 'custom'; force?: boolean; modelId?: string | null; reasoningEffort?: string | null; customEngineId?: string }) => Promise<any>;
   getReaderSetupState: () => Promise<{ show: boolean }>;
   checkReaderSetup: () => Promise<ReaderSetupCheck>;
   finishReaderSetup: (decision: 'finished' | 'skipped') => Promise<{ show: boolean }>;
@@ -170,6 +169,12 @@ function App() {
       <main data-vantilo-theme={appearance.theme} className="vantilo-macos-shell">
         <div className="app-titlebar">
           <div className="app-titlebar-leading">
+            <span className="app-window-mark" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                <path d="M3.2 3.5h4.1c.9 0 1.4.4 1.7 1 .3-.6.8-1 1.7-1h4.1v9.2h-4.1c-.8 0-1.3.3-1.7.9-.4-.6-.9-.9-1.7-.9H3.2V3.5Z" stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
+                <path d="M9 4.5v8.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            </span>
             <span className="app-window-title" aria-hidden="true">Vantilo</span>
           </div>
           <div className="app-titlebar-actions">

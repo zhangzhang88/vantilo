@@ -31,6 +31,5 @@ contextBridge.exposeInMainWorld('vantilo', Object.freeze({
   revealVocabularyBackup: () => ipcRenderer.invoke('vocabulary-backup:reveal'),
   getVocabularyBackupStatus: () => ipcRenderer.invoke('vocabulary-backup:status'),
   onVocabularyBackupEvent: callback => subscribe('vocabulary-backup:event', callback),
-  requestGutenberg: request => ipcRenderer.invoke('gutenberg:request', request),
   onSystemSuspended: callback => subscribe('system:suspended', callback)
 }));

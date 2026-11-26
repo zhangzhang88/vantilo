@@ -138,7 +138,7 @@ import {
   type GlobalVocabularyContext,
   type GlobalVocabularyItem,
 } from "./global-vocabulary";
-import { buildDueVocabularyReviewQueue, deferCurrentVocabularyReviewKey, preferredVocabularyReviewContext, vocabularyReviewSentenceSegments } from "./vocabulary-review";
+import { buildDueVocabularyReviewQueue, deferCurrentVocabularyReviewKey, preferredVocabularyReviewContext, resolveVocabularyReviewKeyAction, summarizeVocabularyDistribution, vocabularyReviewSentenceSegments } from "./vocabulary-review";
 import {
   findSentenceTranslation,
   loadSentenceTranslations,
@@ -6922,6 +6922,7 @@ function GlobalVocabularyPage({
   }, [items, query, familiarityFilter, publicationFilter]);
   const detailItem = detailKey ? items.find((item) => item.key === detailKey) : undefined;
   const reviewableCount = buildDueVocabularyReviewQueue(items, loadVocabularyReviewSchedules(getReaderStorage())).length;
+  const distribution = useMemo(() => summarizeVocabularyDistribution(items), [items]);
 
   useEffect(() => {
     if (!expandedKey) return;
@@ -7077,6 +7078,41 @@ function GlobalVocabularyPage({
         </div>
       </section>
 
+      {distribution.total > 0 && (
+        <section className="global-vocabulary-mastery" aria-label="词汇掌握度分布">
+          <div className="global-vocabulary-mastery-head">
+            <span><strong>学习中 {distribution.learningCount}</strong> · 已掌握 {distribution.masteredCount}</span>
+            <span>点击下方标签快速筛选</span>
+          </div>
+          <div className="global-vocabulary-mastery-bar" aria-hidden="true">
+            {([1, 2, 3, 4, 5] as const).map((level) => {
+              const count = distribution.counts[level];
+              if (!count) return null;
+              return (
+                <span
+                  key={level}
+                  className={`global-vocabulary-mastery-segment level-${level}`}
+                  style={{ width: `${(count / distribution.total) * 100}%` }}
+                />
+              );
+            })}
+          </div>
+          <div className="global-vocabulary-mastery-legend">
+            {([1, 2, 3, 4, 5] as const).map((level) => (
+              <button
+                key={level}
+                type="button"
+                className={`global-vocabulary-mastery-chip ${familiarityFilter === level ? "is-active" : ""}`}
+                onClick={() => onViewStateChange({ ...viewState, familiarityFilter: familiarityFilter === level ? "all" : level })}
+              >
+                <i className={`global-vocabulary-mastery-dot level-${level}`} aria-hidden="true" />
+                <span>{familiarityStatusText(level)} {distribution.counts[level]}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="global-vocabulary-controls" aria-label="词汇筛选">
         <label className="global-vocabulary-search">
           <span>搜索</span>
@@ -7126,7 +7162,20 @@ function GlobalVocabularyPage({
                   <strong>{item.text}</strong>
                   <span>{item.translationZh || "还没有中文释义"}</span>
                 </button>
-                <span className={`saved-selection-status familiarity-${item.familiarity}`}>{familiarityStatusText(item.familiarity)}</span>
+                <div className="global-vocabulary-head-right">
+                  {isDictionaryWord(item.text) && (
+                    <button
+                      type="button"
+                      className="vocab-pronounce-button"
+                      aria-label={`朗读 ${item.text}`}
+                      title="播放美式发音"
+                      onClick={(event) => { event.stopPropagation(); playWordPronunciation(item.text, "us"); }}
+                    >
+                      发音
+                    </button>
+                  )}
+                  <span className={`saved-selection-status familiarity-${item.familiarity}`}>{familiarityStatusText(item.familiarity)}</span>
+                </div>
               </div>
               <div className="global-vocabulary-stats">
                 <span>{item.articleCount} 篇文章 / 章节</span>
@@ -7195,6 +7244,7 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
   );
   const [initialTotal, setInitialTotal] = useState(reviewKeys.length);
   const [revealed, setRevealed] = useState(false);
+  const [sessionRatings, setSessionRatings] = useState<Record<FamiliarityLevel, number>>({ 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
   const [sentenceTranslationRecords, setSentenceTranslationRecords] = useState<SentenceTranslationRecord[]>(() =>
     loadSentenceTranslations(getReaderStorage()),
   );
@@ -7430,6 +7480,7 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
       saveVocabularyReviewSchedules(getReaderStorage(), next);
       return next;
     });
+    setSessionRatings((current) => ({ ...current, [level]: (current[level] ?? 0) + 1 }));
     setReviewKeys((current) => current.filter((key) => key !== currentItem.key));
     setRevealed(false);
   }
@@ -7443,8 +7494,41 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
     const nextKeys = buildDueVocabularyReviewQueue(items, reviewSchedules).map((item) => item.key);
     setReviewKeys(nextKeys);
     setInitialTotal(nextKeys.length);
+    setSessionRatings({ 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
     setRevealed(false);
   }
+
+  useEffect(() => {
+    if (!currentItem || !currentContext) return;
+    const activeItem = currentItem;
+    const activeContext = currentContext;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      const target = event.target as HTMLElement | null;
+      const inEditableTarget = Boolean(target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)));
+      const action = resolveVocabularyReviewKeyAction({
+        key: event.key,
+        revealed,
+        canDefer: reviewKeys.length > 1,
+        hasMetaOrCtrlOrAlt: event.metaKey || event.ctrlKey || event.altKey,
+        inEditableTarget,
+      });
+      if (!action) return;
+      event.preventDefault();
+      if (action.type === "reveal") {
+        setRevealed(true);
+        requestSentenceTranslation(activeContext);
+      } else if (action.type === "rate") {
+        rateCurrent(action.level);
+      } else if (action.type === "defer") {
+        deferCurrent();
+      } else if (action.type === "pronounce") {
+        playWordPronunciation(activeItem.text, "us");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [currentItem, currentContext, revealed, reviewKeys.length]);
 
   if (!initialTotal) {
     return (
@@ -7466,6 +7550,12 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
           <div className="eyebrow">Review complete</div>
           <h1>本轮复习完成</h1>
           <p>本轮共处理 {initialTotal} 个词。新的判断已经安排下一次复习：1 约 1 天、2 约 3 天、3 约 7 天、4 约 30 天；忽视和已知退出队列。</p>
+          <div className="review-complete-summary" aria-label="本轮复习分布">
+            <div className="review-complete-stat"><small>需巩固 (1–2)</small><strong>{sessionRatings[1] + sessionRatings[2]}</strong></div>
+            <div className="review-complete-stat"><small>稳步熟悉 (3–4)</small><strong>{sessionRatings[3] + sessionRatings[4]}</strong></div>
+            <div className="review-complete-stat"><small>已掌握 (5)</small><strong>{sessionRatings[5]}</strong></div>
+            <div className="review-complete-stat"><small>已忽视 (0)</small><strong>{sessionRatings[0]}</strong></div>
+          </div>
           <div className="review-finished-actions">
             {restartableItems.length > 0 && <button className="primary-button" onClick={restartReview}>再来一轮 · {restartableItems.length}</button>}
             <button className="text-button" onClick={onOpenVocabulary}>回到我的词汇</button>
@@ -7503,7 +7593,29 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
             原状态 {familiarityStatusText(currentItem.familiarity)}
           </span>
         </div>
-        <h2>{currentItem.text}</h2>
+        <div className="review-word-row">
+          <h2>{currentItem.text}</h2>
+          {isDictionaryWord(currentItem.text) && (
+            <div className="review-pronounce-group">
+              <button
+                type="button"
+                className="review-pronounce-button"
+                aria-label={`复习播放 ${currentItem.text} 美式发音`}
+                onClick={() => playWordPronunciation(currentItem.text, "us")}
+              >
+                美音
+              </button>
+              <button
+                type="button"
+                className="review-pronounce-button"
+                aria-label={`复习播放 ${currentItem.text} 英式发音`}
+                onClick={() => playWordPronunciation(currentItem.text, "uk")}
+              >
+                英音
+              </button>
+            </div>
+          )}
+        </div>
         <blockquote data-testid="review-source-sentence">
           {currentReviewSentenceSegments.map((segment, index) => {
             const showSavedBackground = Boolean(segment.saved && segment.isTarget && revealed);
@@ -7578,7 +7690,22 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
           </div>
           <div className="review-schedule-hint">下次大约：1 生词 · 1 天　2 认识 · 3 天　3 熟悉 · 7 天　4 已学习 · 30 天</div>
         </>}
-        <div className="review-action-row">
+          {revealed && (
+            <div className="review-revealed-rating">
+              <span className="review-revealed-rating-label">看完释义后直接判定熟悉度（也可按 0–5 快捷键）：</span>
+              <div className="familiarity-picker review-familiarity" aria-label={`查看释义后设置“${currentItem.text}”熟悉度`}>
+                {FAMILIARITY_LEVELS.map((level) => (
+                  <FamiliarityOptionButton
+                    key={level}
+                    level={level}
+                    ariaLabel={`查看释义后将“${currentItem.text}”熟悉度设为 ${familiarityAriaStatus(level)}`}
+                    onClick={() => rateCurrent(level)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="review-action-row">
           {!revealed && (
             <>
               <button className="primary-button review-reveal-button" onClick={revealCurrent}>查看释义</button>
@@ -7593,6 +7720,12 @@ function VocabularyReviewPage({ issues, books, onOpenVocabulary }: { issues: Rea
             </>
           )}
           {revealed && <button className="primary-button review-next-button" onClick={() => rateCurrent(1)}>下一个</button>}
+        </div>
+        <div className="review-shortcut-hint" aria-label="复习快捷键提示">
+          <span><kbd>Space</kbd>{revealed ? "下一个" : "查看释义"}</span>
+          <span><kbd>0–5</kbd>直接评熟悉度</span>
+          <span><kbd>P</kbd>美式发音</span>
+          {!revealed && <span><kbd>S</kbd>稍后再看</span>}
         </div>
       </article>
 

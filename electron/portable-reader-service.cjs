@@ -39,7 +39,6 @@ async function startPortableReaderWithLease(options, readerDataLease, userDataRo
   for (const folder of ['issues', 'books', 'data', 'config']) await fs.mkdir(path.join(libraryRoot, folder), { recursive: true, mode: 0o700 });
   if (seedDir) await initializeReaderLibrary({ seedDir, libraryRoot });
   const { buildServer, GitHubMagazineSyncService } = apiModule || require(path.join(assetsDir, 'api.cjs'));
-  const { createGutenbergService } = require('./gutenberg-service.cjs');
   const lifetime = new AbortController();
   let readerPreferences = null;
   const aiFetch = runAi ? createReaderAiFetch(payload => runAi({...payload,
@@ -66,23 +65,6 @@ async function startPortableReaderWithLease(options, readerDataLease, userDataRo
     },
     // Basic dictionary uses the local macOS index; contextual meaning alone uses Reader AI.
     dictionaryProvider: createDictionaryCache({ dataDir: path.join(libraryRoot, 'data'), lookup: createMacDictionaryLookup({ assetsDir }) }),
-  });
-  const gutenberg=createGutenbergService({fetchImpl:fetchImpl||fetch,fetchBookList:()=>api.inject({method:'GET',url:'/api/books',headers:{host:'127.0.0.1:'+apiPort,cookie:READER_SESSION_COOKIE+'='+sessionToken}}).then(response=>{if(response.statusCode!==200)throw new Error('无法检查现有书架');return response.json();}),importEpub:async({filename,categoryId,data})=>{
-    const imported=await api.inject({method:'POST',url:'/api/books/import?filename='+encodeURIComponent(filename)+'&categoryId='+encodeURIComponent(categoryId),headers:{host:'127.0.0.1:'+apiPort,cookie:READER_SESSION_COOKIE+'='+sessionToken,'content-type':'application/epub+zip'},payload:data});
-    if(imported.statusCode<200||imported.statusCode>=300)throw new Error(imported.body||'现有书架导入失败');return imported.json();
-  }});
-  api.get('/api/vantilo-gutenberg/search',async(request,reply)=>{
-    reply.header('Cache-Control','no-store');
-    try{return await gutenberg.search({query:typeof request.query?.query==='string'?request.query.query:'',topic:typeof request.query?.topic==='string'?request.query.topic:undefined,page:Number(request.query?.page)||1});}
-    catch(error){reply.code(502);return {error:error instanceof Error?error.message:'在线书目暂不可用'};}
-  });
-  api.get('/api/vantilo-gutenberg/books/:id',async(request,reply)=>{
-    reply.header('Cache-Control','no-store');const id=Number(request.params?.id);
-    try{return await gutenberg.detail({id});}catch(error){reply.code(502);return {error:error instanceof Error?error.message:'书目详情暂不可用'};}
-  });
-  api.post('/api/vantilo-gutenberg/acquire',async(request,reply)=>{
-    reply.header('Cache-Control','no-store');
-    try{return await gutenberg.acquire(request.body);}catch(error){reply.code(502);return {error:error instanceof Error?error.message:'EPUB 获取失败'};}
   });
   // The release translation API can run without enabling its unrelated
   // catalogue generation and magazine-sync features.

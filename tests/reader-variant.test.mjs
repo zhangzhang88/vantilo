@@ -47,16 +47,23 @@ describe('Reader build adaptation', () => {
     expect(result.toString()).toContain('.reader-page-shell .reader-toolbar-actions .toolbar-button span{display:inline;white-space:nowrap}');
     expect(result.toString()).toContain('.reader-page-shell .reader-toolbar-actions>*{flex:0 0 auto}');
   });
-  it('places Discover a Good Book in the Reader toolbar and routes it to the host discovery page', () => {
+  it('does not inject Discover a Good Book into the Reader toolbar or global navigation', () => {
     const source = `function Reader(){
       return <div>
         <div className="reader-toolbar-actions"></div>
       </div>;
     }`;
     const result = adaptReaderSource(source, '/source/src/frontend/App.tsx');
-    expect(result).toContain('className="toolbar-button vantilo-discovery-entry"');
-    expect(result).toContain('type: "vantilo:open-discovery", token: (window as Window & {');expect(result).toContain('__vantiloGrowthDocumentId?: string;');expect(result).toContain('__vantiloGrowthBookId?: string;');expect(result).toContain('__vantiloGrowthPageId?: string;');
+    expect(result).not.toContain('发现好书');
+    expect(result).not.toContain('vantilo-discovery-entry');
+    expect(result).not.toContain('vantilo:open-discovery');
     expect(ts.createSourceFile('result.tsx', result, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics).toHaveLength(0);
+
+    const navSource = readFileSync(`${readerSourceRoot}/src/frontend/global-navigation.tsx`, 'utf8');
+    const navResult = adaptReaderSource(navSource, '/source/src/frontend/global-navigation.tsx');
+    expect(navResult).not.toContain('发现好书');
+    expect(navResult).not.toContain('vantilo-discovery-link');
+    expect(navResult).not.toContain('vantilo:open-discovery');
   });
   it('computes whole-book progress from saved chapters, including chapters the reader has not opened', () => {
     const book = { id: 'book:id:first', readableUnitCount: 3 };

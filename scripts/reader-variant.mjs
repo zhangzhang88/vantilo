@@ -109,7 +109,6 @@ export function adaptReaderSource(source, filename, {qwenPreview = true, transla
 .reader-page-shell .reader-toolbar-actions>*{flex:0 0 auto}
 .reader-page-shell .reader-toolbar-actions .toolbar-button{white-space:nowrap}
 .reader-page-shell .reader-toolbar-actions .toolbar-button span{display:inline;white-space:nowrap}
-.reader-page-shell .reader-toolbar-actions .vantilo-discovery-entry{color:var(--theme-accent)}
 .app-shell .reader-page-shell.is-chinese-mode .reader-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;min-height:62px;height:auto;padding:8px 20px}
 .app-shell .reader-page-shell.is-chinese-mode .reader-toolbar-left{min-width:0}
 .app-shell .reader-page-shell.is-chinese-mode .reader-toolbar-center{display:flex;align-items:center;gap:8px;white-space:nowrap}
@@ -454,31 +453,12 @@ html[data-color-mode="blue"] { color-scheme:dark; --theme-bg:#30477e; --theme-su
   }
 
   source = source.replaceAll('\"Dictionary\"','\"词典释义\"').replaceAll('\"AI fallback\"','\"语境释义\"').replaceAll('Dictionary · base form','词典 · 词形').replaceAll('请配置 AI 服务', '请配置 AI 模型服务').replaceAll('所有杂志共用一套阅读偏好与 AI 服务配置。这里集中管理阅读辅助、外观、发音、数据备份和模型连接。', '阅读翻译、点词释义与 Practice Lab 共用阅读设置中已保存的 AI 模型服务。这里管理外观、阅读偏好和本机词汇备份。').replaceAll('阅读偏好在浏览器 · AI 配置在本机', '阅读偏好保存在本机 · AI 模型服务配置在本机').replaceAll('词典：有道 / Free Dictionary API · 语境：EasyCLIProxy', '词典：macOS 系统词典 · 语境：AI 模型服务，请结合原文核对');
-  if (filename.endsWith('/frontend/App.tsx') && source.includes('reader-toolbar-actions')) {
-    const discoveryButton = `<button className="toolbar-button vantilo-discovery-entry" type="button" aria-label="发现好书" title="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}>▧ <span>发现好书</span></button>`;
-    const embeddedPanel = '<div className="reader-toolbar-menu-panel is-embedded" aria-label="更多阅读操作">';
-    const morePanel = '<div className="reader-toolbar-menu-panel" aria-label="更多阅读操作">';
-    if (source.includes(embeddedPanel)) {
-      source = source.replace(embeddedPanel, embeddedPanel + discoveryButton);
-    } else if (source.includes(morePanel)) {
-      source = source.replace(morePanel, morePanel + discoveryButton);
-    } else {
-      const toolbar = '        <div className="reader-toolbar-actions">';
-      if (source.split(toolbar).length !== 2) throw new Error('Reader toolbar discovery insertion seam changed');
-      source = source.replace(toolbar, toolbar + `\n          ${discoveryButton}`);
-    }
-  }
   if (filename.endsWith('/frontend/App.tsx') && source.includes('continueCard={magazineContinue ? <GlobalContinueCard')) {
     const card = '<GlobalContinueCard item={magazineContinue} onOpen={openReadingEntry}';
     const fallback = '<ProgressBar value={currentArticle.progress} /><span>{currentArticle.progress}%</span>';
     if (source.split(card).length !== 2 || source.split(fallback).length !== 2) throw new Error('Magazine issue progress seam changed');
     source = source.replace(card, '<GlobalContinueCard item={{...magazineContinue, progress: continueIssue?.progress ?? magazineContinue.progress}} onOpen={openReadingEntry}')
       .replace(fallback, '<ProgressBar value={current.progress} /><span>本期 {current.progress}%</span>');
-  }
-  if (filename.endsWith('/frontend/global-navigation.tsx')) {
-    const nav = '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}</div>';
-    if (source.split(nav).length !== 2) throw new Error('Global navigation discovery insertion seam changed');
-    source = source.replace(nav, '<div className="global-nav-primary">{items.filter(item => primaryIds.includes(item.id)).map(item => renderItem(item))}<button className="global-nav-link vantilo-discovery-link" type="button" aria-label="发现好书" onClick={() => window.parent.postMessage({type:"vantilo:open-discovery",token:(window as Window & {__vantiloGrowthToken?:string}).__vantiloGrowthToken,documentId:(window as Window & {__vantiloGrowthDocumentId?:string}).__vantiloGrowthDocumentId,bookId:(window as Window & {__vantiloGrowthBookId?:string}).__vantiloGrowthBookId,pageId:(window as Window & {__vantiloGrowthPageId?:string}).__vantiloGrowthPageId}, "*")}><span>发现好书</span></button></div>');
   }
   if (filename.endsWith('/frontend/App.tsx') && qwenPreview) {
     source = source.replaceAll('释义与语境：统一 Agent · AI 生成，请结合原文核对',

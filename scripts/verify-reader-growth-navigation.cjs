@@ -61,7 +61,6 @@ async function main() {
       function arm(){const token=crypto.randomUUID();window.readerToken=token;let attempts=0;const send=()=>{if(!frame()?.contentWindow)return;frame().contentWindow.postMessage({type:'vantilo:growth-init',token},'*');if(++attempts<30)setTimeout(send,100);};send();}
       window.addEventListener('message',event=>window.readerMessages.push({data:event.data,origin:event.origin,fromReader:event.source===frame()?.contentWindow}));
       frame().addEventListener('load',()=>{if(frame().src!=='about:blank')arm();});
-      window.leaveForDiscovery=()=>{document.getElementById('state').textContent='发现好书';frame().src='about:blank';};
       window.returnToReader=url=>{document.getElementById('state').textContent='Reader';frame().src=url;};
     </script></body></html>`);
     win = new BrowserWindow({ show: false, width: 1440, height: 900, webPreferences: { partition, nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } });
@@ -81,9 +80,6 @@ async function main() {
           state = readerActivity(state, Date.now());
         } else if (data.type === 'vantilo:growth-leave' && data.bookId === state.bookId && data.documentId === state.documentId && data.pageId === state.pageId) {
           state = leaveReadingSession(state, data.documentId, data.pageId);
-        } else if (data.type === 'vantilo:open-discovery' && data.documentId === state.documentId && data.bookId === state.bookId && data.pageId === state.pageId) {
-          state = leaveReadingSession(state, data.documentId, data.pageId);
-          await win.webContents.executeJavaScript('window.leaveForDiscovery()');
         }
       }
       return messages;

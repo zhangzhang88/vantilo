@@ -3,9 +3,8 @@ import { createPortal } from 'react-dom';
 import { AudiobookDock } from '../../packages/reader/src/frontend/audiobook-dock';
 import { isAudiobookSnapshot, type AudiobookAction, type AudiobookSnapshot } from '../../packages/reader/src/shared/audiobook-bridge';
 import './magazine-reader-module.css';
-import { BookDiscovery } from '../reader/book-discovery';
 import { ReadingGrowthPage } from '../reader/growth-page';
-import { readGrowthRecord, saveGrowthRecord, growthStats, emptyGrowthRecord, isValidGrowthRecord, READING_GROWTH_STORAGE_KEY } from '../reader/growth';
+import { readDailyGoalSeconds, readGrowthRecord, saveGrowthRecord, growthStats, emptyGrowthRecord, isValidGrowthRecord, READING_GROWTH_STORAGE_KEY } from '../reader/growth';
 import { acceptReaderState, createReadingSession, leaveReadingSession, pauseSession, readerActivity, resumeSession, tickSession, type ReadingPauseReason, type SessionState } from '../reader/growth-session';
 
 export type MagazineSyncState = { enabled: boolean; status: 'idle' | 'checking' | 'error'; message: string; importedCount: number; failedCount: number; lastAttemptAt?: string | null; lastSuccessAt?: string | null };
@@ -32,7 +31,7 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
   navigationRequest?:{target:'settings'|'library'|'practice';sequence:number};status:MagazineReaderStatus;error:string|null;onRetry:()=>void;onBack:()=>void;syncState?:MagazineSyncState|null;onSync?:()=>void;onSetup?:()=>void;onAppearanceChange?:(appearance:ReaderAppearance)=>void;visible?:boolean;audiobookTarget?:HTMLElement|null;onShowReader?:()=>void;
 }) {
   const frameRef=React.useRef<HTMLIFrameElement>(null);
-  const [discoveryOpen,setDiscoveryOpen]=React.useState(false),[growthOpen,setGrowthOpen]=React.useState(false);
+  const [growthOpen,setGrowthOpen]=React.useState(false);
   const [instanceToken,setInstanceToken]=React.useState<string|null>(null);
   const [audiobook,setAudiobook]=React.useState<AudiobookSnapshot|null>(null);
   const [bgTranslation,setBgTranslation]=React.useState<BgTranslationState|null>(null);
@@ -42,21 +41,29 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
   const sessionRef=React.useRef(session);sessionRef.current=session;
   const vocabularyBackupRequestRef=React.useRef<string|null>(null);
   const [growthStorageValid,setGrowthStorageValid]=React.useState(()=>{try{const raw=localStorage.getItem(READING_GROWTH_STORAGE_KEY);return raw===null||isValidGrowthRecord(JSON.parse(raw));}catch{return false;}});
+  const [goalSeconds,setGoalSeconds]=React.useState(readDailyGoalSeconds);
   const [now,setNow]=React.useState(()=>Date.now());
-  const daily=growthStats(session.record,new Date(now)).todaySeconds;
+  const stats=growthStats(session.record,new Date(now),goalSeconds);
+  const daily=stats.todaySeconds;
+  React.useEffect(()=>{
+    const syncGoal=()=>setGoalSeconds(readDailyGoalSeconds());
+    window.addEventListener('vantilo:growth-goal-updated',syncGoal);
+    window.addEventListener('storage',syncGoal);
+    return()=>{window.removeEventListener('vantilo:growth-goal-updated',syncGoal);window.removeEventListener('storage',syncGoal);};
+  },[]);
   const origin=new URL(MAGAZINE_READER_URL).origin;
   const navigate=React.useCallback(()=>{if(navigationRequest)frameRef.current?.contentWindow?.postMessage({type:'vantilo:navigate',target:navigationRequest.target},origin);},[navigationRequest,origin]);
   const pause=React.useCallback((reason:ReadingPauseReason='focus')=>setSession(current=>pauseSession(current,reason)),[]);
   React.useEffect(()=>{
     if(!visible||status!=='ready'){pause('focus');return;}
-    if(growthOpen||discoveryOpen)return;
+    if(growthOpen)return;
     const onBlur=()=>pause('focus');
     const onVisibility=()=>{if(document.visibilityState!=='visible')pause('focus');};
     window.addEventListener('blur',onBlur);document.addEventListener('visibilitychange',onVisibility);
     const api=(window as Window & {vantilo?:HostBridge}).vantilo;
     const unsubscribe=api?.onSystemSuspended?.(()=>pause('focus'));
     return()=>{window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onVisibility);unsubscribe?.();};
-  },[visible,growthOpen,discoveryOpen,status,pause]);
+  },[visible,growthOpen,status,pause]);
   React.useEffect(()=>{if(!session.reminder)return;const id=window.setTimeout(()=>setSession(current=>({...current,reminder:false,active:false})),30000);return()=>clearTimeout(id);},[session.reminder]);
   React.useEffect(()=>{
     const id=window.setInterval(()=>{
@@ -91,11 +98,6 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
         return;
       }
       if(data.type==='vantilo:open-environment-settings'){onSetup?.();return;}
-      if(data.type==='vantilo:open-discovery'){
-        if(!instanceToken||data.token!==instanceToken)return;
-        if(typeof data.documentId==='string'&&typeof data.bookId==='string'&&typeof data.pageId==='string')setSession(current=>current.documentId===data.documentId&&current.bookId===data.bookId&&current.pageId===data.pageId?leaveReadingSession(current,data.documentId!,data.pageId):current);
-        setDiscoveryOpen(true);return;
-      }
       if(data.type==='vantilo:reader-appearance'&&isReaderAppearance(data)){onAppearanceChange?.({theme:data.theme,fontSize:data.fontSize,fontFamily:data.fontFamily});return;}
       if(data.type==='vantilo:growth-ready'&&data.token===instanceToken){if(initRetryRef.current!==null){clearInterval(initRetryRef.current);initRetryRef.current=null;}return;}
       if(!instanceToken||data.token!==instanceToken)return;
@@ -127,7 +129,7 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
       if(data.type==='vantilo:growth-leave'&&typeof data.documentId==='string'&&typeof data.bookId==='string'&&typeof data.pageId==='string'){
         setSession(current=>current.documentId===data.documentId&&current.bookId===data.bookId&&current.pageId===data.pageId?leaveReadingSession(current,data.documentId!,data.pageId):current);return;
       }
-      if(data.type==='vantilo:growth-open-request'){setSession(current=>current.documentId?leaveReadingSession(current,current.documentId,current.pageId??undefined):current);setDiscoveryOpen(false);setGrowthOpen(true);return;}
+      if(data.type==='vantilo:growth-open-request'){setSession(current=>current.documentId?leaveReadingSession(current,current.documentId,current.pageId??undefined):current);setGrowthOpen(true);return;}
       if(data.type==='vantilo:growth-resume-request'){if(growthStorageValid&&visible&&document.hasFocus())continueReading();return;}
       if(data.type==='vantilo:growth-state'&&typeof data.bookId==='string'&&data.bookId.length>0&&data.bookId.length<=512&&typeof data.documentId==='string'&&data.documentId.length>0&&data.documentId.length<=512&&typeof data.pageId==='string'&&data.pageId.length>0&&data.pageId.length<=128&&(data.mode==='sentence'||data.mode==='article')&&typeof data.english==='boolean'){
         setSession(current=>{
@@ -139,13 +141,13 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
         });return;
       }
       if(data.type==='vantilo:growth-activity'&&['sentence','lookup','translation','scroll'].includes(data.action||'')){
-        if(!growthStorageValid||!visible||growthOpen||discoveryOpen||!document.hasFocus()||typeof data.documentId!=='string'||typeof data.pageId!=='string')return;
+        if(!growthStorageValid||!visible||growthOpen||!document.hasFocus()||typeof data.documentId!=='string'||typeof data.pageId!=='string')return;
         const activityAt=Date.now();if(activityAt-lastActivityAt.current<1500)return;lastActivityAt.current=activityAt;
         setSession(current=>current.documentId===data.documentId&&current.pageId===data.pageId?readerActivity(current,activityAt):current);
       }
     };
     window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive);
-  },[origin,navigate,onSetup,onAppearanceChange,instanceToken,visible,growthOpen,discoveryOpen,growthStorageValid]);
+  },[origin,navigate,onSetup,onAppearanceChange,instanceToken,visible,growthOpen,growthStorageValid]);
   React.useEffect(()=>{
     const api=(window as Window & {vantilo?:HostBridge}).vantilo;
     return api?.onTtsInstallUpdated?.((event)=>{
@@ -166,11 +168,10 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
       if(event.type==='resume'&&vocabularyBackupRequestRef.current===event.requestId)vocabularyBackupRequestRef.current=null;
     });
   },[instanceToken,origin]);
-  React.useEffect(()=>{if(!instanceToken||!frameRef.current?.contentWindow)return;const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-summary',token:instanceToken,seconds:daily,active:session.active,canResume:Boolean(growthStorageValid&&session.bookId&&session.mode)},origin);send();const id=window.setInterval(send,1000);return()=>clearInterval(id);},[instanceToken,daily,session.active,session.bookId,session.mode,growthStorageValid,origin]);
+  React.useEffect(()=>{if(!instanceToken||!frameRef.current?.contentWindow)return;const send=()=>frameRef.current?.contentWindow?.postMessage({type:'vantilo:growth-summary',token:instanceToken,seconds:daily,goalSeconds,streak:stats.streak,active:session.active,canResume:Boolean(growthStorageValid&&session.bookId&&session.mode)},origin);send();const id=window.setInterval(send,1000);return()=>clearInterval(id);},[instanceToken,daily,goalSeconds,stats.streak,session.active,session.bookId,session.mode,growthStorageValid,origin]);
   React.useEffect(()=>{
     if(status!=='ready'||!navigationRequest)return;
     setGrowthOpen(false);
-    setDiscoveryOpen(false);
     navigate();
   },[status,navigate,navigationRequest]);
   const onFrameLoad=()=>{
@@ -189,7 +190,6 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
     if(!instanceToken||!audiobook)return;
     if(action.type==='return'||action.type==='return-original'){
       setGrowthOpen(false);
-      setDiscoveryOpen(false);
       onShowReader?.();
     }
     frameRef.current?.contentWindow?.postMessage({type:'vantilo:audiobook-control',token:instanceToken,sessionId:audiobook.sessionId,action},origin);
@@ -197,19 +197,18 @@ export function MagazineReaderModule({navigationRequest,status,error,onRetry,onB
   return <>
   <section className="magazine-reader-module" aria-label="Magazine Reader" hidden={!visible}>
     {status==='ready'&&<iframe ref={frameRef} onLoad={onFrameLoad} className="magazine-reader-frame" title="Magazine Reader"
-      hidden={growthOpen||discoveryOpen} src={MAGAZINE_READER_URL} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+      hidden={growthOpen} src={MAGAZINE_READER_URL} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
       allow="autoplay 'src'; clipboard-write 'src'" referrerPolicy="no-referrer"/>}
     {growthOpen?<>{!growthStorageValid&&<div className="growth-storage-error" role="alert">阅读成长数据格式无效，计时已暂停，原始数据未覆盖。</div>}<ReadingGrowthPage onBack={()=>setGrowthOpen(false)}/></>
-      :discoveryOpen?<BookDiscovery onBack={()=>setDiscoveryOpen(false)} onOpenShelf={()=>{setDiscoveryOpen(false);frameRef.current?.contentWindow?.postMessage({type:'vantilo:navigate',target:'library'},origin);}}/>
       :status==='error'?<div className="magazine-reader-state" role="alert"><h2>无法打开 Magazine Reader</h2><p className="magazine-reader-error">{error||'阅读模块启动失败。'}</p><div className="magazine-reader-state-actions"><button onClick={onRetry}>重试</button></div></div>
       :status!=='ready'?<div className="magazine-reader-state" role="status" aria-live="polite"><span className="magazine-reader-spinner" aria-hidden="true"/><h2>正在启动阅读空间…</h2><p>正在连接本机 Magazine Reader 服务，请稍候。</p></div>:null}
     {session.reminder&&visible&&!growthOpen&&<aside className="growth-reminder" role="alertdialog" aria-label="阅读提醒"><strong>还在阅读吗？</strong><p>计时已暂停，你的阅读成果已保存。</p><button onClick={continueReading}>继续阅读</button><button onClick={()=>setSession(s=>pauseSession(s,'user'))}>先暂停</button></aside>}
-    {daily>=1800&&daily-1<1800&&<div className="growth-success" role="status">今日30分钟阅读目标已达成，继续阅读也会累计。</div>}
-    {visible&&(growthOpen||discoveryOpen)&&bgTranslation&&<aside className="host-bg-translation-pill" aria-label="后台全书翻译">
+    {daily>=goalSeconds&&daily-1<goalSeconds&&<div className="growth-success" role="status">今日{Math.round(goalSeconds/60)}分钟阅读目标已达成，继续阅读也会累计。</div>}
+    {visible&&growthOpen&&bgTranslation&&<aside className="host-bg-translation-pill" aria-label="后台全书翻译">
       <span className="host-bg-translation-dot" aria-hidden="true"/>
       <span role="status" className="host-bg-translation-status">{bgTranslation.statusText}</span>
       <span className="host-bg-translation-actions">
-        <button type="button" className="host-bg-translation-open" title={bgTranslation.bookTitle} onClick={()=>{setGrowthOpen(false);setDiscoveryOpen(false);onShowReader?.();frameRef.current?.contentWindow?.postMessage({type:'vantilo:bg-translation-action',action:'open',bookId:bgTranslation.bookId},origin);}}>查看《{bgTranslation.bookTitle}》</button>
+        <button type="button" className="host-bg-translation-open" title={bgTranslation.bookTitle} onClick={()=>{setGrowthOpen(false);onShowReader?.();frameRef.current?.contentWindow?.postMessage({type:'vantilo:bg-translation-action',action:'open',bookId:bgTranslation.bookId},origin);}}>查看《{bgTranslation.bookTitle}》</button>
         <button type="button" onClick={()=>{frameRef.current?.contentWindow?.postMessage({type:'vantilo:bg-translation-action',action:'pause',jobId:bgTranslation.id},origin);}}>暂停全书翻译</button>
       </span>
     </aside>}

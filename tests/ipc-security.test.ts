@@ -53,9 +53,9 @@ describe('renderer IPC boundary',()=>{
     expect(Object.keys(exposed.vantilo).sort()).toEqual([
       'cancelTtsInstall','cancelVocabularyBackup','checkReaderSetup','finishReaderSetup','getCustomApiSettings','getMagazineReaderStatus','getReaderSetupState',
       'getTtsInstallStatus','getVocabularyBackupStatus','installTtsModel','listCustomApiModels','onCustomApiUpdated','onSystemSuspended','onTtsInstallUpdated','onVocabularyBackupEvent','openDictionaryApp',
-      'removeTtsModel','requestGutenberg','revealVocabularyBackup','saveCustomApiSettings','startMagazineReader','startVocabularyBackup','submitVocabularyBackupSnapshot','syncMagazineReader','testCustomApiSettings'
+      'removeTtsModel','revealVocabularyBackup','saveCustomApiSettings','startMagazineReader','startVocabularyBackup','submitVocabularyBackupSnapshot','syncMagazineReader','testCustomApiSettings'
     ]);
-    for(const removedMethod of ['getAccountStatus','loginWithChatGPT','logoutAccount','getRuntimeStatus','listSessions','createSession','openSession','deleteSession','listCodexModels','submitTask','cancelTask','chooseWorkspace','setWorkspace','inspectLocalModel','chooseLocalModel','recheckLocalModel','installLocalModel','cancelLocalModel','onLocalModelProgress','viewLocalModelInfo']) {
+    for(const removedMethod of ['requestGutenberg','getAccountStatus','loginWithChatGPT','logoutAccount','getRuntimeStatus','listSessions','createSession','openSession','deleteSession','listCodexModels','submitTask','cancelTask','chooseWorkspace','setWorkspace','inspectLocalModel','chooseLocalModel','recheckLocalModel','installLocalModel','cancelLocalModel','onLocalModelProgress','viewLocalModelInfo']) {
       expect(exposed.vantilo[removedMethod]).toBeUndefined();
     }
     void exposed.vantilo.syncMagazineReader('https://evil.test');expect(ipcRenderer.invoke).toHaveBeenCalledWith('magazine-reader:sync');

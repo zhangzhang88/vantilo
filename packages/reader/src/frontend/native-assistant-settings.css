@@ -32,6 +32,11 @@
   background: var(--theme-surface);
   box-shadow: var(--theme-shadow-sm);
   padding: 22px 24px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.app-shell .settings-grid > :is(.settings-card, .tts-api-settings):hover {
+  border-color: color-mix(in oklab, var(--theme-accent) 22%, var(--theme-line));
 }
 
 .app-shell .settings-page .settings-card-heading {
@@ -123,11 +128,14 @@
   padding-inline: 11px;
   font-size: 13px;
   border-radius: 9px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
-.app-shell .settings-page .ai-field :is(input, select):focus-visible {
-  outline: 2px solid var(--theme-accent);
-  outline-offset: 2px;
+.app-shell .settings-page .ai-field :is(input, select):focus-visible,
+.app-shell .settings-page .tts-api-settings :is(input, select):focus-visible {
+  outline: none;
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--theme-accent) 16%, transparent);
 }
 
 .app-shell .settings-page :is(.ai-field > small, .ai-model-hint) {

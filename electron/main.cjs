@@ -9,8 +9,6 @@ const { readerSessionCookies } = require('./reader-session-cookie.cjs');
 const { createReaderOnboarding } = require('./reader-onboarding.cjs');
 const { createReaderTtsInstaller, createElectronNetFetch } = require('./reader-tts-installer.cjs');
 const { createReaderCustomApi } = require('./reader-custom-api.cjs');
-const { createGutenbergIntroService } = require('./gutenberg-intro.cjs');
-const { listGutenbergIntroEngines } = require('./gutenberg-intro-engines.cjs');
 const { isTrustedSender, isTrustedPageUrl, PACKAGED_RENDERER_PATH } = require('./ipc-security.cjs');
 const { checkStartupTransactions } = require('./transaction-startup-guard.cjs');
 const { acquireReaderDataLockSync } = require('./reader-data-lock.cjs');
@@ -40,15 +38,6 @@ let win;
 let readerCustomApiService;
 const vocabularyBackupSessions = new Map();
 let lastVocabularyBackup = null;
-let gutenbergIntroService;
-const gutenbergIntroRequests = new Map();
-function getGutenbergIntroService() {
-  if (!gutenbergIntroService) gutenbergIntroService = createGutenbergIntroService({
-    cacheDir: path.join(app.getPath('userData'), 'gutenberg-intros-v1'),
-    customApi: getReaderCustomApiService(),
-  });
-  return gutenbergIntroService;
-}
 function getReaderCustomApiService() {
   if(!readerCustomApiService)readerCustomApiService=createReaderCustomApi({
     filePath:path.join(app.getPath('userData'),'reader-custom-api-v1.json'),
@@ -347,46 +336,6 @@ ipcMain.handle('vocabulary-backup:status', async event => {
     lastVocabularyBackup = item;
     return { lastBackup: item };
   } catch (error) { if (error.code === 'ENOENT') return { lastBackup: null }; throw new Error('无法读取词汇备份记录'); }
-});
-ipcMain.handle('gutenberg:request', async (event, request) => {
-  requireTrustedSender(event);
-  if (!usePortableReader || quitting || magazineReaderSupervisor.status !== 'ready') throw new Error('请先打开阅读空间');
-  if (!request || typeof request !== 'object' || Array.isArray(request) || !['search','detail','acquire','intro','introCached','introCancel','introEngines'].includes(request.operation)) throw new Error('Invalid Gutenberg request');
-  const isIntro = ['intro','introCached','introCancel'].includes(request.operation);
-  const allowed = request.operation === 'introEngines' ? ['operation'] : isIntro ? ['operation','id','engine','force','modelId','reasoningEffort','customEngineId'] : request.operation === 'detail' ? ['operation','id'] : request.operation === 'search' ? ['operation','query','topic','page'] : ['operation','id','filename','categoryId'];
-  if (Object.keys(request).some(key => !allowed.includes(key))) throw new Error('Invalid Gutenberg request');
-  if (request.operation === 'introEngines') {
-    return listGutenbergIntroEngines({ customApi: getReaderCustomApiService() });
-  }
-  if (isIntro) {
-    if (!Number.isSafeInteger(request.id) || request.id < 1 || request.id > 10000000) throw new Error('Gutenberg ID 无效');
-    if (request.engine !== undefined && request.engine !== 'custom') throw new Error('已移除 Codex 引擎，请在阅读设置中选择自定义 API 服务');
-    if (request.customEngineId !== undefined && (request.operation === 'introCancel' || typeof request.customEngineId !== 'string' ||
-      !/^custom-api:[a-f0-9]{12}$/.test(request.customEngineId))) throw new Error('自定义 API 模型标识无效');
-    if (request.modelId !== undefined && request.modelId !== null && (typeof request.modelId !== 'string' || request.modelId.length > 256 || !request.modelId)) throw new Error('模型设置无效');
-    if (request.reasoningEffort !== undefined && request.reasoningEffort !== null && (typeof request.reasoningEffort !== 'string' || request.reasoningEffort.length > 64 || !request.reasoningEffort)) throw new Error('思考强度无效');
-    if (request.force !== undefined && (request.operation !== 'intro' || typeof request.force !== 'boolean')) throw new Error('重新生成参数无效');
-    if (request.operation === 'introCancel') {
-      gutenbergIntroRequests.get(request.id)?.abort(new Error('用户取消生成'));
-      return { canceled: true };
-    }
-    if (request.operation === 'introCached') return getGutenbergIntroService().cached({ id: request.id, engine: 'custom', modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null, customEngineId: request.customEngineId });
-    gutenbergIntroRequests.get(request.id)?.abort(new Error('新请求已替换旧请求'));
-    const controller = new AbortController();
-    gutenbergIntroRequests.set(request.id, controller);
-    const timer = setTimeout(() => controller.abort(new Error('中文介绍生成超时')), 75000);
-    try { return await getGutenbergIntroService().generate({ id: request.id, engine: 'custom', force: request.force ?? false, modelId: request.modelId ?? null, reasoningEffort: request.reasoningEffort ?? null, customEngineId: request.customEngineId }, { signal: controller.signal }); }
-    finally { clearTimeout(timer); if (gutenbergIntroRequests.get(request.id) === controller) gutenbergIntroRequests.delete(request.id); }
-  }
-  const targetPath = request.operation==='search' ? '/api/vantilo-gutenberg/search' : request.operation==='detail' ? '/api/vantilo-gutenberg/books/'+encodeURIComponent(String(request.id)) : '/api/vantilo-gutenberg/acquire';
-  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),30000);
-  try {
-    const url=new URL(targetPath,magazineReaderSupervisor.apiOrigin);
-    if(request.operation==='search')for(const key of ['query','topic','page'])if(request[key]!==undefined&&request[key]!=='' )url.searchParams.set(key,String(request[key]));
-    const token=magazineReaderSupervisor.sessionToken;
-    const response=await fetch(url,{method:request.operation==='acquire'?'POST':'GET',redirect:'error',signal:controller.signal,headers:{host:new URL(magazineReaderSupervisor.apiOrigin).host,origin:magazineReaderSupervisor.webOrigin,'sec-fetch-site':'same-origin',cookie:'__Host-vantilo-reader='+token,...(request.operation==='acquire'?{'content-type':'application/json'}:{})},...(request.operation==='acquire'?{body:JSON.stringify({id:request.id,filename:request.filename,categoryId:request.categoryId})}:{})});
-    const body=await response.json();if(!response.ok)throw new Error(body.error||'Project Gutenberg 服务暂不可用');return body;
-  } finally {clearTimeout(timer);}
 });
 
 app.whenReady().then(async () => {

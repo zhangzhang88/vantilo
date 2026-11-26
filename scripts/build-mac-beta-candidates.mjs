@@ -113,7 +113,6 @@ for(const target of [{arch:'arm64',native:nativeArm,electron:electronArm},{arch:
   await fs.writeFile(path.join(r,'THIRD_PARTY_NOTICES.txt'),notices);
   await fs.copyFile(path.join(repo,'electron/beta-main.cjs'),path.join(stage,'electron/beta-main.cjs'));
   await fs.writeFile(path.join(stage,'package.json'),JSON.stringify({name:'vantilo-beta',version:metadata.version,private:true,main:'electron/beta-main.cjs'}));
-  await fs.copyFile(path.join(repo,'node_modules/zod/LICENSE'),path.join(stage,'licenses/Zod-LICENSE.txt'));
   const result=await packager({dir:stage,out,name:'Vantilo Beta',platform:'darwin',arch:target.arch,electronVersion,electronZipDir:inputs,appBundleId:'com.vantilo.desktop.beta',icon:path.join(repo,'resources/vantilo.icns'),overwrite:false,prune:false,asar:false});
   // electron-packager may silently keep Electron's stock icon when it does not
   // recognize an .icns path as its expected .icon format. Install the bundled

@@ -38,7 +38,6 @@ function mount(overrides: Partial<NonNullable<Window['vantilo']>> = {}) {
     revealVocabularyBackup: vi.fn(async () => ({ shown: true })),
     getVocabularyBackupStatus: vi.fn(async () => ({ lastBackup: null })),
     onVocabularyBackupEvent: vi.fn(() => () => {}),
-    requestGutenberg: vi.fn(async () => ({})),
     getReaderSetupState: vi.fn(async () => ({ show: false })),
     checkReaderSetup: vi.fn(async () => ({ dictionary: 'bilingual' as const, hardware: { appleSilicon: true, memoryGiB: 16 }, localAi: 'not-integrated' as const })),
     finishReaderSetup: vi.fn(async () => ({ show: false })),
@@ -107,6 +106,9 @@ describe('Vantilo pure Reading & Learning application', () => {
     fireEvent.keyDown(window, { key: '2', metaKey: true });
     expect(screen.getByTitle('Magazine Reader')).toBe(frame);
     expect(posted).toContainEqual({ type: 'vantilo:navigate', target: 'practice' });
+
+    expect(screen.queryByRole('button', { name: 'Practice Lab' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '阅读' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '设置' }));
     expect(screen.getByTitle('Magazine Reader')).toBe(frame);

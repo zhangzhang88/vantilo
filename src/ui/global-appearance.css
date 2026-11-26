@@ -1,6 +1,6 @@
 /* Global theme synchronization between Reader and Vantilo's Electron shell.
  * Maps all 5 Reader themes (paper, sepia, green, blue, night) onto the shared
- * --mac-* token system so the titlebar, rail, Agent workspace, Discovery,
+ * --mac-* token system so the titlebar, rail, Agent workspace,
  * Growth, Onboarding, and Audiobook Dock stay visually unified. */
 
 main[data-vantilo-theme="paper"] {
@@ -233,37 +233,36 @@ main[data-vantilo-theme="green"] .conversation-markdown code {
   color: var(--mac-accent);
 }
 
-main[data-vantilo-theme="paper"] .discovery-card:hover,
-main[data-vantilo-theme="sepia"] .discovery-card:hover,
-main[data-vantilo-theme="green"] .discovery-card:hover {
-  background: var(--mac-surface-raised);
-}
-
-main[data-vantilo-theme="paper"] .discovery-intro,
-main[data-vantilo-theme="sepia"] .discovery-intro,
-main[data-vantilo-theme="green"] .discovery-intro,
-main[data-vantilo-theme="paper"] .discovery-detail-copy p,
-main[data-vantilo-theme="sepia"] .discovery-detail-copy p,
-main[data-vantilo-theme="green"] .discovery-detail-copy p,
-main[data-vantilo-theme="paper"] .discovery-generated p,
-main[data-vantilo-theme="sepia"] .discovery-generated p,
-main[data-vantilo-theme="green"] .discovery-generated p {
-  color: var(--mac-secondary);
-}
-
-main[data-vantilo-theme="paper"] .discovery-tags span,
-main[data-vantilo-theme="sepia"] .discovery-tags span,
-main[data-vantilo-theme="green"] .discovery-tags span {
-  background: var(--vantilo-soft);
-}
-
 main[data-vantilo-theme="paper"] .reading-growth-track,
 main[data-vantilo-theme="sepia"] .reading-growth-track,
 main[data-vantilo-theme="green"] .reading-growth-track,
+main[data-vantilo-theme="paper"] .reading-growth-bar-track,
+main[data-vantilo-theme="sepia"] .reading-growth-bar-track,
+main[data-vantilo-theme="green"] .reading-growth-bar-track,
 main[data-vantilo-theme="paper"] .reading-growth-grid span,
 main[data-vantilo-theme="sepia"] .reading-growth-grid span,
 main[data-vantilo-theme="green"] .reading-growth-grid span {
   background: var(--vantilo-soft);
+}
+
+main[data-vantilo-theme="paper"] .reading-growth-goal-picker,
+main[data-vantilo-theme="sepia"] .reading-growth-goal-picker,
+main[data-vantilo-theme="green"] .reading-growth-goal-picker {
+  background: var(--vantilo-soft);
+}
+
+main[data-vantilo-theme="paper"] .reading-growth-grid span.partial.level-1,
+main[data-vantilo-theme="sepia"] .reading-growth-grid span.partial.level-1,
+main[data-vantilo-theme="green"] .reading-growth-grid span.partial.level-1 {
+  background: color-mix(in srgb, var(--mac-accent) 18%, transparent);
+  color: var(--mac-accent);
+}
+
+main[data-vantilo-theme="paper"] .reading-growth-grid span.partial.level-2,
+main[data-vantilo-theme="sepia"] .reading-growth-grid span.partial.level-2,
+main[data-vantilo-theme="green"] .reading-growth-grid span.partial.level-2 {
+  background: color-mix(in srgb, var(--mac-accent) 36%, transparent);
+  color: var(--mac-text);
 }
 
 main[data-vantilo-theme="paper"] .reading-growth-grid span.partial,
@@ -278,4 +277,12 @@ main[data-vantilo-theme="sepia"] .audiobook-dock,
 main[data-vantilo-theme="green"] .audiobook-dock {
   background: color-mix(in oklab, var(--mac-surface) 92%, transparent);
   box-shadow: var(--mac-shadow-md);
+}
+
+main[data-vantilo-theme="blue"] .audiobook-dock,
+main[data-vantilo-theme="night"] .audiobook-dock {
+  background: color-mix(in oklab, var(--mac-surface) 90%, transparent);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.36);
 }

@@ -1,42 +1,45 @@
 .audiobook-dock {
-  --dock-surface: #ffffff;
-  --dock-ink: #18181b;
-  --dock-muted: #71717a;
-  --dock-line: rgba(15, 23, 42, 0.08);
-  --dock-soft: rgba(15, 23, 42, 0.05);
-  --dock-soft-hover: rgba(15, 23, 42, 0.09);
-  --dock-play-bg: #14161c;
-  --dock-play-fg: #ffffff;
-  --dock-accent: #7c3aed;
+  --dock-surface: color-mix(in oklab, var(--mac-surface, var(--theme-surface, #ffffff)) 92%, transparent);
+  --dock-popover-surface: color-mix(in oklab, var(--mac-surface-raised, var(--theme-surface, #ffffff)) 96%, transparent);
+  --dock-ink: var(--mac-text, var(--theme-ink, #141413));
+  --dock-muted: var(--mac-muted, var(--theme-muted, #716e66));
+  --dock-line: var(--mac-line, var(--theme-line, rgba(20, 20, 19, 0.1)));
+  --dock-soft: var(--mac-surface-hover, var(--theme-soft, rgba(20, 20, 19, 0.055)));
+  --dock-soft-hover: color-mix(in srgb, var(--dock-ink) 11%, transparent);
+  --dock-play-bg: var(--dock-ink);
+  --dock-play-fg: var(--mac-surface, var(--theme-surface, #ffffff));
+  --dock-accent: var(--mac-accent, var(--theme-accent, #c96442));
   position: relative;
   width: 100%;
   margin-inline: auto;
   color: var(--dock-ink);
   background: var(--dock-surface);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
   border-top: 1px solid var(--dock-line);
-  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 -6px 24px rgba(20, 20, 19, 0.07);
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
 }
 
-main[data-vantilo-theme="obsidian"] .audiobook-dock,
-[data-theme="night"] .audiobook-dock {
-  --dock-surface: #1b1d23;
-  --dock-ink: #f4f4f6;
-  --dock-muted: #a1a1aa;
-  --dock-line: rgba(255, 255, 255, 0.09);
-  --dock-soft: rgba(255, 255, 255, 0.07);
-  --dock-soft-hover: rgba(255, 255, 255, 0.13);
-  --dock-play-bg: #f4f4f6;
-  --dock-play-fg: #14161c;
-  --dock-accent: #8b5cf6;
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.42);
+main[data-vantilo-theme="night"] .audiobook-dock,
+main[data-vantilo-theme="blue"] .audiobook-dock,
+html[data-color-mode="dark"] .audiobook-dock,
+html[data-color-mode="blue"] .audiobook-dock,
+[data-theme="night"] .audiobook-dock,
+[data-theme="dark"] .audiobook-dock,
+[data-theme="blue"] .audiobook-dock {
+  --dock-surface: color-mix(in oklab, var(--mac-surface, var(--theme-surface, #262624)) 90%, transparent);
+  --dock-popover-surface: color-mix(in oklab, var(--mac-surface-raised, var(--theme-raised, #2e2e2b)) 95%, transparent);
+  --dock-play-bg: var(--dock-accent);
+  --dock-play-fg: #ffffff;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.38);
 }
 
 .audiobook-dock-progress {
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
-  background: rgba(124, 58, 237, 0.14);
+  background: color-mix(in srgb, var(--dock-accent) 16%, transparent);
   overflow: hidden;
 }
 
@@ -184,11 +187,11 @@ span.audiobook-dock-cover {
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, var(--dock-accent), color-mix(in srgb, var(--dock-accent) 72%, #e8a56d));
   color: #ffffff;
   font-size: 11px;
   font-weight: 600;
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.28);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--dock-accent) 30%, transparent);
 }
 
 .audiobook-dock-voice-name {
@@ -249,6 +252,17 @@ span.audiobook-dock-cover {
   align-items: center;
 }
 
+@keyframes audiobookDockPopIn {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
 .audiobook-dock-popover {
   position: absolute;
   bottom: calc(100% + 12px);
@@ -262,9 +276,12 @@ span.audiobook-dock-cover {
   gap: 2px;
   border-radius: 14px;
   border: 1px solid var(--dock-line);
-  background: var(--dock-surface);
+  background: var(--dock-popover-surface);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
   color: var(--dock-ink);
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16), 0 3px 10px rgba(15, 23, 42, 0.06);
+  animation: audiobookDockPopIn 150ms cubic-bezier(0.2, 0.85, 0.3, 1);
 }
 
 .audiobook-dock-popover.is-voice {
@@ -280,8 +297,13 @@ span.audiobook-dock-cover {
   min-width: 132px;
 }
 
-main[data-vantilo-theme="obsidian"] .audiobook-dock-popover,
-[data-theme="night"] .audiobook-dock-popover {
+main[data-vantilo-theme="night"] .audiobook-dock-popover,
+main[data-vantilo-theme="blue"] .audiobook-dock-popover,
+html[data-color-mode="dark"] .audiobook-dock-popover,
+html[data-color-mode="blue"] .audiobook-dock-popover,
+[data-theme="night"] .audiobook-dock-popover,
+[data-theme="dark"] .audiobook-dock-popover,
+[data-theme="blue"] .audiobook-dock-popover {
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.56), 0 4px 12px rgba(0, 0, 0, 0.34);
 }
 
@@ -310,7 +332,7 @@ main[data-vantilo-theme="obsidian"] .audiobook-dock-popover,
 }
 
 .audiobook-dock .audiobook-dock-popover-option.is-selected {
-  background: rgba(124, 58, 237, 0.11);
+  background: color-mix(in srgb, var(--dock-accent) 14%, transparent);
   color: var(--dock-accent);
   font-weight: 600;
 }
@@ -368,14 +390,22 @@ main[data-vantilo-theme="obsidian"] .audiobook-dock-popover,
   z-index: 4;
   max-width: calc(100vw - 24px);
   border: 1px solid var(--dock-line);
-  background: var(--dock-surface);
+  background: var(--dock-popover-surface);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
   color: var(--dock-ink);
   border-radius: 20px;
   box-shadow: 0 18px 46px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.06);
+  animation: audiobookDockPopIn 150ms cubic-bezier(0.2, 0.85, 0.3, 1);
 }
 
-main[data-vantilo-theme="obsidian"] .audiobook-dock-settings,
-[data-theme="night"] .audiobook-dock-settings {
+main[data-vantilo-theme="night"] .audiobook-dock-settings,
+main[data-vantilo-theme="blue"] .audiobook-dock-settings,
+html[data-color-mode="dark"] .audiobook-dock-settings,
+html[data-color-mode="blue"] .audiobook-dock-settings,
+[data-theme="night"] .audiobook-dock-settings,
+[data-theme="dark"] .audiobook-dock-settings,
+[data-theme="blue"] .audiobook-dock-settings {
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.56), 0 4px 14px rgba(0, 0, 0, 0.34);
 }
 
@@ -508,7 +538,7 @@ main[data-vantilo-theme="obsidian"] .audiobook-dock-settings,
   height: 24px;
   padding: 2px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.34);
+  background: color-mix(in srgb, var(--dock-ink) 20%, transparent);
   display: inline-flex;
   align-items: center;
   transition: background-color 160ms ease;
@@ -625,5 +655,13 @@ body:has(.audiobook-standalone-dock) {
   }
   .audiobook-dock-actions {
     gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audiobook-dock-popover,
+  .audiobook-dock-settings,
+  .audiobook-dock-error {
+    animation: none;
   }
 }

@@ -5,23 +5,23 @@
 .practice-workshop {
   --claude-serif: "Iowan Old Style", "New York", "Palatino Linotype", Georgia, "Songti SC", "STSong", serif;
   --claude-sans: var(--vantilo-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif);
-  --claude-clay: #c96442;
-  --claude-clay-hover: #b65535;
-  --claude-clay-soft: rgba(201, 100, 66, 0.1);
-  --claude-clay-ring: rgba(201, 100, 66, 0.22);
+  --claude-clay: var(--theme-accent, #c96442);
+  --claude-clay-hover: color-mix(in srgb, var(--claude-clay) 86%, #141413);
+  --claude-clay-soft: color-mix(in srgb, var(--claude-clay) 12%, transparent);
+  --claude-clay-ring: color-mix(in srgb, var(--claude-clay) 26%, transparent);
 
-  --lab-canvas: color-mix(in srgb, #faf9f5 68%, var(--theme-bg, #faf9f5));
-  --lab-surface: color-mix(in srgb, #ffffff 80%, var(--theme-surface, #ffffff));
-  --lab-paper: color-mix(in srgb, #f5f4ef 74%, var(--theme-bg, #f5f4ef));
-  --lab-raised: color-mix(in srgb, #ffffff 92%, var(--theme-raised, #ffffff));
-  --lab-soft: color-mix(in srgb, #eceae2 65%, var(--theme-soft, #eceae2));
+  --lab-canvas: var(--theme-bg, #faf9f5);
+  --lab-surface: var(--theme-surface, #ffffff);
+  --lab-paper: color-mix(in srgb, var(--theme-bg, #faf9f5) 86%, var(--theme-surface, #ffffff));
+  --lab-raised: var(--theme-raised, var(--theme-surface, #ffffff));
+  --lab-soft: var(--theme-soft, rgba(61, 57, 41, 0.06));
   --lab-ink: var(--theme-ink, #141413);
   --lab-muted: var(--theme-muted, #6b6860);
-  --lab-line: color-mix(in srgb, #3d3929 11%, transparent);
-  --lab-line-strong: color-mix(in srgb, #3d3929 18%, transparent);
+  --lab-line: var(--theme-line-soft, rgba(61, 57, 41, 0.11));
+  --lab-line-strong: var(--theme-line, rgba(61, 57, 41, 0.18));
   --lab-accent: var(--claude-clay);
-  --lab-danger: #c0483e;
-  --lab-shadow: 0 2px 10px rgba(20, 20, 19, 0.035), 0 0.5px 1px rgba(20, 20, 19, 0.04);
+  --lab-danger: var(--theme-danger, #c0483e);
+  --lab-shadow: var(--theme-shadow-sm, 0 2px 10px rgba(20, 20, 19, 0.04));
 
   max-width: 1320px;
   margin: 0 auto;
@@ -30,23 +30,16 @@
   font-family: var(--claude-sans);
 }
 
-/* Warm Obsidian Dark Mode (Claude Desktop Dark) */
+/* Warm Obsidian Dark & Deep Blue Modes */
 .app-shell[data-theme="dark"] .practice-workshop,
-.app-shell[data-theme="night"] .practice-workshop {
-  --claude-clay: #d97757;
-  --claude-clay-hover: #e28668;
-  --claude-clay-soft: rgba(217, 119, 87, 0.14);
-  --claude-clay-ring: rgba(217, 119, 87, 0.28);
-
-  --lab-canvas: color-mix(in srgb, #262624 72%, var(--theme-bg, #262624));
-  --lab-surface: color-mix(in srgb, #2e2e2b 78%, var(--theme-surface, #2e2e2b));
-  --lab-paper: color-mix(in srgb, #242422 76%, var(--theme-bg, #242422));
-  --lab-raised: color-mix(in srgb, #353531 82%, var(--theme-raised, #353531));
-  --lab-soft: rgba(236, 235, 228, 0.07);
-  --lab-line: rgba(236, 235, 228, 0.1);
-  --lab-line-strong: rgba(236, 235, 228, 0.17);
-  --lab-danger: #e2786f;
-  --lab-shadow: 0 2px 14px rgba(0, 0, 0, 0.24);
+.app-shell[data-theme="night"] .practice-workshop,
+.app-shell[data-theme="blue"] .practice-workshop,
+html[data-color-mode="dark"] .practice-workshop,
+html[data-color-mode="blue"] .practice-workshop {
+  --claude-clay-hover: color-mix(in srgb, var(--claude-clay) 86%, #ffffff);
+  --claude-clay-soft: color-mix(in srgb, var(--claude-clay) 16%, transparent);
+  --claude-clay-ring: color-mix(in srgb, var(--claude-clay) 30%, transparent);
+  --lab-shadow: var(--theme-shadow-sm, 0 4px 16px rgba(0, 0, 0, 0.24));
 }
 
 /* ── Header ──────────────────────────────────────────────── */
@@ -162,10 +155,11 @@
 .practice-workshop-mode-card:hover:not(:disabled) {
   border-color: var(--lab-line-strong);
   transform: translateY(-1px);
+  box-shadow: var(--theme-shadow, 0 10px 26px rgba(20, 20, 19, 0.08));
 }
 .practice-workshop-mode-card.is-selected {
   border-color: var(--claude-clay);
-  background: color-mix(in srgb, var(--claude-clay) 4.5%, var(--lab-surface));
+  background: color-mix(in srgb, var(--claude-clay) 6%, var(--lab-surface));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--claude-clay) 55%, transparent), var(--lab-shadow);
 }
 .practice-workshop-mode-top {
